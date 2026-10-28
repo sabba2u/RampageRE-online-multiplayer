@@ -40,7 +40,8 @@ static double ng_delay(void)
 #define NG_BUILDING_OPS 256                          /* a message's building changes at most (more: another) */
 
 static Viewer *g_ngv;
-static int ng_guest_menu;                            /* the host: the guest's pad says it has a menu up */
+static int ng_guest_menu;                            /* the host: the guests whose pads say they have a menu up (bit k:
+                                                      * slot k's) */
 static int ng_replaying;                             /* the guest makes the host's building change: the gate is open */
 /* (the guest replays a roof hit: building_hit_roof ends in a building_hit of the cell under it, which the host's gate
  * sent as a change of its own, next in the message; made here too, the cell took the blow twice: New York's victory
@@ -52,6 +53,13 @@ static int ng_hud_shown = -1;                        /* the host: the last GE_HU
 static int ng_guest(void);
 static int ng_host(void);
 static void ngt_street_lasting(Viewer *v);         /* (netrep_traffic.c) */
+
+/* the guest's own monster: the slot the host gave it (mon[k]); 1 until it is told */
+static int ng_me(void)
+{
+    int k = net_role() == NET_GUEST ? net_my_slot() : 0;
+    return k > 0 && k < MONSTERS ? k : net_role() == NET_GUEST ? 1 : 0;
+}
 
 /* ---- pads: Pad (main.c) <-> NetPad, the buttons MV_UP .. MV_L3 as bits 0 .. 17 */
 static void ng_pad_out(const Pad *p, NetPad *o)
@@ -84,8 +92,9 @@ typedef struct {
 static int ng_world_of(const Viewer *v, NgWorld *w)
 {
     memset(w, 0, sizeof *w);
-    int why = !v->play ? 1 : !v->have_scene ? 2 : !have_monster(v) ? 3 : !v->game ? 4 : v->shell ? 5 : v->nmon < 2 ? 6 :
-              v->attract ? 7 : 0;
+    /* (a host's 1 player game counts: a guest that joins it is added as player 2, ng_dropin) */
+    int why = !v->play ? 1 : !v->have_scene ? 2 : !have_monster(v) ? 3 : !v->game ? 4 : v->shell ? 5 :
+              v->nmon < (net_role() == NET_HOST ? 1 : 2) ? 6 : v->attract ? 7 : 0;
     static int said = -1;
     if (why != said && net_role() != NET_OFF) {
         static const char *const WHY[] = { "in a game", "not playing", "no city", "no monster", "no game", "in the menus",
@@ -307,7 +316,11 @@ static void ng_on_building(Viewer *v, NetBuf *b)
  * building changes: every building as it is (Building is plain data, the same build on both: packed), the edibles'
  * slots, the challenge's upgrade, then NST_DONE with the number of the last NM_BUILDING in it. All reliable and in
  * order, so the guest drops the building changes until NST_DONE (they are in the state) and makes every one after. */
-enum { NST_ASK, NST_BUILDING, NST_EDIBLES, NST_CHALLENGE, NST_DONE };
+enum { NST_ASK, NST_BUILDING, NST_EDIBLES, NST_CHALLENGE, NST_DONE,
+       NST_RESYNC,       /* host -> guests: take the whole world again (ng_resync) */
+       NST_RESYNC_ASK }; /* guest -> host: please do */
+static void ng_resync_message(Viewer *v, int kind);
+static int ng_resyncing;                             /* guest: a resync's state is coming */
 static int ng_state_due = -1;                        /* host: the block the guest asked for */
 static double ng_state_asked;                        /* guest: when it last asked */
 
@@ -460,6 +473,8 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
 /* guest: building i as the host's. Its drawing follows (dirty: the facade, the interiors, the light; building_place
  * places a fallen or falling one); what its cells' breaking would have told here already happened on the host (the
  * edibles come next, the people and the army are the host's), so the scene is told it has seen them */
+static void ng_building_put(Viewer *v, uint32_t i, const Building *nb);
+
 static void ng_state_building(Viewer *v, NetBuf *b)
 {
     static Building nb;
@@ -473,12 +488,18 @@ static void ng_state_building(Viewer *v, NetBuf *b)
         net_log("the host's building %u: broken", i);
         return;
     }
+    ng_building_put(v, i, &nb);
+}
+
+/* building i made nb (the host's, or the host's own kept over a drop-in's new start: ng_dropin) */
+static void ng_building_put(Viewer *v, uint32_t i, const Building *nbp)
+{
     SceneBuilding *sb = &v->scene.buildings[i];
-    if (memcmp(sb->b.min, nb.min, sizeof nb.min) || sb->b.storeys != nb.storeys || sb->b.width != nb.width) {
+    if (memcmp(sb->b.min, nbp->min, sizeof nbp->min) || sb->b.storeys != nbp->storeys || sb->b.width != nbp->width) {
         net_log("the host's building %u is another building", i);
         return;
     }
-    sb->b = nb;
+    sb->b = *nbp;
     Building *bb = &sb->b;
     bb->ndebris = bb->nhit_debris = bb->nscore = 0;  /* (the host played and paid those) */
     bb->pre_collapse = bb->drop_dust = 0;
@@ -529,6 +550,10 @@ static void ng_on_state(Viewer *v, NetBuf *b)
     int kind = (int)net_r_u8(b), block = (int)net_r_u8(b);
     if (b->err)
         return;
+    if (kind == NST_RESYNC || kind == NST_RESYNC_ASK) {
+        ng_resync_message(v, kind);
+        return;
+    }
     if (net_role() == NET_HOST) {
         if (kind == NST_ASK)
             ng_state_due = block;
@@ -546,6 +571,11 @@ static void ng_on_state(Viewer *v, NetBuf *b)
         ng_bs_block = block;
         ng_bs_seq = net_r_u32(b);
         net_log("took the host's block %d state (its building changes from %u on)", block, ng_bs_seq + 1);
+        if (ng_resyncing) {
+            ng_resyncing = 0;
+            netui_chat_add(-1, NULL, "Re-synchronized");
+            net_log("resync: done");
+        }
         break;
     }
 }
@@ -557,19 +587,36 @@ static void ng_on_flow(NetBuf *b);
 /* ---- the chat (netchat.cpp draws it): a line is who (0 the host, 1 the guest) and its text, at most 200 */
 static const char *ng_player_name(const Viewer *v, int who)
 {
-    static char n[2][40];
+    static char n[NET_SLOTS][40];
+    who = who < 0 ? 0 : who % NET_SLOTS;
     const char *m = who < v->nmon && v->mon[who].monster >= 0 ? v->monsters[v->mon[who].monster] : NULL;
-    snprintf(n[who & 1], sizeof n[0], "%s", m ? m : who ? "Player 2" : "Player 1");
-    return n[who & 1];
+    if (m)
+        snprintf(n[who], sizeof n[0], "%s", m);
+    else
+        snprintf(n[who], sizeof n[0], "Player %d", who + 1);
+    return n[who];
 }
 
+/* the panel's slot list (netui.cpp): slot k's monster, "" none */
+const char *netgame_slot_name(int k)
+{
+    const Viewer *v = g_ngv;
+    return v && k >= 0 && k < v->nmon && v->mon[k].monster >= 0 && v->play ? v->monsters[v->mon[k].monster] : "";
+}
+
+/* a line: who is the speaker's slot. The host checks it is the sender's and passes it on to the other guests */
 static void ng_on_chat(Viewer *v, NetBuf *b)
 {
     int who = (int)net_r_u8(b);
     char text[201];
     int len = b->cap - b->len;
-    if (b->err || who > 1 || len <= 0)
+    if (b->err || who >= NET_SLOTS || len <= 0)
         return;
+    if (net_role() == NET_HOST) {
+        if (who != net_msg_slot())
+            return;
+        net_send_msg_except(who, 1, b->p, b->cap);
+    }
     if (len > 200)
         len = 200;
     memcpy(text, b->p + b->len, (size_t)len);
@@ -582,18 +629,59 @@ static void ng_chat_command(Viewer *v, const char *c)
     (void)v;
     if (!strcmp(c, "help"))
         netui_chat_add(-1, NULL, "/ping: the time to the other PC and back   /rate 20, 30 or 60: the host's updates a second"
-                                 "   /help: this   Enter: chat   P: pause   Insert: the online panel");
+                                 "   /resync: every guest takes the host's whole world again   /help: this   Enter: chat"
+                                 "   P: pause   Insert: the online panel");
     else if (!strcmp(c, "ping")) {
         char t[64];
         snprintf(t, sizeof t, "Ping: %d ms", net_stats().ping_ms);
         netui_chat_add(-1, NULL, t);
-    } else if (!strncmp(c, "rate", 4) && net_role() == NET_HOST && atoi(c + 4) > 0) {
+    } else if (!strcmp(c, "resync"))
+        netgame_resync();
+    else if (!strncmp(c, "rate", 4) && net_role() == NET_HOST && atoi(c + 4) > 0) {
         netgame_set_rate(atoi(c + 4));
         char t[64];
         snprintf(t, sizeof t, "Updates a second: %d", netgame_rate());
         netui_chat_add(-1, NULL, t);
     } else
         netui_chat_add(-2, NULL, "Not a command (/help lists them)");
+}
+
+/* the player slots' changes, said in the chat on every screen (each side from what it sees: the host its own slots,
+ * a guest the host's NM_SLOTS), and a local player taking one also as a toast in the middle of the screen */
+static void ng_slots_said(Viewer *v)
+{
+    static int was[NET_SLOTS] = { -1, -1, -1, -1 }, was_role;
+    if (net_role() != was_role) {
+        for (int k = 0; k < NET_SLOTS; k++)
+            was[k] = -1;
+        was_role = net_role();
+    }
+    if (net_role() == NET_OFF || (net_role() == NET_GUEST && net_state() != NETS_CONNECTED))
+        return;
+    for (int k = 1; k < net_slots() && k < NET_SLOTS; k++) {
+        int st = net_slot_state(k, NULL), w = was[k];
+        was[k] = st;
+        if (w < 0 || st == w || (net_role() == NET_GUEST && k == ng_me()))
+            continue;
+        char t[160];
+        const char *name = ng_player_name(v, k);
+        t[0] = 0;
+        if (st == NSL_RESERVED)
+            snprintf(t, sizeof t, "%s disconnected - %.0f s to rejoin", name, NET_RESERVE_S);
+        else if (st == NSL_ONLINE)
+            snprintf(t, sizeof t, w == NSL_RESERVED ? "%s rejoined" : "A player joined as %s", name);
+        else if (st == NSL_LOCAL) {
+            snprintf(t, sizeof t, "Local controller took over Player %d", k + 1);
+            netui_toast(t);
+        } else if (st == NSL_OPEN && w == NSL_LOCAL)
+            snprintf(t, sizeof t, "Player %d open for online play: waiting for a player", k + 1);
+        else if (st == NSL_OPEN && w == NSL_ONLINE)
+            snprintf(t, sizeof t, "%s's player was removed. Slot open: waiting for a player", name);
+        else if (st == NSL_OPEN)
+            snprintf(t, sizeof t, "Slot open: waiting for a player");
+        if (t[0])
+            netui_chat_add(st == NSL_RESERVED ? -2 : -1, NULL, t);
+    }
 }
 
 /* once a frame: may the chat open, a line sent, joins and leaves, defeats */
@@ -606,7 +694,7 @@ static void ng_chat_frame(Viewer *v)
         if (line[0] == '/')
             ng_chat_command(v, line + 1);
         else {
-            int me = net_role() == NET_HOST ? 0 : 1;
+            int me = ng_me();
             netui_chat_add(me, ng_player_name(v, me), line);
             if (net_state() == NETS_CONNECTED) {
                 uint8_t m[256];
@@ -619,17 +707,18 @@ static void ng_chat_frame(Viewer *v)
                 netui_chat_add(-1, NULL, "Not connected: nobody else sees this");
         }
     }
-    static int was_state = NETS_IDLE;                /* joins and leaves */
+    static int was_state = NETS_IDLE;                /* the guest's join and the host leaving (the host's: the slots) */
     int st = net_state();
-    if (st != was_state) {
+    if (st != was_state && net_role() == NET_GUEST) {
         if (st == NETS_CONNECTED)
-            netui_chat_add(-1, NULL, net_role() == NET_HOST ? "Player 2 joined" : "Joined the host's game");
+            netui_chat_add(-1, NULL, "Joined the host's game");
         else if (was_state == NETS_CONNECTED)
-            netui_chat_add(-2, NULL, net_role() == NET_HOST ? "Player 2 left" : "The host left");
-        was_state = st;
+            netui_chat_add(-2, NULL, "The host left");
     }
-    static int was_defeated[2];                      /* defeats, on each side from its own (the guest: the host's) */
-    for (int k = 0; k < 2 && k < v->nmon; k++) {
+    was_state = st;
+    ng_slots_said(v);
+    static int was_defeated[MONSTERS];               /* defeats, on each side from its own (the guest: the host's) */
+    for (int k = 0; k < MONSTERS && k < v->nmon; k++) {
         int d = v->play && v->mon[k].defeated;
         if (d && !was_defeated[k]) {
             char t[64];
@@ -922,7 +1011,8 @@ static void ng_send_snap(Viewer *v)
         net_w_u8(&b, (uint32_t)(fl ? mo->faces.list[0].head : 0));
         net_w_u8(&b, (uint32_t)(fl ? mo->faces.list[0].loop : 0));
     }
-    for (int k = 0; k < 2; k++) {                    /* both players' pads (the guest's monsters animate by them) */
+    net_w_u8(&b, (uint32_t)v->nmon);                 /* every player's pad (the guests' monsters animate by them) */
+    for (int k = 0; k < v->nmon; k++) {
         NetPad p;
         ng_pad_out(&v->mon[k].pad, &p);
         net_w_f32(&b, p.lx); net_w_f32(&b, p.ly); net_w_f32(&b, p.rx); net_w_f32(&b, p.ry);
@@ -947,18 +1037,21 @@ static void ng_send_snap(Viewer *v)
     net_w_bytes(&b, &fl, (int)sizeof fl);            /* (both are the same build: the handshake says so) */
     net_w_u8(&b, (uint32_t)(uint8_t)ng_hud_shown);
     net_w_u8(&b, (uint32_t)(v->hud && hud_results_showing(v->hud)));
-    net_w_u32(&b, net_remote_frame());
+    net_w_u8(&b, NET_SLOTS);                         /* each slot's pad frame the host took last (its prediction) */
+    for (int k = 0; k < NET_SLOTS; k++)
+        net_w_u32(&b, net_remote_frame(k));
     net_w_u8(&b, (uint32_t)((netui_wants_input() || (v->hud && hud_pause_showing(v->hud)) ? 1 : 0) |
-                            (ng_guest_menu ? 2 : 0)));
+                            (ng_guest_menu & ~1)));
     if (!b.err)
         net_send_snap(m, b.len);
 }
 
 typedef struct {
-    int n; NgMon m[MONSTERS]; NetPad pad[2]; int game_state, block; float clock; GameNetSync gs;
+    int n; NgMon m[MONSTERS]; NetPad pad[MONSTERS]; int game_state, block; float clock; GameNetSync gs;
     GameNetFlow flow; int hud, results_up;
-    uint32_t ack;                                    /* the guest's pad frame the host took last (its prediction) */
-    int menu;                                        /* who has a menu up: bit 0 the host, bit 1 the guest */
+    uint32_t acks[NET_SLOTS];                        /* each slot's pad frame the host took last (its prediction) */
+    uint32_t ack;                                    /* (ours, of acks) */
+    int menu;                                        /* who has a menu up: bit k slot k's (0 the host) */
 } NgSnap;
 
 static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
@@ -1002,7 +1095,10 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
         m->face_head = (uint8_t)net_r_u8(&b);
         m->face_loop = (uint8_t)net_r_u8(&b);
     }
-    for (int k = 0; k < 2; k++) {
+    int np = (int)net_r_u8(&b);
+    if (np > MONSTERS)
+        return 0;
+    for (int k = 0; k < np; k++) {
         NetPad *p = &o->pad[k];
         p->lx = net_r_f32(&b); p->ly = net_r_f32(&b); p->rx = net_r_f32(&b); p->ry = net_r_f32(&b);
         p->held = net_r_u32(&b);
@@ -1022,7 +1118,12 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
     net_r_bytes(&b, &o->flow, (int)sizeof o->flow);
     o->hud = (int)(int8_t)net_r_u8(&b);
     o->results_up = (int)net_r_u8(&b);
-    o->ack = net_r_u32(&b);
+    int na = (int)net_r_u8(&b);
+    if (na > NET_SLOTS)
+        return 0;
+    for (int k = 0; k < na; k++)
+        o->acks[k] = net_r_u32(&b);
+    o->ack = o->acks[ng_me() % NET_SLOTS];
     o->menu = (int)net_r_u8(&b);
     return !b.err;
 }
@@ -1339,7 +1440,7 @@ static void ng_apply_snap(Viewer *v)
     for (int k = 0; k < v->nmon && k < sb.n; k++) {
         Mon *mo = &v->mon[k];
         const NgMon *hi = &sb.m[k];
-        if (k == 1 && have_nw && nw.n > 1 && ng_predict_fix(v, mo, k, &nw)) {   /* ours: moved here, corrected */
+        if (k == ng_me() && have_nw && nw.n > k && ng_predict_fix(v, mo, k, &nw)) {   /* ours: moved here, corrected */
             mo->hp = nw.m[k].hp;
             mo->power.energy = nw.m[k].energy;
             mo->power.rage = nw.m[k].rage;
@@ -1712,7 +1813,7 @@ static int ng_feel_replaying;
 
 static int ng_shake_own(const Viewer *v, const CamShake *s)   /* the guest's own monster's clip events' shake */
 {
-    return v->nmon > 1 && s == &v->shakes[7 + v->mon[1].slot];
+    return v->nmon > ng_me() && s == &v->shakes[7 + v->mon[ng_me()].slot];
 }
 
 static int net_shake(Viewer *v, CamShake *s, const ShakeDef *d, const float pos[3], float strength, int check)
@@ -1723,8 +1824,8 @@ static int net_shake(Viewer *v, CamShake *s, const ShakeDef *d, const float pos[
         return 0;
     shake_start(s, d, pos, strength, check, &v->shake_seed);
     int slot = (int)(s - v->shakes);
-    if (s->age != 0 || slot < 0 || slot >= 8 + MONSTERS - 1 || (v->nmon > 1 && slot == 7 + v->mon[1].slot))
-        return 1;                                    /* (kept the stronger one; the guest's own monster's: its own) */
+    if (s->age != 0 || slot < 0 || slot >= 8 + MONSTERS - 1)
+        return 1;                                    /* (kept the stronger one) */
     uint8_t m[48];
     NetBuf b = netbuf(m, sizeof m);
     net_w_u8(&b, NGF_SHAKE);
@@ -1746,12 +1847,13 @@ static int net_rumble(const Mon *mo, int ms)
 {
     if (ng_guest())
         return !ng_feel_replaying;                   /* (the host's player 2's come) */
-    if (!ng_host() || mo->slot != 1)
+    if (!ng_host() || mo->slot < 1 || net_slot_state(mo->slot, NULL) != NSL_ONLINE)
         return 0;
     uint8_t m[8];
     NetBuf b = netbuf(m, sizeof m);
     net_w_u8(&b, NGF_RUMBLE);
     net_w_u32(&b, (uint32_t)ms);
+    net_w_u8(&b, (uint32_t)mo->slot);                /* (whose: that guest's pad alone) */
     ng_event(NGP_FEEL, m, b.len);
     if (getenv("RAMPAGE_NET_TRACE"))
         net_log("feel: player 2's rumble %d ms sent", ms);
@@ -1762,8 +1864,8 @@ static void ng_feel_event(Viewer *v, NetBuf *b)
 {
     int kind = (int)net_r_u8(b);
     if (kind == NGF_RUMBLE) {
-        int ms = (int)net_r_u32(b);
-        if (b->err)
+        int ms = (int)net_r_u32(b), whose = (int)net_r_u8(b);
+        if (b->err || whose != ng_me())
             return;
         if (getenv("RAMPAGE_NET_TRACE"))
             net_log("feel: player 2's rumble %d ms%s", ms, v->pads_live && v->vibrate ? "" : " (vibration off here)");
@@ -1780,8 +1882,8 @@ static void ng_feel_event(Viewer *v, NetBuf *b)
     strength = net_r_f32(b);
     ph[0] = net_r_f32(b);
     ph[1] = net_r_f32(b);
-    if (b->err || slot >= 8 + MONSTERS - 1)
-        return;
+    if (b->err || slot >= 8 + MONSTERS - 1 || ng_shake_own(v, &v->shakes[slot]))
+        return;                                      /* (our own monster's: our step made it already) */
     CamShake *s = &v->shakes[slot];
     uint32_t seed = 1;
     ng_feel_replaying = 1;
@@ -1799,6 +1901,124 @@ static void ng_feel_event(Viewer *v, NetBuf *b)
 #include "netrep_army.c"                             /* the army and the bosses */
 #include "netrep_people.c"                           /* people and edibles */
 #include "netrep_menu.c"                             /* the menus online */
+
+/* ---- re-synchronizing (a safety net for a difference the digest finds and nothing else mends): without leaving, every
+ * guest takes the host's whole world again, as a guest that joins late does. The host tells each guest (NST_RESYNC);
+ * the guest drops what it shows of its own (the snapshots it holds, every puppet channel's units and samples, its own
+ * monster's prediction, its block's state, so it takes no building change until the new one) and asks for the block's
+ * state (NST_ASK, ng_state_ask): every building whole, the edibles' slots, the challenge's upgrade, the street objects'
+ * lasting effects, then NST_DONE. The monsters, the game's flow and state, the clock, the score and lives, the HUD and
+ * the menus' state come in every snapshot anyway, and the puppets in their channels' next ones (each a whole sample of
+ * its system). Nothing is loaded again. The host's out-of-sync counts start again. The host's panel and /resync start
+ * one; a guest's ask the host (NST_RESYNC_ASK), at most once in NG_RESYNC_EVERY seconds */
+#define NG_RESYNC_EVERY 5.0
+
+static void ng_resync_host(Viewer *v, const char *who)
+{
+    static double at = -100;
+    if (!ng_host() || net_now() - at < NG_RESYNC_EVERY) {
+        if (ng_host())
+            netui_chat_add(-2, NULL, "Re-synchronized a moment ago: try again in a few seconds");
+        return;
+    }
+    at = net_now();
+    uint8_t m[4];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_RESYNC);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_send_msg(1, m, b.len);
+    net_digest_reset();
+    net_log("resync (%s): every guest drops its world's own state and takes ours again: block %d's %u buildings, the "
+            "edibles' slots, the challenge, the lasting street effects; the monsters, flow, clock, score and puppets in "
+            "the next snapshots", who, v->block, v->scene.nbuildings);
+    netui_chat_add(-1, NULL, "Re-synchronized: the whole world sent to every guest again");
+}
+
+/* the panel's button and /resync: the host does it, a guest asks */
+void netgame_resync(void)
+{
+    Viewer *v = g_ngv;
+    if (!v)
+        return;
+    if (net_role() == NET_HOST) {
+        ng_resync_host(v, "the host");
+        return;
+    }
+    static double asked = -100;
+    if (!ng_guest())
+        return;
+    if (net_now() - asked < NG_RESYNC_EVERY)
+        return;
+    asked = net_now();
+    uint8_t m[4];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_RESYNC_ASK);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_send_msg(1, m, b.len);
+    netui_chat_add(-1, NULL, "Asked the host to re-synchronize");
+    net_log("resync: asked the host");
+}
+
+static void ng_resync_message(Viewer *v, int kind)
+{
+    if (kind == NST_RESYNC_ASK && net_role() == NET_HOST) {
+        char who[32];
+        snprintf(who, sizeof who, "asked by slot %d", net_msg_slot());
+        ng_resync_host(v, who);
+        return;
+    }
+    if (kind != NST_RESYNC || net_role() != NET_GUEST)
+        return;
+    net_snaps_clear();                               /* the monsters' samples: the next snapshots' */
+    ng_have_last = 0;
+    ng_puppets_reset(v, 0);                          /* every channel's units and samples (this block's events kept) */
+    ng_hist_n = 0;                                   /* our monster's prediction starts again */
+    ng_pred_miss = 0;
+    ng_bs_block = -1;                                /* the block's state asked for again (ng_state_ask) */
+    ng_state_asked = -100;
+    ng_digest_at = net_now();                        /* (the next digest once it is all in) */
+    ng_resyncing = 1;
+    net_log("resync: the host's whole world taken again (snapshots, puppets, prediction and the block's state)");
+}
+
+/* the test's desync (RAMPAGE_NET_TESTDESYNC=secs[,resync secs], the guest alone; never set in play): `secs` after the
+ * guest came in, its first standing building loses HP and a cell here only (the digest's buildings then differ: a
+ * MISMATCH); `resync secs` after it came in, it asks the host to re-synchronize */
+static void ng_test_desync(Viewer *v)
+{
+    static const char *spec;
+    static int read, done, asked;
+    static double t0 = -1;
+    if (!read) {
+        spec = getenv("RAMPAGE_NET_TESTDESYNC");
+        read = 1;
+    }
+    if (!spec || !ng_guest())
+        return;
+    if (t0 < 0)
+        t0 = net_now();
+    double at = atof(spec);
+    const char *c = strchr(spec, ',');
+    if (!done && net_now() - t0 >= at) {
+        done = 1;
+        for (uint32_t i = 0; i < v->scene.nbuildings; i++) {
+            Building *b = &v->scene.buildings[i].b;
+            if (b->state != BUILDING_STANDING)
+                continue;
+            b->hp = b->hp > 60 ? b->hp - 50 : 10;
+            b->dirty = 1;
+            net_log("test: building %u damaged here alone (HP %d)", i, b->hp);
+            break;
+        }
+    }
+    if (c && !asked && net_now() - t0 >= atof(c + 1)) {
+        asked = 1;
+        net_log("test: asking for a resync");
+        netgame_resync();
+    }
+}
 
 /* ---- the hooks main.c calls */
 
@@ -1856,6 +2076,9 @@ static void netgame_frame(Viewer *v, Window *w, double now)
         ngr_menu_frame(v);                           /* (a guest that left the host's game: its menus again) */
         return;
     }
+    if (net_role() == NET_GUEST)                     /* the monster we would like, should the host's game have no
+                                                      * player for us yet (a 1 player game: ng_dropin) */
+        net_set_wanted_monster(v->nmon > 0 && v->mon[0].monster >= 0 ? v->mon[0].monster : -1);
     ng_set_world(v);
     ng_chat_frame(v);                                /* the chat: Enter, the lines, joins, leaves, defeats */
     net_world_paused = ngm_host_paused();             /* the host's Pause menu: the guest's world stops too */
@@ -1881,11 +2104,16 @@ static void ng_pad_send(Viewer *v, Pad *mine_in)
     if (netui_wants_input())                         /* the panel up: "IN MENU" over our monster on the host's */
         np.held |= NET_PAD_MENU;
     net_send_pad(&np);
-    v->mon[1].pad = mine;
-    if (ng_have_last)
-        ng_pad_in(&ng_last.pad[0], &v->mon[0].pad, 0);
-    else
-        memset(&v->mon[0].pad, 0, sizeof v->mon[0].pad);
+    int me = ng_me();
+    if (me < v->nmon)
+        v->mon[me].pad = mine;
+    for (int k = 0; k < v->nmon; k++)                /* the others' as the host's snapshot has them */
+        if (k != me) {
+            if (ng_have_last)
+                ng_pad_in(&ng_last.pad[k], &v->mon[k].pad, 0);
+            else
+                memset(&v->mon[k].pad, 0, sizeof v->mon[k].pad);
+        }
 }
 
 /* the test pads' special moves (tools/net_test.ps1 -GuestMoves for the guest's monster, -HostMoves for the host's),
@@ -1904,6 +2132,146 @@ static void ng_moves_pad(double t, Pad *p, int *was)
     p->held[btn] = (uint8_t)on;
     p->pressed[btn] = (uint8_t)(on && !*was);
     *was = on;
+}
+
+/* ---- the player slots in the game (net.h): the host drives each slot's monster by who has it. Online: its guest's
+ * pad. Local: this PC's keys or controller for it (the pad main.c already set). Open or kept for a guest who dropped
+ * out: nobody, so a still pad; its monster takes no damage (netgame_shielded) and is drawn grey with a big label over
+ * its head (ng_menu_labels) on every screen. A press on this PC's keys or controller for that player (a button, or a
+ * stick pushed from rest) takes it: a local player, until the panel's Open for online. A guest who joins later gets
+ * another open slot or "The game is full" */
+static int ng_idle(const Viewer *v, int k)           /* nobody plays slot k's monster */
+{
+    if (net_role() == NET_OFF || k < 1 || k >= v->nmon || k >= net_slots() || v->mon[k].bot)
+        return 0;
+    int st = net_slot_state(k, NULL);
+    return st == NSL_OPEN || st == NSL_RESERVED;
+}
+
+static int netgame_shielded(const Mon *mo)
+{
+    const Viewer *v = g_ngv;
+    if (!(v && mo && mo->v == v && ng_idle(v, mo->slot)))
+        return 0;
+    static double said;                              /* (the log: once a second at most) */
+    if (net_now() - said > 1) {
+        said = net_now();
+        net_log("monster %d: a hit ignored, nobody plays it (hp %.0f)", mo->slot, mo->hp);
+    }
+    return 1;
+}
+
+static void ng_dropin(Viewer *v, int k);
+
+static void ng_slots_pads(Viewer *v)
+{
+    static float rest[MONSTERS];                     /* a local stick's push since it was at rest */
+    if (!v->play || !have_monster(v) || !v->game || v->shell)
+        return;
+    for (int k = 1; k < net_slots() && k < MONSTERS; k++)   /* a guest in a slot the game has no player for: added */
+        if (k == v->nmon && net_slot_state(k, NULL) == NSL_ONLINE)
+            ng_dropin(v, k);
+    ng_guest_menu = 0;
+    for (int k = 1; k < v->nmon && k < net_slots(); k++) {
+        Mon *mo = &v->mon[k];
+        if (mo->bot)
+            continue;
+        int st = net_slot_state(k, NULL);
+        if (st == NSL_ONLINE) {
+            NetPad np;
+            int got = net_remote_pad(k, &np);
+            if (got && (np.held & NET_PAD_MENU))
+                ng_guest_menu |= 1 << k;
+            if (got)
+                ng_pad_in(&np, &mo->pad, 1);
+            else
+                memset(&mo->pad, 0, sizeof mo->pad);
+            if (mo->drive == DRIVE_COMPUTER)
+                mo->drive = DRIVE_KEYS2;
+            rest[k] = 0;
+            continue;
+        }
+        if (st == NSL_LOCAL)
+            continue;                                /* (this PC's: as main.c set it) */
+        int press = 0;
+        for (int b = MV_UP; b <= MV_L3; b++)
+            press |= mo->pad.pressed[b];
+        float push = fmaxf(fabsf(mo->pad.lx), fabsf(mo->pad.ly));
+        if (push < 0.2f)
+            rest[k] = 1;                             /* (at rest: a push from here counts) */
+        if (mo->drive != DRIVE_COMPUTER && (press || (rest[k] && push > 0.6f))) {
+            net_slot_local(k, 1);
+            continue;                                /* (the press plays at once) */
+        }
+        memset(&mo->pad, 0, sizeof mo->pad);
+    }
+}
+
+/* a guest in slot k of a game with k players (a 1 player game hosted): the block set up again with it as player k + 1,
+ * the way a game with that many players starts (setup_players and open_city, as the guest's ng_follow does: the
+ * scene's monster, the game's players and lives, the HUD's panels), what was played kept: every building as it is
+ * (Building is plain data: as a late guest takes the host's, ng_state_building), player 1's place, health, energy,
+ * score and lives. The people, the army, the traffic and the edibles start the block afresh; the block's intro plays
+ * again. The new player's monster is the one its guest asked for in its hello (its last), else one not the host's */
+static void ng_building_put(Viewer *v, uint32_t i, const Building *nb);
+
+static void ng_dropin(Viewer *v, int k)
+{
+    if (k != v->nmon || k < 1 || k >= MONSTERS || v->attract)
+        return;
+    int m = net_slot_monster(k);
+    if (m < 0 || m >= (int)v->nmonsters || m == v->mon[0].monster) {
+        static const char *const PICK[] = { "Lizzie", "George", "Ralph" };
+        m = -1;
+        for (int i = 0; i < 3 && m < 0; i++) {
+            int c = monster_index(v, PICK[i]);
+            if (c >= 0 && c != v->mon[0].monster)
+                m = c;
+        }
+        if (m < 0)
+            m = v->mon[0].monster;
+    }
+    net_log("drop-in: %s joins as player %d (%s block %d set up again with %d players)", v->monsters[m], k + 1,
+            CITIES[v->city_index], v->block, k + 1);
+    uint32_t nb = v->scene.nbuildings;
+    Building *kept = nb ? malloc(sizeof(Building) * nb) : NULL;
+    for (uint32_t i = 0; kept && i < nb; i++)
+        kept[i] = v->scene.buildings[i].b;
+    GameNetSync gs;
+    game_net_get(v->game, &gs);
+    Mon was = v->mon[0];
+    int pick[MONSTERS];
+    for (int i = 0; i < MONSTERS; i++)
+        pick[i] = i < k ? v->mon[i].monster : i == k ? m : -1;
+    game_free(v->game);
+    v->game = NULL;
+    v->game_built = 0;
+    setup_players(v, k + 1, 0, pick);
+    if (open_city(v, v->city_index, v->block, -1) != 0) {
+        net_log("drop-in: cannot open %s", CITIES[v->city_index]);
+        free(kept);
+        return;
+    }
+    v->play = have_monster(v);
+    for (int i = 0; v->play && i < v->nmon; i++)
+        if (v->mon[i].have_graph)
+            play_state(&v->mon[i]);
+    for (uint32_t i = 0; kept && i < nb && i < v->scene.nbuildings; i++)
+        ng_building_put(v, i, &kept[i]);
+    free(kept);
+    game_net_put(v->game, &gs, 1);                   /* (player 1's score and lives) */
+    Mon *mo = &v->mon[0];
+    mo->mx = was.mx; mo->my = was.my; mo->mz = was.mz < 0 ? 0 : was.mz;
+    mo->heading = was.heading;
+    mo->hp = was.hp;
+    mo->power.energy = was.power.energy;
+    scene_monster_place(&v->scene, 0, mo->mx, mo->my, mo->mz, mo->heading);
+    Mon *nw = &v->mon[k];                            /* the new one beside player 1, in the street */
+    nw->mx = was.mx + 17;
+    nw->my = -18;
+    nw->mz = 0;
+    scene_monster_place(&v->scene, k, nw->mx, nw->my, nw->mz, nw->heading);
+    ng_set_world(v);                                 /* (the guest is told the new world: it loads it) */
 }
 
 /* the players' pads are set (keys_pad / pad_to_pad): the host's player 2 is the guest's pad; the guest sends its own
@@ -1940,17 +2308,11 @@ static void netgame_pads(Viewer *v, const Window *w)
         if (hostdo && *hostdo && _strnicmp(hostdo, "after ", 6))
             hostdo = play_script(v, hostdo, 0.75f);
     }
+    if (net_role() == NET_HOST)
+        ng_slots_pads(v);                            /* the guests' pads, local players taking a slot, idle ones */
     if (!net_live() || v->nmon < 2)
         return;
     if (net_role() == NET_HOST) {
-        NetPad np;
-        int got = net_remote_pad(&np);
-        ng_guest_menu = got && (np.held & NET_PAD_MENU);
-        if (got)
-            ng_pad_in(&np, &v->mon[1].pad, 1);
-        else
-            memset(&v->mon[1].pad, 0, sizeof v->mon[1].pad);
-        v->mon[1].drive = DRIVE_KEYS2;
         if (getenv("RAMPAGE_NET_HOSTMOVES")) {       /* tools/net_test.ps1 -HostMoves: the host's monster's special
                                                       * moves in real time (--do's waits run at once) */
             static double t0;
@@ -2140,11 +2502,12 @@ static void netgame_after_step(Viewer *v)
         ng_puppets_send(v);
     } else {
         ng_state_ask(v);
-        if (v->nmon > 1)
-            ng_predict_keep(&v->mon[1]);
+        if (v->nmon > ng_me())
+            ng_predict_keep(&v->mon[ng_me()]);
         ng_apply_snap(v);
         ng_flow_run(v);
         ng_puppets_apply(v);
+        ng_test_desync(v);
         ng_digest_send(v);
     }
 }
@@ -2156,7 +2519,7 @@ static const char *netgame_title(const Viewer *v)
     int role = net_role();
     if (role == NET_OFF)
         return "";
-    int k = role == NET_HOST ? 0 : 1;
+    int k = ng_me();
     const char *name = k < v->nmon && v->mon[k].monster >= 0 ? v->monsters[v->mon[k].monster] : NULL;
     snprintf(t, sizeof t, "%s (player %d%s%s) ", role == NET_HOST ? "HOST" : "GUEST", k + 1, name ? ", " : "",
              name ? name : "");
@@ -2186,42 +2549,90 @@ static void netgame_camera(const float pos[3], const float rows[3][3], float fov
     memcpy(ng_cam.rows, rows, sizeof ng_cam.rows);
     ng_cam.fov = fov_deg;
     ng_cam.set = 1;
+    const Viewer *v = g_ngv;                         /* the monsters nobody plays: grey (render_gl.c draw_grey) */
+    for (int k = 0; v && k < v->nmon && k < MONSTERS; k++) {
+        Instance *in = mon_in(&v->mon[k]);
+        if (in)                                      /* (RAMPAGE_NET_TESTGREY: player 2 on, offline too: a --shot of
+                                                      * the look) */
+            in->net_grey = ng_idle(v, k) || (k == 1 && getenv("RAMPAGE_NET_TESTGREY"));
+    }
+}
+
+/* monster k's head on the screen (sx, sy: pixels from the top left), 0 behind the camera */
+static int ng_head_screen(const Viewer *v, const Window *w, int k, float *sx, float *sy)
+{
+    float f = 1.0f / tanf(ng_cam.fov * 3.14159265f / 360.0f), aspect = (float)w->width / w->height;
+    const Mon *mo = &v->mon[k];
+    float p[3] = { mo->mx - ng_cam.pos[0], mo->my - ng_cam.pos[1], mo->mz + 9 * (mo->scale > 0 ? mo->scale : 1) -
+                   ng_cam.pos[2] };
+    float x = p[0] * ng_cam.rows[0][0] + p[1] * ng_cam.rows[0][1] + p[2] * ng_cam.rows[0][2];
+    float d = p[0] * ng_cam.rows[1][0] + p[1] * ng_cam.rows[1][1] + p[2] * ng_cam.rows[1][2];
+    float y = p[0] * ng_cam.rows[2][0] + p[1] * ng_cam.rows[2][1] + p[2] * ng_cam.rows[2][2];
+    if (d < 1)
+        return 0;
+    *sx = (1 + f / aspect * x / d) * 0.5f * w->width;
+    *sy = (1 - f * y / d) * 0.5f * w->height;
+    if (*sy < 40)                                    /* (a monster high up: the label kept on the screen) */
+        *sy = 40;
+    return 1;
+}
+
+/* the player slots nobody plays, over their monsters' heads on every screen, big for a stream to read: DISCONNECTED
+ * (red) with the minute its player has to come back, WAITING FOR PLAYER (yellow) once the slot is open to anyone. A
+ * guest's own monster never has one */
+static void ng_slot_labels(const Viewer *v, const Window *w)
+{
+    if (net_role() == NET_OFF || !ng_cam.set || !v->play || !w->width || !w->height || v->shell)
+        return;
+    if (net_role() == NET_GUEST && !net_live())
+        return;
+    for (int k = 1; k < v->nmon && k < MONSTERS; k++) {
+        if (!ng_idle(v, k) || (net_role() == NET_GUEST && k == ng_me()))
+            continue;
+        const Mon *mo = &v->mon[k];
+        const Instance *in = mon_in(mo);
+        float sx, sy;
+        if ((in && in->hidden) || !ng_head_screen(v, w, k, &sx, &sy))
+            continue;
+        double left = 0;
+        if (net_slot_state(k, &left) == NSL_RESERVED) {
+            char sub[32];
+            int s = (int)(left + 0.99);
+            snprintf(sub, sizeof sub, "Rejoin %d:%02d", s / 60, s % 60);
+            netui_label_big(sx, sy - 30, "DISCONNECTED", sub, 0xFF4040);
+        } else
+            netui_label_big(sx, sy - 30, "WAITING FOR PLAYER", NULL, 0xFFD030);
+    }
 }
 
 /* "IN MENU" over the head of a player who has a menu up (the other player's, as the snapshots and pads say) */
 static void ng_menu_labels(const Viewer *v, const Window *w)
 {
+    ng_slot_labels(v, w);
     if (!net_live() || !ng_cam.set || !v->play || !w->width || !w->height)
         return;
-    int menu = net_role() == NET_HOST ? (ng_guest_menu ? 2 : 0) : ng_have_last ? (ng_last.menu & 1) : 0;
+    int menu = net_role() == NET_HOST ? ng_guest_menu : ng_have_last ? (ng_last.menu & ~(1 << ng_me())) : 0;
     if (getenv("RAMPAGE_NET_TRACE")) {
         static int was = -1;
         if (menu != was) { net_log("menu bits %d", menu); was = menu; }
     }
-    float f = 1.0f / tanf(ng_cam.fov * 3.14159265f / 360.0f), aspect = (float)w->width / w->height;
-    for (int k = 0; k < 2 && k < v->nmon; k++) {
+    for (int k = 0; k < MONSTERS && k < v->nmon; k++) {
         float said_age = 0;
         const char *said = netui_chat_said(k, &said_age);
         if (!(menu >> k & 1) && !(said && said_age < 5))   /* a menu up, or a line said in the last 5 s */
             continue;
-        const Mon *mo = &v->mon[k];
-        float p[3] = { mo->mx - ng_cam.pos[0], mo->my - ng_cam.pos[1], mo->mz + 9 * (mo->scale > 0 ? mo->scale : 1) -
-                       ng_cam.pos[2] };
-        float x = p[0] * ng_cam.rows[0][0] + p[1] * ng_cam.rows[0][1] + p[2] * ng_cam.rows[0][2];
-        float d = p[0] * ng_cam.rows[1][0] + p[1] * ng_cam.rows[1][1] + p[2] * ng_cam.rows[1][2];
-        float y = p[0] * ng_cam.rows[2][0] + p[1] * ng_cam.rows[2][1] + p[2] * ng_cam.rows[2][2];
-        if (d < 1)
+        if (ng_idle(v, k))
+            continue;                                /* (its big label instead) */
+        float sx, sy;
+        if (!ng_head_screen(v, w, k, &sx, &sy))
             continue;
-        float sx = (1 + f / aspect * x / d) * 0.5f * w->width, sy = (1 - f * y / d) * 0.5f * w->height;
-        if (sy < 40)                                 /* (a monster high up: the label kept on the screen) */
-            sy = 40;
         char bubble[48];
         snprintf(bubble, sizeof bubble, "%.40s%s", said && said_age < 5 && !(menu >> k & 1) ? said : "IN MENU",
                  said && said_age < 5 && !(menu >> k & 1) && strlen(said) > 40 ? "..." : "");
         netui_label(sx, sy, bubble);
         if (getenv("RAMPAGE_NET_TRACE")) {
             static double said;
-            if (net_now() - said > 1) { said = net_now(); net_log("label %d at %.0f %.0f (d %.1f)", k, sx, sy, d); }
+            if (net_now() - said > 1) { said = net_now(); net_log("label %d at %.0f %.0f", k, sx, sy); }
         }
     }
 }

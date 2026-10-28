@@ -26,11 +26,49 @@ enum NetMsg {
     NM_MENU,         /* both ways, reliable: the menus' input (netrep_menu.c) */
     NM_STATE,        /* both ways, reliable: the guest asks for the block's state (a join, a reconnect, a new block);
                       * the host sends every building whole, the edibles' slots, the challenge's upgrade (netgame.c) */
-    NM_CHAT,         /* both ways, reliable: a chat line (netgame.c): who (0 the host, 1 the guest), the text */
+    NM_CHAT,         /* both ways, reliable: a chat line (netgame.c): who (the player slot: 0 the host), the text; the
+                      * host passes a guest's on to the others */
+    NM_SLOTS,        /* host -> guests, reliable, on change and each second while one is kept: every player slot's
+                      * state (NSL_*) and a kept one's seconds left (net_w_slots) */
 };
 
-#define NET_PROTO 1
+/* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
+ * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS */
+#define NET_PROTO 2
 #define NET_PORT 27960
+
+/* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
+ * guest plays player 2); everything below is sized NET_SLOTS so 4 players later is no new wire format */
+#define NET_SLOTS 4
+#define NET_RESERVE_S 60.0                           /* a dropped guest's slot is kept this long for its token */
+enum {
+    NSL_OPEN,        /* nobody plays it: waiting for a player (its monster idle, untouchable, grey) */
+    NSL_ONLINE,      /* a guest plays it */
+    NSL_RESERVED,    /* its guest dropped: kept NET_RESERVE_S for that guest's token (its monster as NSL_OPEN's) */
+    NSL_LOCAL,       /* a player on the host's PC took it (its keys or controller): it is theirs until the panel's
+                      * Open for online */
+    NSL_HOST,        /* slot 0 */
+};
+typedef struct { uint8_t state; uint64_t token; double until; } NetSlotPick;
+/* the slot a guest that says `token` (0 none) gets, of slots 1 .. n - 1: its own kept or open one (the same token), else
+ * the first open one; NET_PICK_RESERVED when only kept ones are left (*wait: the soonest one's seconds left),
+ * NET_PICK_FULL when every one is played */
+enum { NET_PICK_FULL = -1, NET_PICK_RESERVED = -2 };
+int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, double *wait);
+
+/* NM_HELLO after its type byte */
+typedef struct { uint32_t proto, build, world; uint64_t token; int monster; } NetHello;
+void net_w_hello(NetBuf *b, const NetHello *h);
+void net_r_hello(NetBuf *b, NetHello *h);
+/* NM_SLOTS after its type byte: n, then each slot's state and seconds left */
+typedef struct { int n; uint8_t state[NET_SLOTS]; float left[NET_SLOTS]; } NetSlots;
+void net_w_slots(NetBuf *b, const NetSlots *s);
+void net_r_slots(NetBuf *b, NetSlots *s);
+/* the guest's rejoin file (netrejoin.cfg): "rampage-rejoin 1 <token hex> <unix time>". 0 ok */
+int net_rejoin_format(char *out, int cap, uint64_t token, long long when);
+int net_rejoin_parse(const char *text, uint64_t *token, long long *when);
+void net_w_u64(NetBuf *b, uint64_t v);
+uint64_t net_r_u64(NetBuf *b);
 
 static inline NetBuf netbuf(void *p, int cap) { NetBuf b = { (uint8_t *)p, 0, cap, 0 }; return b; }
 void net_w_u8(NetBuf *b, uint32_t v);

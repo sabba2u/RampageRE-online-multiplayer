@@ -40,6 +40,13 @@ describe("the registry", () => {
     expect(() => games.heartbeat(g.code, { token: "nope" })).toThrow(/not your game/);
     games.heartbeat(g.code.toLowerCase(), { token: g.token, players: 2, city: "Chicago 2" });
     expect(games.get(g.code)).toMatchObject({ players: 2, city: "Chicago 2" });
+    // a guest dropped out: its slot kept for it, "1 / 2 (1 rejoining)"; never more than max with the players
+    games.heartbeat(g.code, { token: g.token, players: 1, reserved: 1 });
+    expect(games.get(g.code)).toMatchObject({ players: 1, max: 2, reserved: 1 });
+    expect(games.public(games.get(g.code)!)).toMatchObject({ reserved: 1 });
+    games.heartbeat(g.code, { token: g.token, players: 2 });
+    expect(games.get(g.code)).toMatchObject({ players: 2, reserved: 0 });
+    expect(() => games.heartbeat(g.code, { token: g.token, reserved: 9 })).toThrow(/reserved/);
     games.unregister(g.code, g.token);
     expect(games.list()).toHaveLength(0);
     expect(() => games.heartbeat(g.code, { token: g.token })).toThrow(/register again/);

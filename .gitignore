@@ -55,3 +55,4 @@ lookfx.cfg
 lobby/node_modules/
 lobby/config.json
 netlobby.cfg
+netrejoin.cfg

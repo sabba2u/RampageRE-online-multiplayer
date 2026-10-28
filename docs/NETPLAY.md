@@ -1,7 +1,8 @@
 # Online play (port extra, work in progress)
 
 Two players on two PCs: the **host** (player 1) runs the game; the **guest** (player 2) plays on their own PC and sees
-the host's game. Design: [superpowers/specs/2026-10-27-online-multiplayer-design.md](superpowers/specs/2026-10-27-online-multiplayer-design.md);
+the host's game. A guest who drops out keeps their place a minute, a 1 player game can be joined, and the host can
+re-synchronize everyone: "Player slots" and "Re-synchronizing" below. Design: [superpowers/specs/2026-10-27-online-multiplayer-design.md](superpowers/specs/2026-10-27-online-multiplayer-design.md);
 plan and status: [superpowers/plans/2026-10-27-online-multiplayer-phase1.md](superpowers/plans/2026-10-27-online-multiplayer-phase1.md).
 
 ## Playing
@@ -59,6 +60,79 @@ autosave, as the game's `allow_save`); a guest playing without a profile keeps t
 own front end shows the host's unlocks while it mirrors the host's screens (it is the host's Monster Select) and its
 own again once the host is gone. Not kept: King of the City / of the World and Timed Run results (the game keeps none
 of those in a profile either), and the Wii's five-star unlocks.
+
+## Player slots: dropping out, coming back, joining late
+
+The host's game has **player slots** (net.c, NET_PROTO 2): slot 0 is the host's player 1, slot k plays the game's
+monster k. The session is built for up to 4 (`NET_SLOTS`: a transport peer per slot, nettransport.c taking up to
+`NT_PEERS` connections; each slot its own pad, pad acks, digest runs; the slot in NM_WELCOME, every slot's pad ack and
+menu bit in NM_SNAP); a hosted game uses 2 today (`NET_GAME_SLOTS`), and only that is tested. Over Steam there is one
+peer: one guest at a time.
+
+A slot is **open** (nobody plays it), **online** (a guest does), **kept** (its guest dropped out), **local** (a player
+on the host's PC took it) or the host's. The guests are told every slot's state (NM_SLOTS, on change and each second
+while one is kept). The panel lists the slots ("Player 2: online, Lizzie", "disconnected, rejoin 0:47", "local
+controller", "waiting for a player").
+
+- **Rejoin token.** NM_WELCOME gives the guest a token (64 bits, made by the host for that slot). The guest keeps it in
+  memory and in `netrejoin.cfg` beside the game (`rampage-rejoin 1 <hex> <unix time>`; `RAMPAGE_NET_REJOIN` names
+  another file; older than an hour it is not offered), and offers it in every NM_HELLO, so a guest whose game crashed
+  and was started again comes back too, whichever way it joins (code through the lobby, address, rampage:// link): the
+  host matches the token, not the address.
+- **Dropping out.** When a guest's connection ends (ENet's timeout: 5 to 10 s after a crash; at once on Leave), its
+  slot is kept `NET_RESERVE_S` (60 s) for its token. The guest's monster stands still (a still pad), takes no damage
+  (`netgame_shielded`, the NET: hook first in main.c's `monster_take`: no HP lost, no hit reaction; it can still be
+  grabbed or pushed), is drawn grey (`Instance.net_grey`, render_gl.c `draw_grey`: each opaque part drawn again over
+  itself, a flat grey at 66 %, cut out by its texture's alpha; the rage glow and the hit effects are effects drawn
+  after it, as before) and has **DISCONNECTED** (red) with **Rejoin 0:47** over its head, big and bold for a stream, on
+  every screen (netui.cpp `netui_label_big`). The chat says "Lizzie disconnected - 60 s to rejoin". Anyone else who
+  joins meanwhile is told "A player who dropped out has their place kept for 0:47 more; try again then" (if no other
+  slot is open). The same player coming back gets the same slot and monster as they are, mid-round ("Lizzie rejoined").
+- **After the minute** the slot is open: **WAITING FOR PLAYER** (yellow), grey and untouchable still ("Slot open:
+  waiting for a player"); the next guest to join (anyone) takes over that monster as it is: the same monster, score,
+  health and lives ("A player joined as Lizzie"). With every slot played: "The game is full".
+- **Before anyone joined**: a hosted 2 Player game's player 2 is an open slot too (WAITING FOR PLAYER, grey), unless a
+  player on the host's PC takes it.
+- **A local player** taking a slot: a press of player 2's keys (the numpad, DRIVE_KEYS2) or controller (pad slot 1)
+  on the host's PC, a button or the stick pushed from rest, while the slot is open or kept, makes it **local**: the
+  label and the grey go, every screen shows "Local controller took over Player 2" (a toast and a chat line), the lobby
+  counts it as taken, and a kept slot's token is void (its player coming back is told the game is full, unless another
+  slot is open). The local player keeps it when they stop pressing: nothing reverts by itself. The host's panel gives
+  it back with **Open for online** (waiting for a player again; this PC's keys for it are ignored until pressed
+  again). An online slot has **Kick**: its guest is told "The host removed you from the game" (its token deleted
+  there), the slot is open at once with no minute kept, the token void.
+- **A 1 Player game** can be hosted and joined: the host's world counts with one player, and a guest in slot 1 of a
+  game with one player is **dropped in** (netgame.c `ng_dropin`): the block is set up again with two players the way a
+  2 player block starts (`setup_players`, `open_city`: the scene's second monster, the game's players and lives, the
+  HUD's panels, the reveal's extra monster moved on a slot), then every building is put back as it was (whole, as a
+  late guest takes the host's), and player 1's place, health, energy, score and lives. Player 2's monster is the one
+  the guest's hello asked for (the monster the guest played last; else Lizzie, George or Ralph, whichever is not the
+  host's), standing in the street beside player 1. Then it is a 2 Player game. **Limited:** the people, the army, the
+  traffic, the edibles and the challenge start the block afresh, the block's intro plays again, and the clock is the
+  new block's. The guest's hello reaches the host before the drop-in, so its first NM_WELCOME names the 1 player world
+  (the guest logs "cannot load the host's game (1 players)") and the 2 player one follows a frame later.
+
+The lobby lists `players` (the host, guests and local players), `max` (the slots) and `reserved` (kept slots): "1 / 2
+(1 rejoining)"; a game whose slots are all played or kept is greyed as full.
+
+Not done: 3 and 4 player online (the game's GameNetSync has 2 players' scores and lives; the guests' menus, NM_MENU,
+are player 2's; the building state a guest asks for goes to every guest), a kept slot's monster not being targeted by
+the army (it only takes no damage), and the label over a kept monster that is lying defeated or turned human (the
+label is shown only while its model is).
+
+## Re-synchronizing
+
+A safety net for a difference the digest finds and nothing else mends: **Re-synchronize players** in the host's panel
+(or `/resync`) has every guest take the host's whole world again, without leaving; a guest's **Ask host to re-sync**
+(or `/resync`) asks the host, at most once in 5 s. The host sends NM_STATE NST_RESYNC to every guest and starts its
+out-of-sync counts again (`net_digest_reset`); each guest drops what it shows of its own (the snapshots it holds, every
+puppet channel's units and samples, its own monster's prediction, its block's state, taking no building change until
+the new one) and asks for the block's state as a late joiner does: every building whole, the edibles' slots, the
+challenge's upgrade, the street objects' lasting effects, then NST_DONE. The monsters, the game's flow and state, the
+clock, the score and lives, the HUD and the menus' state come in every snapshot anyway, and the puppets in their
+channels' next ones. Nothing is loaded again. Both chats say "Re-synchronized"; both logs say what was resent.
+`RAMPAGE_NET_TESTDESYNC=secs[,resync secs]` (the guest; tests only) damages a building on the guest alone `secs` after
+it came in and asks for a resync at `resync secs`.
 
 ## Hosting over the internet: the port forward (UPnP)
 
@@ -202,11 +276,11 @@ each player sets them up once, from the page:
 
 | | |
 |---|---|
-| `POST /games` | name, monster, city, players, max, port, build (8 hex), external?, lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
+| `POST /games` | name, monster, city, players, max, reserved? (slots kept for a player who dropped out), port, build (8 hex), external?, lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
 | `PUT /games/<code>` | the heartbeat: `token` (or `X-Token`) and any changed fields. 404: forgotten, list again; 403: not your token |
 | `DELETE /games/<code>` | unlist, with the token |
 | `GET /games`, `GET /games/<code>` | JSON, each game with `join`: the address for whoever asked |
-| `GET /games.txt`, `GET /games/<code>.txt` | `rampage-lobby 1`, then a line per game, tab-separated: code, join (`-` none), players, max, build, name, monster, city |
+| `GET /games.txt`, `GET /games/<code>.txt` | `rampage-lobby 1`, then a line per game, tab-separated: code, join (`-` none), players, max, build, name, monster, city, reserved (a ninth field; a reader of eight skips it) |
 | `GET /` `/install.ps1` `/install-linux.sh` `/health` | the page, the link installers, `rampage_lobby` |
 
 Colyseus clients join `lobby` (the built-in LobbyRoom): each listed game is a `game` room whose id is its code and whose
@@ -227,6 +301,12 @@ tools\net_test.ps1 -GuestMoves -HostMoves -GameArgs "Chicago 1 --players 2 --che
 tools\net_test.ps1 -Seconds 0                leave both running to play them yourself
 tools\net_test.ps1 -JoinDelay 30 -HostDo "wait 3, hitcell 3 0 0 10, ..."
                                              the guest joins 30 s late; the host's monster plays --do's words first
+tools\net_slots_test.ps1 [-Lag 80 -Loss 3]   the guest killed mid-round and started again with its token (the same
+                                             slot and monster), then left out past the minute (WAITING FOR PLAYER),
+                                             then a new guest takes the monster over; screenshots slots_*.png
+tools\net_slots_test.ps1 -OnePlayer -Quick   a 1 player game hosted, the guest drops in as player 2
+tools\net_local_test.ps1                     player 2 taken by the host's numpad, then a guest told "The game is full"
+RAMPAGE_NET_TESTGREY=1 rampage.exe ... --shot grey.png   player 2 drawn grey, offline (the look of a slot nobody plays)
 tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
                                              the words 35 s (real time) after the guest came in. --do's waits run
                                              the game's frames at once, with no network: before "after" only
@@ -251,7 +331,9 @@ and miniupnpc). Upstream's files have only these, each marked `NET:`:
 | `build.bat` | the net sources in SRC; `NETINC`, `NET`, `:net_libs` (ENet, ImGui and miniupnpc built once into `build\net`); `-lws2_32 -lwinmm -ldwmapi -liphlpapi` |
 | `src/main.c` | `netgame_shell_input` in `shell_frame` (the guest's menu presses go to the host); `netgame_game_input` before a game's menus take the pad; `netgame_shell_start` before `shell_enter` from a game; `card_job` writes no profile from the guest's game (its own front end's popup writes); `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
 | `build.bat`, `src/main.c` (the lobby) | `src\netlobby.c` in SRC and `-lwinhttp`; `#include "netlobby.h"` and `--lobby <url>` (netlobby_set_url) in the argument loop |
-| `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert) |
+| `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert); `Renderer.grey` and `draw_grey` after an opaque part of an instance with `net_grey` (a player slot nobody plays) |
+| `src/city.h` | `Instance.net_grey` (0 offline) |
+| `src/main.c` (monster_take) | `netgame_shielded` first: a player slot nobody plays takes no hit |
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
 | `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest); `#include "netshell.c"` at the end of shell.c and `ShellNetView`, `shell_net_view`, `shell_net_mirror` in shell.h (the guest's front end made the host's) |
 | `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score); `game_net_follow`, `game_net_flow_get` / `_put`, `game_net_push`, `game_net_tap` (the host's flow); the follow gate in `game_update`, the tap in `game_events` |

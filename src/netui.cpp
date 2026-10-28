@@ -19,16 +19,87 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 static int g_ready, g_open;
 static ImFont *g_bold;                               /* the chat's and the labels' font (NULL: the panel's) */
 extern "C" void *netui_bold_font(void) { return g_bold; }
-static struct { float x, y; char text[32]; } g_labels[4];
+static ImFont *g_big;                                /* the big labels' (NULL: g_bold scaled) */
+static struct { float x, y; char text[48], sub[32]; int big; uint32_t rgb; } g_labels[8];
 static int g_nlabels;
+static char g_toast[128];
+static double g_toast_at = -100;
 
 extern "C" void netui_label(float x, float y, const char *text)
 {
-    if (g_nlabels < 4) {
+    if (g_nlabels < 8) {
         g_labels[g_nlabels].x = x;
         g_labels[g_nlabels].y = y;
         snprintf(g_labels[g_nlabels].text, sizeof g_labels[0].text, "%s", text);
+        g_labels[g_nlabels].sub[0] = 0;
+        g_labels[g_nlabels].big = 0;
         g_nlabels++;
+    }
+}
+
+extern "C" void netui_label_big(float x, float y, const char *text, const char *sub, uint32_t rgb)
+{
+    if (g_nlabels < 8) {
+        g_labels[g_nlabels].x = x;
+        g_labels[g_nlabels].y = y;
+        snprintf(g_labels[g_nlabels].text, sizeof g_labels[0].text, "%s", text);
+        snprintf(g_labels[g_nlabels].sub, sizeof g_labels[0].sub, "%s", sub ? sub : "");
+        g_labels[g_nlabels].big = 1;
+        g_labels[g_nlabels].rgb = rgb;
+        g_nlabels++;
+    }
+}
+
+extern "C" void netui_toast(const char *text)
+{
+    snprintf(g_toast, sizeof g_toast, "%s", text);
+    g_toast_at = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0;
+}
+
+/* the toast: 4 s in the middle of the screen, fading over its last second */
+static void toast(void)
+{
+    double age = ImGui::GetTime() - g_toast_at;
+    if (!g_toast[0] || age < 0 || age > 4)
+        return;
+    float a = age > 3 ? (float)(4 - age) : 1;
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    ImFont *f = g_bold ? g_bold : ImGui::GetFont();
+    float fs = (g_bold ? g_bold->FontSize : ImGui::GetFontSize()) * 1.4f;
+    ImVec2 ds = ImGui::GetIO().DisplaySize, sz = f->CalcTextSizeA(fs, 1e9f, 0, g_toast);
+    ImVec2 p(ds.x * 0.5f - sz.x / 2, ds.y * 0.38f - sz.y / 2);
+    dl->AddRectFilled(ImVec2(p.x - 18, p.y - 10), ImVec2(p.x + sz.x + 18, p.y + sz.y + 10),
+                      IM_COL32(15, 15, 25, (int)(215 * a)), 8);
+    dl->AddRect(ImVec2(p.x - 18, p.y - 10), ImVec2(p.x + sz.x + 18, p.y + sz.y + 10), IM_COL32(140, 240, 150, (int)(230 * a)),
+                8, 0, 2);
+    dl->AddText(f, fs, p, IM_COL32(235, 255, 235, (int)(255 * a)), g_toast);
+}
+
+/* a big one: its colour, a black outline under the text, the second line smaller and white under it */
+static void label_big(ImDrawList *dl, int i)
+{
+    ImFont *f = g_big ? g_big : g_bold ? g_bold : ImGui::GetFont();
+    float fs = g_big ? g_big->FontSize : (g_bold ? g_bold->FontSize : ImGui::GetFontSize()) * 2;
+    ImFont *f2 = g_bold ? g_bold : ImGui::GetFont();
+    float fs2 = (g_bold ? g_bold->FontSize : ImGui::GetFontSize()) * 1.15f;
+    const char *t = g_labels[i].text, *sub = g_labels[i].sub;
+    ImVec2 sz = f->CalcTextSizeA(fs, 1e9f, 0, t), sz2 = sub[0] ? f2->CalcTextSizeA(fs2, 1e9f, 0, sub) : ImVec2(0, 0);
+    float w = sz.x > sz2.x ? sz.x : sz2.x, h = sz.y + (sub[0] ? sz2.y + 2 : 0);
+    ImVec2 p(g_labels[i].x - w / 2, g_labels[i].y - h);
+    uint32_t c = g_labels[i].rgb;
+    ImU32 col = IM_COL32(c >> 16 & 255, c >> 8 & 255, c & 255, 255);
+    dl->AddRectFilled(ImVec2(p.x - 14, p.y - 6), ImVec2(p.x + w + 14, p.y + h + 6), IM_COL32(10, 10, 15, 210), 8);
+    dl->AddRect(ImVec2(p.x - 14, p.y - 6), ImVec2(p.x + w + 14, p.y + h + 6), col, 8, 0, 3);
+    ImVec2 tp(g_labels[i].x - sz.x / 2, p.y);
+    for (int dx = -2; dx <= 2; dx += 2)              /* (an outline: readable over any sky on a stream) */
+        for (int dy = -2; dy <= 2; dy += 2)
+            if (dx || dy)
+                dl->AddText(f, fs, ImVec2(tp.x + dx, tp.y + dy), IM_COL32(0, 0, 0, 230), t);
+    dl->AddText(f, fs, tp, col, t);
+    if (sub[0]) {
+        ImVec2 sp(g_labels[i].x - sz2.x / 2, p.y + sz.y + 2);
+        dl->AddText(f2, fs2, ImVec2(sp.x + 1.5f, sp.y + 1.5f), IM_COL32(0, 0, 0, 230), sub);
+        dl->AddText(f2, fs2, sp, IM_COL32(255, 255, 255, 255), sub);
     }
 }
 
@@ -38,6 +109,10 @@ static void labels(void)                             /* "IN MENU" over a player'
     ImFont *f = g_bold ? g_bold : ImGui::GetFont();
     float fs = g_bold ? g_bold->FontSize : ImGui::GetFontSize();
     for (int i = 0; i < g_nlabels; i++) {
+        if (g_labels[i].big) {
+            label_big(dl, i);
+            continue;
+        }
         ImVec2 sz = f->CalcTextSizeA(fs, 1e9f, 0, g_labels[i].text), p(g_labels[i].x - sz.x / 2, g_labels[i].y - sz.y);
         dl->AddRectFilled(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(20, 20, 30, 200), 6);
         dl->AddRect(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(140, 240, 150, 230), 6);
@@ -67,6 +142,8 @@ extern "C" int netui_init(void *hwnd)
     if (GetFileAttributesA("C:\\Windows\\Fonts\\segoeuib.ttf") != INVALID_FILE_ATTRIBUTES)   /* the chat's and the
                                                       * labels': bold, a size up, easy to read over the game */
         g_bold = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 21.0f);
+    if (g_bold)                                      /* the player slots' big labels: the same, at 44 px */
+        g_big = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 44.0f);
     if (!ImGui_ImplWin32_InitForOpenGL(hwnd) || !ImGui_ImplOpenGL3_Init("#version 130")) {
         ImGui::DestroyContext();
         return -1;
@@ -109,6 +186,41 @@ static void status_line(void)
     int st = net_state();
     ImVec4 c = st == NETS_FAILED ? BAD : net_live() ? ON : OFF;
     ImGui::TextColored(c, "%s", net_state_text());
+}
+
+/* ---- the player slots (net.h): who plays each, and the host's two buttons: Open for online (a slot a player on this
+ * PC took, given back: waiting for a player again, this PC's keys for it ignored until pressed again) and Kick (an
+ * online player let go: the slot open at once, no minute kept for them, their rejoin token void) ---- */
+static void slots_section(int role)
+{
+    ImGui::Separator();
+    for (int k = 0; k < net_slots(); k++) {
+        double left = 0;
+        int st = net_slot_state(k, &left);
+        const char *name = netgame_slot_name(k);
+        char what[96];
+        switch (st) {
+        case NSL_HOST: snprintf(what, sizeof what, "host%s%s", name[0] ? ", " : "", name); break;
+        case NSL_ONLINE: snprintf(what, sizeof what, "%s%s%s", k == net_my_slot() && role == NET_GUEST ? "you, online" :
+                                  "online", name[0] ? ", " : "", name); break;
+        case NSL_LOCAL: snprintf(what, sizeof what, "local controller%s%s", name[0] ? ", " : "", name); break;
+        case NSL_RESERVED: snprintf(what, sizeof what, "disconnected, rejoin %d:%02d", (int)(left + 0.99) / 60,
+                                    (int)(left + 0.99) % 60); break;
+        default: snprintf(what, sizeof what, "waiting for a player"); break;
+        }
+        ImGui::PushID(k);
+        ImGui::TextColored(st == NSL_RESERVED ? BAD : st == NSL_OPEN ? OFF : ON, "Player %d: %s", k + 1, what);
+        if (role == NET_HOST && st == NSL_LOCAL) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Open for online"))
+                net_slot_local(k, 0);
+        } else if (role == NET_HOST && st == NSL_ONLINE) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Kick"))
+                net_slot_kick(k);
+        }
+        ImGui::PopID();
+    }
 }
 
 /* ---- the lobby (netlobby.h): the list of games online, join codes, the host's listing ---- */
@@ -187,9 +299,11 @@ static void lobby_section(void)
         ImGui::TableHeadersRow();
         for (int i = 0; i < netlobby_count(); i++) {
             const NetLobbyGame *g = netlobby_game(i);
-            int same = netlobby_same_build(g), full = g->players >= g->max, none = !strcmp(g->join, "-");
+            int same = netlobby_same_build(g), full = g->players + g->reserved >= g->max, none = !strcmp(g->join, "-");
             const char *why = !same ? "Another build of RampageRE: both players need the same one"
-                              : full ? "Full: it has its two players" : none ? "The lobby has no address for it" : NULL;
+                              : full ? (g->reserved ? "A player who dropped out has their place kept (60 s)"
+                                                    : "Full: every player slot is taken")
+                              : none ? "The lobby has no address for it" : NULL;
             ImGui::PushID(i);
             ImGui::TableNextRow();
             if (why)
@@ -203,7 +317,10 @@ static void lobby_section(void)
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(g->city[0] ? g->city : "in the menus");
             ImGui::TableNextColumn();
-            ImGui::Text("%d / %d", g->players, g->max);
+            if (g->reserved)
+                ImGui::Text("%d / %d (%d rejoining)", g->players, g->max, g->reserved);
+            else
+                ImGui::Text("%d / %d", g->players, g->max);
             ImGui::TableNextColumn();
             if (why) {
                 ImGui::PopStyleColor();
@@ -279,6 +396,14 @@ static void panel(void)
         }
         NetStats s = net_stats();
         ImGui::Text("Ping: %d ms", s.ping_ms);
+        slots_section(role);
+        if (net_live() && ImGui::Button(role == NET_HOST ? "Re-synchronize players" : "Ask host to re-sync"))
+            netgame_resync();                        /* (every guest takes the host's whole world again: netgame.c) */
+        if (net_live()) {
+            ImGui::SameLine();
+            ImGui::TextColored(OFF, role == NET_HOST ? "every guest takes your whole world again (/resync)"
+                                                     : "if your screen and the host's differ (/resync)");
+        }
         if (role == NET_GUEST) {                     /* the guest's own monster at once, the host's correcting it */
             bool p = netgame_predict() != 0;
             if (ImGui::Checkbox("Move my monster at once (no delay)", &p))
@@ -448,6 +573,7 @@ extern "C" void netui_frame(void)
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
     labels();
+    toast();
     netui_chat_draw();
     notice();
     if (g_open)
@@ -467,4 +593,10 @@ extern "C" int netui_wants_input(void) { return 0; }
 extern "C" int netui_wants_mouse(void) { return 0; }
 extern "C" void netui_toggle(void) {}
 extern "C" void netui_notice(int big, const char *title, const char *text) { (void)big; (void)title; (void)text; }
+extern "C" void netui_label(float x, float y, const char *text) { (void)x; (void)y; (void)text; }
+extern "C" void netui_label_big(float x, float y, const char *text, const char *sub, uint32_t rgb)
+{
+    (void)x; (void)y; (void)text; (void)sub; (void)rgb;
+}
+extern "C" void netui_toast(const char *text) { (void)text; }
 #endif

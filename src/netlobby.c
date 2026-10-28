@@ -149,7 +149,7 @@ int netlobby_parse_games(const char *text, NetLobbyGame *out, int max)
         const char *e = end > p && end[-1] == '\r' ? end - 1 : end;
         NetLobbyGame g;
         memset(&g, 0, sizeof g);
-        char num[2][12];
+        char num[3][12] = { "", "", "" };
         const char *q = p;
         q = field(q, e, g.code, sizeof g.code);
         q = field(q, e, g.join, sizeof g.join);
@@ -158,9 +158,11 @@ int netlobby_parse_games(const char *text, NetLobbyGame *out, int max)
         q = field(q, e, g.build, sizeof g.build);
         q = field(q, e, g.name, sizeof g.name);
         q = field(q, e, g.monster, sizeof g.monster);
-        field(q, e, g.city, sizeof g.city);
+        q = field(q, e, g.city, sizeof g.city);
+        field(q, e, num[2], sizeof num[2]);          /* (kept slots: a newer lobby's ninth field, else 0) */
         g.players = atoi(num[0]);
         g.max = atoi(num[1]);
+        g.reserved = atoi(num[2]);
         if (netlobby_is_code(g.code) && g.max > 0)   /* (a line short of fields, a blank one: skipped) */
             out[n++] = g;
         p = *end ? end : NULL;
@@ -183,6 +185,7 @@ int netlobby_parse_registered(const char *text, char *code, int ccap, char *toke
 #ifndef NETLOBBY_TEST
 /* ---- the network ---------------------------------------------------------------------------------------------- */
 #include "net.h"
+#include "netwire.h"
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -559,7 +562,13 @@ void netlobby_lookup(const char *code)
     L.lookup[0] = 0;
 }
 
-static int players_now(void) { return 1 + (net_state() == NETS_CONNECTED); }
+/* the listing's players: the host, its guests and its local players (net.h's slots); a kept slot counts apart
+ * ("1 / 2 (1 rejoining)") and is not open to others. Changed numbers: a heartbeat at once */
+static int players_now(void)
+{
+    return net_slot_count(NSL_HOST) + net_slot_count(NSL_ONLINE) + net_slot_count(NSL_LOCAL) +
+           16 * net_slot_count(NSL_RESERVED);        /* (packed with the reserved, for "changed") */
+}
 
 static void game_fields(char *b, int cap)
 {
@@ -567,9 +576,12 @@ static void game_fields(char *b, int cap)
     form_add(b, cap, "name", L.name);
     form_add(b, cap, "monster", L.monster);
     form_add(b, cap, "city", L.city);
-    snprintf(n, sizeof n, "%d", players_now());
+    snprintf(n, sizeof n, "%d", players_now() % 16);
     form_add(b, cap, "players", n);
-    form_add(b, cap, "max", "2");
+    snprintf(n, sizeof n, "%d", net_slots());
+    form_add(b, cap, "max", n);
+    snprintf(n, sizeof n, "%d", players_now() / 16);
+    form_add(b, cap, "reserved", n);
     if (L.external[0])
         form_add(b, cap, "external", L.external);
 }

@@ -30,6 +30,19 @@ host. Each player needs their own copy of the game disc and the same build of th
 7. While a player has a menu up (the Insert panel, the chat box or the Pause menu), **IN MENU** floats over their
    monster on the other player's screen.
 
+8. **Dropping out and coming back:** if the guest's connection drops (or their game crashes), their monster stands
+   still, takes no damage, turns grey, and a big red **DISCONNECTED / Rejoin 0:47** floats over it on every screen.
+   The same player joining again within the minute (by code, address or link: their game remembers a rejoin token,
+   also in `netrejoin.cfg`) gets the same monster back mid-round, score and health as they were. After the minute the
+   slot says **WAITING FOR PLAYER** (yellow) and anyone can join and take that monster over as it is. A hosted 2 Player
+   game shows WAITING FOR PLAYER over player 2 until someone joins, unless someone on the host's PC presses player 2's
+   keys (numpad) or controller: then **Local controller took over Player 2** and it is theirs (the panel's **Open for
+   online** gives it back; **Kick** removes an online player).
+9. **A 1 Player game can be joined:** the guest drops in as player 2 (the block is set up again for two, with the
+   buildings, score and player 1 as they were), with the monster they played last.
+10. **Re-synchronize players** (host's panel, or `/resync`; a guest's panel asks the host): every guest takes the host's
+   whole world again, without leaving. A safety net if something looks different on the two screens.
+
 Command line, for testing: `rampage.exe Chicago 1 --players 2 --host` on one PC and `rampage.exe --join <ip>` on the
 other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
@@ -75,6 +88,8 @@ cars appear at the edges.
 
 This is early. Expect issues.
 
+- **Player slots are built for up to 4 players, but only 2 are used and tested** (one guest). Over Steam a host takes
+  one guest at a time.
 - **Tested only on one PC**, two copies talking over localhost, including with simulated lag and packet loss.
   It has **not** been played between two real PCs over the internet yet.
 - **Steam has not been tested.** The code is there (Host on Steam, Invite a friend, Join Game from the friends list,

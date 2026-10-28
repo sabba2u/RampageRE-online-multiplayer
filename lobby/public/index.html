@@ -95,14 +95,14 @@
     for (const g of games) builds.set(g.build, (builds.get(g.build) ?? 0) + 1);
     const main = [...builds].sort((a, b) => b[1] - a[1])[0]?.[0];
     $("games").innerHTML = games.length ? games.map(g => {
-      const full = g.players >= g.max, other = builds.size > 1 && g.build !== main;
+      const kept = g.reserved ?? 0, full = g.players + kept >= g.max, other = builds.size > 1 && g.build !== main;
       const join = g.join ? `rampage://join/${g.join}` : "";
       return `<tr class="${other ? "other" : ""}" title="${other ? `another build (${esc(g.build)}): you need the same RampageRE as the host` : `build ${esc(g.build)}`}">
         <td class="code">${esc(g.code)} <button class="small" data-copy="rampage --join ${esc(g.code)}" title="Copy the join command">Copy</button></td>
         <td>${esc(g.name)}<span class="addr">${join ? `<a href="${esc(join)}">${esc(g.join)}</a>` : "no address yet"}</span></td>
         <td class="hide">${esc(g.monster) || "-"}</td>
         <td class="hide">${esc(g.city) || "in the menus"}</td>
-        <td>${g.players} / ${g.max}</td>
+        <td>${g.players} / ${g.max}${kept ? ` (${kept} rejoining)` : ""}</td>
         <td style="text-align:right"><a class="btn ${full ? "off" : ""}" href="rampage://join/${esc(g.code)}">${full ? "Full" : "Join"}</a></td></tr>`;
     }).join("") : `<tr><td colspan="6" class="empty">No games right now. Host one from the game: Insert, Host a game.</td></tr>`;
   }
