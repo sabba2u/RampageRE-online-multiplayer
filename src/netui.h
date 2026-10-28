@@ -19,10 +19,17 @@ int netui_wants_mouse(void);                         /* the mouse is over one of
 void netui_toggle(void);
 int netgame_rate(void);                             /* netgame.c: the host's updates a second (20, 30, 60) */
 void netgame_set_rate(int r);
+void netgame_resync(void);                         /* netgame.c: the host re-sends its whole world; a guest asks */
+const char *netgame_slot_name(int k);               /* netgame.c: slot k's monster ("" none) */
 int netgame_predict(void);                          /* netgame.c: the guest moves its own monster at once */
 void netgame_set_predict(int on);
 /* a label over the picture at screen point x, y (pixels from the top left), this frame only */
 void netui_label(float x, float y, const char *text);
+/* a big one (the player slots' DISCONNECTED / WAITING FOR PLAYER, for the stream to read): bold, scaled, in colour
+ * rgb (0xRRGGBB), a smaller second line under it ("Rejoin 0:47", NULL none) */
+void netui_label_big(float x, float y, const char *text, const char *sub, uint32_t rgb);
+/* a toast in the middle of the screen for a few seconds ("Local controller took over Player 2") */
+void netui_toast(const char *text);
 /* the chat (netchat.cpp): who 0 the host, 1 the guest, -1 a system line, -2 an error or a defeat (red) */
 void netui_chat_add(int who, const char *name, const char *text);
 const char *netui_chat_said(int who, float *age);   /* that player's last line and its age (the bubble), NULL */

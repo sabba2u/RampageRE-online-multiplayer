@@ -1,5 +1,6 @@
 /* netwire.c - the bytes of the online messages (netwire.h) */
 #include "netwire.h"
+#include <stdio.h>
 #include <string.h>
 
 static int room(NetBuf *b, int n)
@@ -171,4 +172,97 @@ void net_r_digest(NetBuf *b, NetDigest *d)
         for (int k = 0; k < NET_DVALS; k++)
             d->s[s].v[k] = net_r_f32(b);
     }
+}
+
+/* ---- player slots */
+void net_w_u64(NetBuf *b, uint64_t v) { net_w_u32(b, (uint32_t)v); net_w_u32(b, (uint32_t)(v >> 32)); }
+uint64_t net_r_u64(NetBuf *b) { uint64_t lo = net_r_u32(b); return lo | (uint64_t)net_r_u32(b) << 32; }
+
+int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, double *wait)
+{
+    if (n > NET_SLOTS)
+        n = NET_SLOTS;
+    for (int k = 1; token && k < n; k++)             /* its own: kept for it, or open and not yet taken */
+        if (s[k].token == token && (s[k].state == NSL_RESERVED || s[k].state == NSL_OPEN))
+            return k;
+    for (int k = 1; k < n; k++)
+        if (s[k].state == NSL_OPEN)
+            return k;
+    double soonest = -1;
+    for (int k = 1; k < n; k++)
+        if (s[k].state == NSL_RESERVED && (soonest < 0 || s[k].until - now < soonest))
+            soonest = s[k].until - now;
+    if (wait)
+        *wait = soonest < 0 ? 0 : soonest;
+    return soonest >= 0 ? NET_PICK_RESERVED : NET_PICK_FULL;
+}
+
+void net_w_hello(NetBuf *b, const NetHello *h)
+{
+    net_w_u32(b, h->proto);
+    net_w_u32(b, h->build);
+    net_w_u32(b, h->world);
+    net_w_u64(b, h->token);
+    net_w_u16(b, (uint32_t)(uint16_t)(int16_t)h->monster);
+}
+
+void net_r_hello(NetBuf *b, NetHello *h)
+{
+    h->proto = net_r_u32(b);
+    h->build = net_r_u32(b);
+    h->world = net_r_u32(b);
+    h->token = net_r_u64(b);
+    h->monster = (int16_t)net_r_u16(b);
+}
+
+void net_w_slots(NetBuf *b, const NetSlots *s)
+{
+    int n = s->n < 0 ? 0 : s->n > NET_SLOTS ? NET_SLOTS : s->n;
+    net_w_u8(b, (uint32_t)n);
+    for (int k = 0; k < n; k++) {
+        net_w_u8(b, s->state[k]);
+        net_w_f32(b, s->left[k]);
+    }
+}
+
+void net_r_slots(NetBuf *b, NetSlots *s)
+{
+    memset(s, 0, sizeof *s);
+    s->n = (int)net_r_u8(b);
+    if (s->n > NET_SLOTS) {
+        b->err = 1;
+        s->n = 0;
+        return;
+    }
+    for (int k = 0; k < s->n; k++) {
+        s->state[k] = (uint8_t)net_r_u8(b);
+        s->left[k] = net_r_f32(b);
+    }
+}
+
+int net_rejoin_format(char *out, int cap, uint64_t token, long long when)
+{
+    int n = snprintf(out, (size_t)cap, "rampage-rejoin 1 %08X%08X %lld\n", (unsigned)(token >> 32), (unsigned)token, when);
+    return n > 0 && n < cap ? 0 : -1;
+}
+
+int net_rejoin_parse(const char *text, uint64_t *token, long long *when)
+{
+    char hex[20];
+    long long w = 0;
+    if (sscanf(text, "rampage-rejoin 1 %19s %lld", hex, &w) != 2 || strlen(hex) != 16)
+        return -1;
+    uint64_t t = 0;
+    for (int i = 0; i < 16; i++) {
+        char c = hex[i];
+        int d = c >= '0' && c <= '9' ? c - '0' : c >= 'A' && c <= 'F' ? c - 'A' + 10 : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+        if (d < 0)
+            return -1;
+        t = t << 4 | (uint64_t)d;
+    }
+    if (!t)
+        return -1;
+    *token = t;
+    *when = w;
+    return 0;
 }

@@ -20,14 +20,14 @@ extern "C" {
  * the lobby picks the one that reaches the host from where we are; "-" none), build net_build_id() as 8 hex */
 typedef struct {
     char code[8], join[64], build[12], name[32], monster[32], city[40];
-    int players, max;
+    int players, max, reserved;                      /* (reserved: slots kept for a player who dropped out) */
 } NetLobbyGame;
 
 /* ---- the parts without a network (tests/net_test.c) ---- */
 /* "http://host[:port][/path]" (https too): 0 ok, -1 not a URL this can use. path "" when none */
 int netlobby_parse_url(const char *url, char *host, int hcap, int *port, char *path, int pcap, int *https);
 /* games.txt: "rampage-lobby 1", then one line per game, tab-separated (code join players max build name monster
- * city). The games read (at most max), -1 when it is not a lobby's list */
+ * city [reserved]). The games read (at most max), -1 when it is not a lobby's list */
 int netlobby_parse_games(const char *text, NetLobbyGame *out, int max);
 /* POST /games's answer to the game: "ok <code> <token> <heartbeat seconds>". 0 ok */
 int netlobby_parse_registered(const char *text, char *code, int ccap, char *token, int tcap, int *heartbeat);

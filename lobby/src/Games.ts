@@ -20,6 +20,7 @@ export type GameFields = {
   city: string;      // "Chicago 1": the city and block, "" in the menus
   players: number;
   max: number;
+  reserved: number;  // player slots kept for a player who dropped out (60 s, for their rejoin): not open to others
   port: number;      // the host's ENet port (UDP)
   build: string;     // 8 hex digits: net.c's build id; guest and host must match or the host refuses the hello
 };
@@ -58,6 +59,7 @@ export function parseFields(b: Record<string, unknown>, partial = false): Partia
   if (has("city") || !partial) out.city = clean(b.city, 32);
   if (has("players") || !partial) field("players", () => { out.players = int(b.players, 0, 4, 1); });
   if (has("max") || !partial) field("max", () => { out.max = int(b.max, 1, 4, 2); });
+  if (has("reserved") || !partial) field("reserved", () => { out.reserved = int(b.reserved, 0, 3, 0); });
   if (has("port") || !partial) field("port", () => { out.port = int(b.port, 1, 65535); });
   if (has("build") || !partial) field("build", () => {
     const s = String(b.build ?? "");
@@ -75,6 +77,8 @@ export function parseFields(b: Record<string, unknown>, partial = false): Partia
     out.lan = s;
   });
   if (out.players !== undefined && out.max !== undefined && out.players > out.max) out.players = out.max;
+  if (out.reserved !== undefined && out.players !== undefined && out.max !== undefined && out.players + out.reserved > out.max)
+    out.reserved = Math.max(0, out.max - out.players);
   return out;
 }
 
@@ -129,6 +133,7 @@ export class Games {
     const f = parseFields(body, true);
     Object.assign(g, f, { seen: this.now() });
     if (g.players > g.max) g.players = g.max;
+    if (g.players + g.reserved > g.max) g.reserved = Math.max(0, g.max - g.players);
     for (const l of this.listeners) l.update(this.public(g));
     return g;
   }
@@ -163,8 +168,8 @@ export class Games {
   }
 
   public(g: Game): PublicGame {
-    const { code, name, monster, city, players, max, port, build, since } = g;
-    return { code, name, monster, city, players, max, port, build, since, address: this.publicAddress(g),
+    const { code, name, monster, city, players, max, reserved, port, build, since } = g;
+    return { code, name, monster, city, players, max, reserved, port, build, since, address: this.publicAddress(g),
              lan: g.lan ? `${g.lan}:${g.port}` : "" };
   }
 

@@ -46,12 +46,29 @@ uint32_t net_world(void);
 uint32_t net_host_world(void);                       /* the guest: the host's world (0 not yet told) */
 const void *net_host_world_info(int *len);           /* the guest: the host's info with it (NULL none) */
 
-/* player 2's pad: the guest sends its own every frame; the host takes it (the presses since the last take, the held
- * buttons and sticks of the newest; held as it was when a packet is late). 0: none yet or not connected */
+/* ---- player slots (netwire.h NSL_*): slot 0 the host's player 1, slot k the game's monster k. The host takes a guest
+ * into a slot by its hello: its own kept slot back (the rejoin token it was given in NM_WELCOME, kept by the guest in
+ * memory and in netrejoin.cfg), else an open one. A guest that drops keeps its slot NET_RESERVE_S seconds for that
+ * token; then the slot is open to anyone, who takes over its monster as it is. The guests hear every slot's state
+ * (NM_SLOTS). Slots in use today: 2 (net_slots) */
+int net_slots(void);
+int net_slot_state(int k, double *left);             /* NSL_*; *left a kept one's seconds (host and guests) */
+int net_slot_monster(int k);                         /* host: the monster k's guest asked for in its hello (-1 any) */
+int net_slot_count(int state);                       /* slots 0 .. net_slots() - 1 in that state */
+void net_slot_local(int k, int on);                  /* host: a player on this PC took slot k (on) / the panel opened it
+                                                      * for online play again (off) */
+void net_slot_kick(int k);                           /* host: its guest let go, the slot open at once, its token void */
+int net_my_slot(void);                               /* the guest: its slot (0 until welcomed); the host 0 */
+int net_msg_slot(void);                              /* host: the slot whose message the handler has now (-1) */
+void net_set_wanted_monster(int monster);            /* the guest: asked for in the hello (-1 any) */
+uint64_t net_rejoin_token(void);                     /* the guest: the token it has (0 none) */
+
+/* the guests' pads: each guest sends its own every frame; the host takes slot k's (the presses since the last take,
+ * the held buttons and sticks of the newest; held as it was when a packet is late). 0: none yet or not connected */
 void net_send_pad(const NetPad *p);
-int net_remote_pad(NetPad *out);
+int net_remote_pad(int k, NetPad *out);
 uint32_t net_pad_frame(void);                       /* the guest: the frame of the pad it sent last */
-uint32_t net_remote_frame(void);                    /* the host: the guest's frame it took last (0 none) */
+uint32_t net_remote_frame(int k);                   /* the host: slot k's guest's frame it took last (0 none) */
 #define NET_PAD_MENU (1u << 31)                      /* in NetPad.held: the guest has a menu up (the panel) */
 
 /* the host's snapshots (netgame.c builds them, the bytes after the header) */
@@ -61,7 +78,8 @@ void net_snaps_clear(void);
 
 /* other messages of netgame.c's own (NM_BUILDING, NM_EVENT): sent as they are, the whole message, first byte the
  * type; received through the handler */
-void net_send_msg(int reliable, const void *data, int len);
+void net_send_msg(int reliable, const void *data, int len);   /* (the host: to every guest) */
+void net_send_msg_except(int slot, int reliable, const void *data, int len);   /* the host: every guest but slot's */
 void net_set_handler(void (*fn)(const uint8_t *data, int len));
 
 /* the desync check: the guest sends its fingerprint of what it shows (netwire.h NetDigest, a part a system) with
@@ -71,6 +89,7 @@ void net_set_handler(void (*fn)(const uint8_t *data, int len));
 #define NET_DIGEST_WINDOW 0.25
 void net_keep_digest(double t_host, const void *digest);                   /* a NetDigest */
 void net_send_digest(double t_shown, double t_new, const void *digest);    /* a NetDigest */
+void net_digest_reset(void);                         /* the host: the checks' runs start again (a resync) */
 int net_mismatches(void);
 int net_digest_checks(void);
 /* system s (NDS_*) of the last check: 1 in sync, 0 out of sync, -1 not checked yet; *mismatches its MISMATCHes */

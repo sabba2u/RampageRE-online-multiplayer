@@ -68,6 +68,8 @@ typedef struct {
     Group shadow;                                     /* its template's ShadowData (shadow.c), at NULL: casts none */
     int own_ambient; float ambient[3];                /* drawn with this ambient, not the scene's (an adornment's: the
                                                        * building light's ramp at its height, 0x2CD060) */
+    int net_grey;                                     /* NET: drawn greyed over (an online player's slot nobody
+                                                       * plays: netgame.c; render_gl.c draw_grey). 0 offline */
 } Instance;
 
 typedef struct {

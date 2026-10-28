@@ -173,12 +173,77 @@ static void test_digest(void)
 static void test_message_types_distinct(void)
 {
     int t[] = { NM_HELLO, NM_WELCOME, NM_REJECT, NM_PAD, NM_SNAP, NM_BUILDING, NM_WORLD, NM_DIGEST, NM_EVENT, NM_PUPPET,
-                NM_PEVENT, NM_MENU, NM_STATE, NM_CHAT };
+                NM_PEVENT, NM_MENU, NM_STATE, NM_CHAT, NM_SLOTS };
     int n = (int)(sizeof t / sizeof *t), same = 0;
     for (int i = 0; i < n; i++)
         for (int j = i + 1; j < n; j++)
             same += t[i] == t[j];
     CHECK(same == 0);
+}
+
+/* the player slots (netwire.c): who gets which slot by its token, kept slots, a full game */
+static void test_slot_pick(void)
+{
+    NetSlotPick s[NET_SLOTS] = { { NSL_HOST, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 } };
+    double wait = -1;
+    CHECK(net_slot_pick(s, 2, 0, 0, &wait) == 1);                /* a newcomer: the first open one */
+    CHECK(net_slot_pick(s, 2, 0x1234, 0, &wait) == 1);           /* a token nobody has: as a newcomer */
+    s[1].state = NSL_RESERVED;                                   /* its guest dropped: kept for its token */
+    s[1].token = 0xABCDEF0123456789ull;
+    s[1].until = 60;
+    CHECK(net_slot_pick(s, 2, 0xABCDEF0123456789ull, 13, &wait) == 1);   /* that guest: its own slot back */
+    CHECK(net_slot_pick(s, 2, 0, 13, &wait) == NET_PICK_RESERVED && fabs(wait - 47) < 1e-9);   /* another: told */
+    CHECK(net_slot_pick(s, 2, 0x55, 13, &wait) == NET_PICK_RESERVED);
+    CHECK(net_slot_pick(s, 3, 0, 13, &wait) == 2);                /* (with a third slot open: that one) */
+    s[1].state = NSL_OPEN;                                       /* the minute ran out: anyone's */
+    CHECK(net_slot_pick(s, 2, 0, 70, &wait) == 1);
+    CHECK(net_slot_pick(s, 2, 0xABCDEF0123456789ull, 70, &wait) == 1);
+    s[1].state = NSL_ONLINE;
+    CHECK(net_slot_pick(s, 2, 0, 70, &wait) == NET_PICK_FULL);   /* every slot played */
+    s[1].state = NSL_LOCAL;                                      /* a player on the host's PC took it: full too */
+    CHECK(net_slot_pick(s, 2, 0xABCDEF0123456789ull, 70, &wait) == NET_PICK_FULL);
+    s[2].state = NSL_ONLINE;
+    s[2].token = 7;                                              /* (an online one's token is not taken over) */
+    CHECK(net_slot_pick(s, 3, 7, 70, &wait) == NET_PICK_FULL);
+}
+
+static void test_slot_messages(void)
+{
+    uint8_t m[64];
+    NetBuf b = netbuf(m, sizeof m);
+    NetHello h = { 2, 0xCAFE1234, 0x55AA, 0x0102030405060708ull, 17 }, r;
+    net_w_hello(&b, &h);
+    NetBuf rb = netbuf(m, b.len);
+    net_r_hello(&rb, &r);
+    CHECK(!rb.err && r.proto == 2 && r.build == 0xCAFE1234 && r.world == 0x55AA && r.token == 0x0102030405060708ull &&
+          r.monster == 17);
+    h.monster = -1;
+    b = netbuf(m, sizeof m);
+    net_w_hello(&b, &h);
+    rb = netbuf(m, b.len);
+    net_r_hello(&rb, &r);
+    CHECK(r.monster == -1);
+    rb = netbuf(m, 12);                                          /* a proto 1 hello: shorter, read as broken */
+    net_r_hello(&rb, &r);
+    CHECK(rb.err);
+    NetSlots s = { 2, { NSL_HOST, NSL_RESERVED }, { 0, 47.5f } }, t;
+    b = netbuf(m, sizeof m);
+    net_w_slots(&b, &s);
+    rb = netbuf(m, b.len);
+    net_r_slots(&rb, &t);
+    CHECK(!rb.err && t.n == 2 && t.state[1] == NSL_RESERVED && t.left[1] == 47.5f);
+    m[0] = 9;                                                    /* more slots than there can be */
+    rb = netbuf(m, b.len);
+    net_r_slots(&rb, &t);
+    CHECK(rb.err && t.n == 0);
+    char line[64];
+    uint64_t tok = 0;
+    long long when = 0;
+    CHECK(net_rejoin_format(line, sizeof line, 0x00ABCDEF01234567ull, 1793000000LL) == 0);
+    CHECK(net_rejoin_parse(line, &tok, &when) == 0 && tok == 0x00ABCDEF01234567ull && when == 1793000000LL);
+    CHECK(net_rejoin_parse("rampage-rejoin 1 0000000000000000 5", &tok, &when) < 0);   /* (0 is no token) */
+    CHECK(net_rejoin_parse("rampage-rejoin 1 XYZ 5", &tok, &when) < 0);
+    CHECK(net_rejoin_parse("", &tok, &when) < 0);
 }
 
 /* the lobby's parts without a network (src/netlobby.c, built with -DNETLOBBY_TEST) */
@@ -269,6 +334,10 @@ static void test_lobby_games_txt(void)
     CHECK(!strcmp(g[0].build, "CAFE1234") && !strcmp(g[0].name, "sabba") && !strcmp(g[0].monster, "George") &&
           !strcmp(g[0].city, "Chicago 1"));
     CHECK(!strcmp(g[1].join, "-") && !g[1].monster[0] && !g[1].city[0] && strlen(g[1].name) == sizeof g[1].name - 1);
+    CHECK(g[0].reserved == 0);
+    CHECK(netlobby_parse_games("rampage-lobby 1\nK7PQ2\t1.2.3.4:27960\t1\t2\tCAFE1234\ts\tGeorge\tChicago 1\t1\n",
+                               g, 4) == 1 &&
+          g[0].players == 1 && g[0].max == 2 && g[0].reserved == 1 && !strcmp(g[0].city, "Chicago 1"));
     CHECK(netlobby_parse_games(txt, g, 1) == 1);
     CHECK(netlobby_parse_games("rampage-lobby 1\n", g, 4) == 0);
     CHECK(netlobby_parse_games("rampage-lobby 1", g, 4) == 0);
@@ -284,6 +353,8 @@ static void test_lobby_games_txt(void)
 int main(void)
 {
     test_message_types_distinct();
+    test_slot_pick();
+    test_slot_messages();
     test_wire_round_trip();
     test_wire_read_past_end();
     test_snap_interpolates_halfway();

@@ -36,7 +36,7 @@ describe("the lobby over HTTP", () => {
     const text = await (await fetch(`${base}/games.txt`)).text();
     expect(text.split("\n")[0]).toBe("rampage-lobby 1");
     expect(text).toContain(`${code}\t127.0.0.1:27980\t1\t2\tCAFE1234\tsabba\tGeorge\tChicago 1`);
-    expect(await (await fetch(`${base}/games/${code.toLowerCase()}.txt`)).text()).toBe(`rampage-lobby 1\n${code}\t127.0.0.1:27980\t1\t2\tCAFE1234\tsabba\tGeorge\tChicago 1\n`);
+    expect(await (await fetch(`${base}/games/${code.toLowerCase()}.txt`)).text()).toBe(`rampage-lobby 1\n${code}\t127.0.0.1:27980\t1\t2\tCAFE1234\tsabba\tGeorge\tChicago 1\t0\n`);
     expect((await fetch(`${base}/games/ZZZZZ.txt`)).status).toBe(404);
     const one = await (await fetch(`${base}/games/${code}`)).json();
     expect(one).toMatchObject({ code, join: "127.0.0.1:27980", address: "203.0.113.50:27980", lan: "192.168.1.20:27980" });

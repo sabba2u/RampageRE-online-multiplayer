@@ -5,7 +5,7 @@ import { Games, LobbyError, HEARTBEAT_S, isCode, type Game } from "./Games";
 import { normIp } from "./addr";
 
 /** The plain HTTP side, for RampageRE (src/netlobby.c) and anything else without a Colyseus SDK:
- *    POST   /games              register: name, monster, city, players, max, port, build, external?, lan? (JSON or
+ *    POST   /games              register: name, monster, city, players, max, reserved?, port, build, external?, lan? (JSON or
  *                               form). Answers {code, token, heartbeat} as JSON, or "ok <code> <token> <heartbeat>"
  *                               when the request says Accept: text/plain (the game)
  *    PUT    /games/<code>       the heartbeat, every `heartbeat` seconds: token plus any field that changed. 404: the
@@ -13,7 +13,8 @@ import { normIp } from "./addr";
  *    DELETE /games/<code>       unlist: token in the body, ?token= or X-Token
  *    GET    /games              {games: [... with join, the address for whoever asked], you, heartbeat}
  *    GET    /games.txt          "rampage-lobby 1", then a line per game, tab-separated:
- *                               code  join  players  max  build  name  monster  city
+ *                               code  join  players  max  build  name  monster  city  reserved (the slots kept for
+ *                               a player who dropped out: a ninth field older games' readers skip)
  *    GET    /games/<code>       one game, JSON; /games/<code>.txt the same as games.txt with only that line
  *  and for people:
  *    GET    /                   the games page (public/index.html): live list, rampage:// links, the join commands
@@ -87,7 +88,8 @@ const view = (games: Games, g: Game, from: string) => ({ ...games.public(g), joi
 const field = (s: string | number) => String(s).replace(/[\t\r\n]/g, " ");
 function text(games: Games, list: Game[], from: string) {
   return ["rampage-lobby 1", ...list.map(g =>
-    [g.code, games.joinFor(g, from) || "-", g.players, g.max, g.build, g.name, g.monster, g.city].map(field).join("\t"))]
+    [g.code, games.joinFor(g, from) || "-", g.players, g.max, g.build, g.name, g.monster, g.city, g.reserved ?? 0].map(field)
+      .join("\t"))]
     .join("\n") + "\n";
 }
 

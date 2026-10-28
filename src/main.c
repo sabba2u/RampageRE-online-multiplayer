@@ -4476,8 +4476,11 @@ static void hit_turn(Mon *mo, int was, const float d[2], int behind)
     }
 }
 
+static int netgame_shielded(const Mon *mo);           /* NET: netgame.c */
 static void monster_take(Mon *mo, const char *name, float amount, int level, int slot, const float d[2], int behind)
 {
+    if (netgame_shielded(mo))                        /* NET: an online slot nobody plays: idle, untouchable */
+        return;
     int was = mo->pending_slot;
     if (slot >= 0)                                   /* (what it holds let go of: set_reaction) */
         set_reaction(mo, slot);

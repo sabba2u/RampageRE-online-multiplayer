@@ -258,6 +258,7 @@ struct Renderer {
     GLuint video_tex;
     int tex_gen;                                     /* the texture settings the cache was made with */
     int hold;                                        /* draw_mesh holds the blended parts back (gtao_active) */
+    int grey;                                        /* NET: the instance drawn now is greyed (Instance.net_grey) */
     double hud_t; int has_hud_t;                     /* the GUI's clock (rnd_hud_time), else the frame's */
     int in_hud;                                      /* draw_hud: textures made now get no mips nor anisotropy */
     HeldPart *held; int nheld, cheld;
@@ -933,6 +934,53 @@ static void draw_held(Renderer *r, double t)
     r->nheld = 0;
 }
 
+/* NET: (online play, port extra) the monster of a player slot nobody plays now (waiting for a player, or kept for one
+ * who dropped out: netgame.c sets Instance.net_grey) looks inactive: each of its opaque parts is drawn a second time
+ * over itself, a flat grey at 66 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
+ * colour's, the alpha the texture's times it) and the depth equal, so it lies on the part it covers; the frame's
+ * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through). Its rage glow
+ * (an effect) and its hit flashes (effects too) are drawn after the scene's items, over it, as before. Offline nothing
+ * sets it, and nothing is drawn differently */
+#define GL_COMBINE 0x8570
+#define GL_COMBINE_RGB 0x8571
+#define GL_COMBINE_ALPHA 0x8572
+#define GL_SOURCE0_RGB 0x8580
+#define GL_SOURCE0_ALPHA 0x8588
+#define GL_SOURCE1_ALPHA 0x8589
+#define GL_PRIMARY_COLOR 0x8577
+static void draw_grey(const MeshPart *p, GLuint tex, const void *idx)
+{
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glColor4f(0.40f, 0.40f, 0.42f, 0.66f);
+    if (tex && p->uv) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.35f);              /* (0.66 x the texture's: its cut-outs stay cut) */
+    } else
+        glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);   /* (the frame's alpha is the part's own: later passes read it) */
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glPopClientAttrib();
+    glPopAttrib();
+}
+
 static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32_t i, uint32_t first, double t)
 {
     const Scene *s = r->scene;
@@ -1094,6 +1142,8 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
             glEnable(GL_ALPHA_TEST);
     }
     r->drawn += p->ntris;
+    if (r->grey && !blend && !see_through)           /* NET: greyed over */
+        draw_grey(p, id, idx);
     /* the reflection layer, shader 0x1A's second pass [R]: texture slot 1 (the material's +0x3A `cubemap`, or for an
      * RCUBEMAP* material the block's EnvMap, 0x2B96E4) at the sphere-map coordinates (VU1 0x34F1C8, sphere_coords),
      * TFX 1 DECAL, TCC 0, colour mode 0 (the texture's colour, unlit), GS state 10: ALPHA 0x58 = Cs x Ad + Cd (added,
@@ -1637,7 +1687,9 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
                 glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (float[4]){ in->ambient[0], in->ambient[1], in->ambient[2], 1 });
             glPushMatrix();
             glMultMatrixf(it->world.m);
+            r->grey = in->net_grey;                  /* NET: an online player's monster nobody plays (netgame.c) */
             draw_mesh(r, &s->meshes[it->mesh], it->skin, t);
+            r->grey = 0;
             glPopMatrix();
             if (own)
                 glLightModelfv(GL_LIGHT_MODEL_AMBIENT, amb);
