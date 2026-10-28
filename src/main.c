@@ -7641,6 +7641,7 @@ static int card_job(Viewer *v, Shell *sh, const ShellEvent *e)
     ShellProfile sp;
     int st = SHELL_CARD_OK;
     uint64_t now = (uint64_t)time(NULL) * 1000;
+    int write = v->prof_write && net_role() != NET_GUEST;   /* NET: the guest of an online game writes no profile */
     if (e->kind == SHELL_EVT_PROFILE_LOAD) {         /* the one profile file */
         Profile p = v->prof;
         int r = v->prof_write ? profile_read(&p, v->prof_path) : -1;
@@ -7656,18 +7657,18 @@ static int card_job(Viewer *v, Shell *sh, const ShellEvent *e)
         Profile p = v->prof;
         profile_create(&p, e->name);
         p.loaded = 1;
-        if (v->prof_write)
+        if (write)
             st = card_status(profile_write(&p, v->prof_path, 1, now));
         if (st == SHELL_CARD_OK) {
             v->prof = p;
             v->prof_gen++;
-            if (v->prof_write) {
+            if (write) {
                 v->prof_on_card = 1;
                 snprintf(v->card_name, sizeof v->card_name, "%s", v->prof.block.name);
             }
         }
     } else if (e->kind == SHELL_EVT_PROFILE_SAVE) {  /* saveProfile's write (0x33F230 clears the changed bytes) */
-        if (v->prof_write)
+        if (write)
             st = card_status(profile_write(&v->prof, v->prof_path, 1, now));
         if (st == SHELL_CARD_OK)
             v->prof.was_saving = 1;                  /* [R 0x34559C: close(1) in op 7 sets 4 and 8] */
@@ -8139,6 +8140,7 @@ static void shell_give_graphics(Viewer *v)
 /* the shell's frame: the pad (Enter / Space accept, Backspace back, the arrows, P start, C / V / R the buttons,
  * letters and digits into the name entry, F2 L2 + R2 held for the cheat entry; each controller as its own pad), its
  * time, its answers */
+static int netgame_shell_input(Viewer *v, const Window *w, float dt);   /* NET: netrep_menu.c */
 static void shell_frame(Viewer *v, const Window *w, float dt)
 {
     static const struct { int key, ev, button; } KEYS[] = {
@@ -8154,6 +8156,8 @@ static void shell_frame(Viewer *v, const Window *w, float dt)
     int typing = focus && !strcmp(focus, "MemoryCard");
     unsigned char took[256] = { 0 };                 /* the keys the name entry took (the popup's other panels
                                                       * take none: Enter / Backspace answer them) */
+    if (netgame_shell_input(v, w, dt))               /* NET: online, the guest's presses are the host's player 2's */
+        goto net_sent;
     for (int c = 'A'; typing && c <= 'Z'; c++)
         if (w->pressed[c])
             took[c] = (unsigned char)shell_type(v->shell, c);
@@ -8179,6 +8183,7 @@ static void shell_frame(Viewer *v, const Window *w, float dt)
     int held = (w->keys[VK_LEFT] ? SHELL_HELD_LEFT : 0) | (w->keys[VK_RIGHT] ? SHELL_HELD_RIGHT : 0) |
                (w->keys[VK_F2] ? SHELL_HELD_L2 | SHELL_HELD_R2 : 0) | pad0_held(v);
     shell_pad_held(v->shell, pad0_x(v), held);
+net_sent:                                            /* NET */
     shell_give_graphics(v);
     card_free(v, dt);
     shell_update(v->shell, dt);
@@ -9072,7 +9077,9 @@ static int viewer_main(int argc, char **argv)
         }
         sound_follow_pause(&v);
         int menu_had_pad = v.hud && (hud_results_showing(v.hud) || hud_pause_showing(v.hud));
-        if (v.hud && hud_results_showing(v.hud)) {   /* a results screen has the pad: Enter / Space go on,
+        if (netgame_game_input(&v, &w, dt > 0.1f ? 0.1f : dt))   /* NET: online, the guest's menus are the host's */
+            ;
+        else if (v.hud && hud_results_showing(v.hud)) {   /* a results screen has the pad: Enter / Space go on,
                                                       * Backspace quits, the arrows choose, C changes monster, V
                                                       * saves */
             static const struct { int key, ev, button; } KEYS[] = {
@@ -9142,6 +9149,7 @@ static int viewer_main(int argc, char **argv)
                 st.game = v.last_game;
                 if (v.attract)
                     attract_end(&v, &st);
+                netgame_shell_start(&v, &st);        /* NET: the guest from the host's game: its main menu */
                 v.play = 0;
                 shell_enter(&v, &st);
                 if (shot && script) {                /* the words left play on in the shell */

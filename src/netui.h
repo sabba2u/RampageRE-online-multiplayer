@@ -17,6 +17,9 @@ void netui_frame(void);                              /* build and draw the panel
 int netui_wants_input(void);                         /* the panel is open: the game gets no keys */
 int netui_wants_mouse(void);                         /* the mouse is over one of its windows */
 void netui_toggle(void);
+/* this frame's notice over the game (netrep_menu.c: what the other player is doing in the menus): big, the screen
+ * dimmed and the box in its middle; else a line at the top. Drawn by the next netui_frame, then forgotten */
+void netui_notice(int big, const char *title, const char *text);
 
 #ifdef __cplusplus
 }

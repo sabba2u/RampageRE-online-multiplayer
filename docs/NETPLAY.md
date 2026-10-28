@@ -15,6 +15,15 @@ Both players need the same build of RampageRE and their own disc image.
   city, block, monsters and the world's seeds by itself.
 - The guest plays player 2 with WASD / Space / J K L R or the first controller.
 - **Insert** opens the panel: role, connection, ping, updates a second, the out-of-sync counter (host) and the log.
+- **Through the menus** (`--shell`, or the player build): the host hosts from the panel (Host a game / Host on Steam;
+  the main menu says so when 2 players are chosen) and plays the menus as usual; the guest joins (`--shell --join <ip>`
+  or the panel). While the host is in its menus the guest's screen shows a notice of where the host is (main menu,
+  Monster Select with both cards and readies, the city being picked) and the guest's keys and pads are the host's
+  player 2 (pad 1): on Monster Select the guest picks their own monster as a couch player 2 would. When the host's game
+  starts the guest leaves its menus and loads it; when the host goes back to its menus (or leaves) the guest goes back
+  to its main menu. In a game the guest's Start opens the host's Pause menu for player 2, which the guest then works;
+  the guest's own results screens answer by themselves (the host's answer counts). The guest writes no profile while
+  online and its profile is put back as it was when it leaves the host's game.
 
 ## What is shared (phase 1)
 
@@ -51,9 +60,10 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | File | Hook |
 |---|---|
 | `build.bat` | the net sources in SRC; `NETINC`, `NET`, `:net_libs` (ENet and ImGui built once into `build\net`); `-lws2_32 -lwinmm -ldwmapi` |
-| `src/main.c` | `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
+| `src/main.c` | `netgame_shell_input` in `shell_frame` (the guest's menu presses go to the host); `netgame_game_input` before a game's menus take the pad; `netgame_shell_start` before `shell_enter` from a game; `card_job` writes no profile on the guest; `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
 | `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert) |
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
+| `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest) |
 | `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score) |
 
 With online play off (no `--host` / `--join`, panel unused) nothing in the hooks changes the game: a `--shot` of

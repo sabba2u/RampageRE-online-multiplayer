@@ -177,6 +177,8 @@ enum { SHELL_HELD_UP = 1, SHELL_HELD_DOWN = 2, SHELL_HELD_LEFT = 4, SHELL_HELD_R
        SHELL_HELD_R3 = 65536, SHELL_HELD_L3 = 131072 };   /* getButtons' (0x16A180) bits: the names at 0x3F67C0, in
                                                       * turn (16384 W and 32768 Z: no PS2 button) */
 void shell_pad_held(Shell *s, float stick_x, int buttons);
+/* NET: online play, someone waits in the menus: the idle timer held at 120 s (no attract mode), as a press would */
+void shell_hold_idle(Shell *s);
 /* a convenience the game does not have: a character typed into the profile name entry ('\b' rubs one out, '\r' is
  * DONE) when it shows; returns 1 when it took it */
 int shell_type(Shell *s, int ch);
@@ -252,6 +254,7 @@ typedef struct {
     int cs_index, cs_locked;
     int mc_mode, mc_msg;
     int attract_state;
+    const char *ms_name[4];         /* NET: MonsterSelect's monster on each player's card (online play's guest is told) */
 } ShellAutoView;
 void shell_auto_view(const Shell *s, ShellAutoView *out);
 
