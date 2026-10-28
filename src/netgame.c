@@ -134,6 +134,7 @@ static void ng_set_world(Viewer *v)
 }
 
 static void ngr_menu_follow(Viewer *v);
+static void ng_flow_reset(Viewer *v);
 
 /* the guest: the host's world loaded as the viewer's start would (--players, a city and block); from the front end,
  * the front end left first as a game's start leaves it (shell_start_game) */
@@ -182,6 +183,7 @@ static void ng_follow(Viewer *v)
         if (v->mon[k].have_graph)
             play_state(&v->mon[k]);
     net_snaps_clear();
+    ng_flow_reset(v);                                /* (the host's events of a game before this one: dropped) */
 }
 
 /* ---- buildings */
@@ -552,6 +554,19 @@ static void ng_on_flow(NetBuf *b)                    /* the guest: one of the ho
     memcpy(q->data, b->p + b->len, (size_t)len);
     *ng_flowq_tail = q;
     ng_flowq_tail = &q->next;
+}
+
+static void ng_flow_reset(Viewer *v)
+{
+    (void)v;
+    while (ng_flowq) {
+        NgFlowQ *q = ng_flowq;
+        ng_flowq = q->next;
+        free(q);
+    }
+    ng_flowq_tail = &ng_flowq;
+    ng_hud_applied = -1;
+    ng_results_t = -1e30;
 }
 
 /* the guest's results screen: down when the host's is (as of host time t), unless it opened since */
@@ -1062,8 +1077,46 @@ static void ng_flow_log(Viewer *v)
 
 /* the test's deaths (RAMPAGE_NET_TESTDIE=period[,lives], the host alone; never set in play): every `period` seconds
  * of play both monsters lose all their HP; lives, if given, are each player's from the first */
+static void ng_test_end(Viewer *v)
+{
+    /* RAMPAGE_NET_TESTEND=win,secs | time,secs (the host alone; never set in play): `secs` into each block's play every
+     * building is brought down (building_destroy: the guest's made by NM_BUILDING), or the clock is run out */
+    static const char *spec;
+    static int read, was_state = -1, done;
+    static double at;
+    if (!read) {
+        spec = getenv("RAMPAGE_NET_TESTEND");
+        read = 1;
+    }
+    if (!spec || !v->game)
+        return;
+    int s = game_state(v->game);
+    if (s != was_state && s == GS_PLAY) {
+        const char *c = strchr(spec, ',');
+        at = net_now() + (c ? atof(c + 1) : 10);
+        done = 0;
+    }
+    was_state = s;
+    if (s != GS_PLAY || done || net_now() < at)
+        return;
+    done = 1;
+    if (!strncmp(spec, "win", 3)) {
+        net_log("test: every building brought down");
+        for (uint32_t i = 0; i < v->scene.nbuildings; i++)
+            if (v->scene.buildings[i].b.state == BUILDING_STANDING)
+                building_destroy(&v->scene.buildings[i].b);
+    } else {
+        GameNetSync gs;
+        game_net_get(v->game, &gs);
+        gs.elapsed = 100000;
+        net_log("test: the clock run out");
+        game_net_put(v->game, &gs, v->nmon < 2 ? v->nmon : 2);
+    }
+}
+
 static void ng_test_die(Viewer *v)
 {
+    ng_test_end(v);
     static const char *spec;
     static int read;
     static double next;
