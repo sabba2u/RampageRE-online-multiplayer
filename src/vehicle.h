@@ -197,4 +197,10 @@ void vehicle_hold(Vehicles *v, int obj, const float hand_world[16], int mirrored
  * away, anything else flies with vel */
 void vehicle_throw(Vehicles *v, int obj, int monster, int eat, const float vel[3], float monster_heading);
 
+/* ---- NET: online play's guest (netrep_traffic.c): its objects are the host's, written from the snapshots */
+/* object i to write (the list grown to it, the slots between gone); fresh: emptied as a new object's first */
+VehObj *vehicle_net_obj(Vehicles *v, int i, int fresh);
+Group vehicle_net_template(Vehicles *v, const char *name);   /* a template by name (the module's own lookup) */
+void vehicle_net_event(Vehicles *v, const VehicleEvent *e);  /* one of the host's, taken as this module's own */
+
 #endif

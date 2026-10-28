@@ -188,4 +188,10 @@ void rail_hold(Rail *r, int obj, const float hand_world[16], int mirrored, float
  * turned by the monster's matrix, the caller's) on a SpherePhysicsMover, then onThrow(monster, eat) */
 void rail_throw(Rail *r, int obj, int monster, int eat, const float vel[3]);
 
+/* ---- NET: online play's guest (netrep_traffic.c): its objects are the host's, written from the snapshots */
+/* object i to write (the list grown to it, the slots between gone); fresh: emptied as a new object's first */
+RailObj *rail_net_obj(Rail *r, int i, int fresh);
+Group rail_net_template(Rail *r, const char *name);  /* a template by name (the module's own lookup) */
+void rail_net_event(Rail *r, const RailEvent *e);    /* one of the host's, taken as this module's own */
+
 #endif

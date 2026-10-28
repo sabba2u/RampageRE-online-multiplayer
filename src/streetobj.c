@@ -2763,3 +2763,13 @@ int streetobj_events(StreetObjs *s, StreetEvent *out, int max)
     s->nev -= n;
     return n;
 }
+
+/* ---------------------------------------------------------------- NET: online play's guest (netrep_traffic.c) */
+
+StreetObj *streetobj_net_obj(StreetObjs *s, int i) { return i >= 0 && i < s->n ? &s->o[i] : NULL; }
+
+void streetobj_net_event(StreetObjs *s, const StreetEvent *e)
+{
+    if (s->nev < MAX_EVENTS)
+        s->ev[s->nev++] = *e;
+}

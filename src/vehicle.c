@@ -1724,3 +1724,36 @@ int vehicle_events(Vehicles *v, VehicleEvent *out, int max)
     v->nev -= n;
     return n;
 }
+
+/* ---------------------------------------------------------------- NET: online play's guest (netrep_traffic.c) */
+
+VehObj *vehicle_net_obj(Vehicles *v, int i, int fresh)
+{
+    if (i < 0 || i >= MAX_OBJS)
+        return NULL;
+    while (v->n <= i) {                              /* a slot the host has and this side not yet: gone */
+        VehObj *o = &v->o[v->n++];
+        memset(o, 0, sizeof *o);
+        o->phase = VP_GONE;
+        o->gone_age = 2;
+        o->slot = o->building = o->parent = o->child[0] = o->child[1] = -1;
+        o->ambient_fx = o->beam_fx = o->ft_building = o->cobj = -1;
+    }
+    VehObj *o = &v->o[i];
+    if (fresh) {                                     /* as obj_new leaves it (its look and place come next) */
+        memset(o, 0, sizeof *o);
+        o->phase = VP_ALIVE;
+        o->slot = o->building = o->parent = o->child[0] = o->child[1] = -1;
+        o->ambient_fx = o->beam_fx = o->ft_building = o->cobj = -1;
+        rot_z(o->rot, 0);
+    }
+    return o;
+}
+
+Group vehicle_net_template(Vehicles *v, const char *name) { return find_template(v, name); }
+
+void vehicle_net_event(Vehicles *v, const VehicleEvent *e)
+{
+    if (v->nev < MAX_EVENTS)
+        v->ev[v->nev++] = *e;
+}

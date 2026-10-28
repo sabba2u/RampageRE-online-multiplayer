@@ -4511,18 +4511,26 @@ static void monster_blow_hit(Mon *mo, const Mon *by, const struct MonAtk *atk, c
     }
 }
 
+/* NET: online play's traffic (netrep_traffic.c, by netgame.c): the host's effects and sounds out to the guest */
+static void ngr_vehicle_out(const VehicleEvent *e);
+static void ngr_rail_out(const RailEvent *e);
+static void ngr_parade_out(const ParadeEvent *e);
+static void ngr_street_out(const StreetEvent *e);
+
 /* the vehicles' frame (vehicle.c): what they see of the monster and the buildings, then what they did */
 static void vehicle_step(Viewer *v, float dt, const ArmyMonster *m, int nm, const ArmyBox *boxes, int nb)
 {
     if (!v->veh)
         return;
-    vehicle_update(v->veh, dt, m, nm, boxes, nb);
+    if (!net_guest_world())                          /* NET: the guest's are the host's (netrep_traffic.c) */
+        vehicle_update(v->veh, dt, m, nm, boxes, nb);
     VehicleEvent ev[64];
     int ne;
     while ((ne = vehicle_events(v->veh, ev, 64)) > 0)
         for (int i = 0; i < ne; i++) {
             const VehicleEvent *e = &ev[i];
             Mon *mo = ev_mon(v, e->monster);
+            ngr_vehicle_out(e);                      /* NET: to the guest (its effects and sounds) */
             switch (e->type) {
             case VE_EFFECT:
                 if (v->fxw) {
@@ -4631,7 +4639,8 @@ static void rail_step(Viewer *v, float dt, const ArmyMonster *m, int nm)
         rb[nb].destroyed = b->state == BUILDING_GONE;
         rb[nb].falling = b->collapse != -1;
     }
-    rail_update(v->rail, dt, m, nm, rb, nb);
+    if (!net_guest_world())                          /* NET: the guest's are the host's (netrep_traffic.c) */
+        rail_update(v->rail, dt, m, nm, rb, nb);
     for (int k = 0; k < v->nmon; k++) {
         Mon *mo = &v->mon[k];
         if (mo->pending_slot < 0)
@@ -4645,6 +4654,7 @@ static void rail_step(Viewer *v, float dt, const ArmyMonster *m, int nm)
         for (int i = 0; i < ne; i++) {
             const RailEvent *e = &ev[i];
             Mon *mo = ev_mon(v, e->monster);
+            ngr_rail_out(e);                         /* NET: to the guest (its effects and sounds) */
             const RailObj *o = e->obj >= 0 ? rail_obj(v->rail, e->obj) : NULL;
             switch (e->type) {
             case RE_EFFECT:
@@ -4770,13 +4780,15 @@ static void parade_step(Viewer *v, float dt, const ArmyMonster *m, int nm)
     if (!v->parade)
         return;
     parade_set_world_state(v->parade, v->game ? game_state(v->game) : GS_PLAY);
-    parade_update(v->parade, dt, m, m ? nm : 0, v->view.pos[0]);
+    if (!net_guest_world())                          /* NET: the guest's are the host's (netrep_traffic.c) */
+        parade_update(v->parade, dt, m, m ? nm : 0, v->view.pos[0]);
     ParadeEvent ev[64];
     int ne;
     while ((ne = parade_events(v->parade, ev, 64)) > 0)
         for (int i = 0; i < ne; i++) {
             const ParadeEvent *e = &ev[i];
             Mon *mo = ev_mon(v, e->monster);
+            ngr_parade_out(e);                       /* NET: to the guest (its effects and sounds) */
             switch (e->type) {
             case PAE_EFFECT:
                 if (v->fxw) {                        /* attached: in its object's frame, following it while it is there */
@@ -4903,7 +4915,8 @@ static void street_step(Viewer *v, float dt)
         Mon *mo = &v->mon[k];
         me[k] = (StreetMonster){ { mo->mx, mo->my, mo->mz }, mo->heading / 57.2957795f,
                                  mo->have_graph ? mo->graph.states[mo->run.state].name : NULL };
-        if (mo->monster >= 0 && mo->have_graph) {    /* [R 0x2E22B0] each collision sphere against the shapes */
+        if (mo->monster >= 0 && mo->have_graph && !net_guest_world()) {   /* [R 0x2E22B0] each collision sphere against
+                                                      * the shapes (NET: the host's touches only) */
             float sp[32][4];
             int ns = mon_spheres(mo, sp, 32);
             for (int i = 0; i < ns; i++)
@@ -4917,13 +4930,15 @@ static void street_step(Viewer *v, float dt)
         memcpy(sbs[nb].max, v->scene.buildings[i].b.max, sizeof sbs[nb].max);
         sbs[nb].falling = v->scene.buildings[i].b.collapse >= 0;
     }
-    streetobj_update(v->sobj, dt, nm ? me : NULL, nm, sbs, nb);
+    if (!net_guest_world())                          /* NET: the guest's are the host's (netrep_traffic.c) */
+        streetobj_update(v->sobj, dt, nm ? me : NULL, nm, sbs, nb);
     StreetEvent ev[64];
     int ne;
     while ((ne = streetobj_events(v->sobj, ev, 64)) > 0)
         for (int i = 0; i < ne; i++) {
             const StreetEvent *e = &ev[i];
             int k = e->obj >= 0 ? v->street_of[e->obj] : -1;
+            ngr_street_out(e);                       /* NET: to the guest (its effects and sounds) */
             switch (e->type) {
             case SE_EFFECT:
                 if (v->fxw) {
@@ -6622,7 +6637,7 @@ static void play_step(Viewer *v, float dt, float aspect)
     for (v->traffic_acc += v->have_scene ? dt : 0; v->traffic_acc >= TIMESTEP; v->traffic_acc -= TIMESTEP) {
         v->traffic_exit -= TIMESTEP;
         if (v->traffic_exit < 0)
-            v->traffic_exit = 5.0f + wrand_frand() * 5.0f;
+            v->traffic_exit = 5.0f + (net_guest_world() ? 0.5f : wrand_frand()) * 5.0f;   /* NET: the host's draw */
     }
 }
 

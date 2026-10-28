@@ -2395,3 +2395,36 @@ int rail_events(Rail *r, RailEvent *out, int max)
     r->nev -= n;
     return n;
 }
+
+/* ---------------------------------------------------------------- NET: online play's guest (netrep_traffic.c) */
+
+RailObj *rail_net_obj(Rail *r, int i, int fresh)
+{
+    if (i < 0 || i >= MAX_OBJS)
+        return NULL;
+    while (r->n <= i) {                              /* a slot the host has and this side not yet: gone */
+        RailObj *o = &r->o[r->n++];
+        memset(o, 0, sizeof *o);
+        o->phase = RP_GONE;
+        o->gone_age = 2;
+        o->spawner = o->cobj = o->next.i = -1;
+        o->ambient_sfx = o->stopping_sfx = o->sparks_fx = o->ambient_fx = o->light_fx = -1;
+    }
+    RailObj *o = &r->o[i];
+    if (fresh) {                                     /* as obj_new leaves it (its look and place come next) */
+        memset(o, 0, sizeof *o);
+        o->phase = RP_ALIVE;
+        o->spawner = o->cobj = o->next.i = -1;
+        o->ambient_sfx = o->stopping_sfx = o->sparks_fx = o->ambient_fx = o->light_fx = -1;
+        rot_z(o->rot, 0);
+    }
+    return o;
+}
+
+Group rail_net_template(Rail *r, const char *name) { return find_template(r, name); }
+
+void rail_net_event(Rail *r, const RailEvent *e)
+{
+    if (r->nev < MAX_EVENTS)
+        r->ev[r->nev++] = *e;
+}

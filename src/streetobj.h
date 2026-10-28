@@ -264,4 +264,8 @@ void streetobj_draw_world(const StreetObjs *s, int i, float out[16]);
 void streetobj_point(const StreetObjs *s, int i, const float off[3], float out[3]);
 int streetobj_events(StreetObjs *s, StreetEvent *out, int max);   /* takes the events since the last call */
 
+/* ---- NET: online play's guest (netrep_traffic.c): its objects are the host's, written from the snapshots */
+StreetObj *streetobj_net_obj(StreetObjs *s, int i);   /* object i to write; NULL past the list */
+void streetobj_net_event(StreetObjs *s, const StreetEvent *e);   /* one of the host's, taken as this module's own */
+
 #endif

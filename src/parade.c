@@ -1360,3 +1360,35 @@ int parade_events(Parade *p, ParadeEvent *out, int max)
     p->nev -= n;
     return n;
 }
+
+/* ---------------------------------------------------------------- NET: online play's guest (netrep_traffic.c) */
+
+ParadeObj *parade_net_obj(Parade *p, int i, int fresh)
+{
+    if (i < 0 || i >= MAX_OBJS)
+        return NULL;
+    while (p->n <= i) {                              /* a slot the host has and this side not yet: gone */
+        ParadeObj *o = &p->o[p->n];
+        memset(o, 0, sizeof *o);
+        o->phase = PAP_GONE;
+        o->partner = o->cobj = -1;
+        p->gone_age[p->n++] = 1000;
+    }
+    ParadeObj *o = &p->o[i];
+    if (fresh) {                                     /* as new_obj leaves it (its look and place come next) */
+        memset(o, 0, sizeof *o);
+        o->phase = PAP_ALIVE;
+        o->partner = o->cobj = -1;
+        o->pulse_delay = -1;
+        p->gone_age[i] = 0;
+    }
+    return o;
+}
+
+Group parade_net_template(Parade *p, const char *name) { return template_of(p, name); }
+
+void parade_net_event(Parade *p, const ParadeEvent *e)
+{
+    if (p->nev < MAX_EVENTS)
+        p->ev[p->nev++] = *e;
+}

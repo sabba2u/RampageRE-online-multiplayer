@@ -170,4 +170,10 @@ void parade_throw(Parade *p, int obj, int monster, int eat, float monster_headin
 /* hasGrabbedObject's 2 (0x2E5590: flag 0x80000): a biker and a cart's food are eaten, not thrown */
 int parade_is_edible(const Parade *p, int obj);
 
+/* ---- NET: online play's guest (netrep_traffic.c): its objects are the host's, written from the snapshots */
+/* object i to write (the list grown to it, the slots between gone); fresh: emptied as a new object's first */
+ParadeObj *parade_net_obj(Parade *p, int i, int fresh);
+Group parade_net_template(Parade *p, const char *name);   /* a template by name (the module's own lookup) */
+void parade_net_event(Parade *p, const ParadeEvent *e);   /* one of the host's, taken as this module's own */
+
 #endif
