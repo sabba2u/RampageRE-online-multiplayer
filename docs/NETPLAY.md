@@ -22,7 +22,9 @@ Both players need the same build of RampageRE and their own disc image.
   player 2 (pad 1): on Monster Select the guest picks their own monster as a couch player 2 would. When the host's game
   starts the guest leaves its menus and loads it; when the host goes back to its menus (or leaves) the guest goes back
   to its main menu. In a game the guest's Start opens the host's Pause menu for player 2, which the guest then works;
-  the guest's own results screens answer by themselves (the host's answer counts). The guest writes no profile while
+  the guest's results screens are the host's: they open when the host's do, move as the host's do (every press the
+  host's screen takes is sent to the guest's) and close when the host's close; the guest's own presses there are the
+  host's player 2's (Game Over's Retry / Quit, the Results' Continue work from either PC). The guest writes no profile while
   online and its profile is put back as it was when it leaves the host's game.
 
 ## What is shared (phase 1)
@@ -30,7 +32,8 @@ Both players need the same build of RampageRE and their own disc image.
 | | Who decides | How it gets there |
 |---|---|---|
 | Player 2's pad | guest | every frame, unreliable, the last 6 frames in each packet |
-| Monsters: place, turn, move state and clip time, HP, energy, rage | host | 20 snapshots a second, shown 100 ms behind, interpolated |
+| Monsters: place, turn, move state and clip time, HP, energy, rage; defeated, turned human (the streaker the host's person), dropping in, hidden, the dynamic scale, the head's look, the face | host | 20 snapshots a second, shown 100 ms behind, interpolated; the guest makes no streaker or respawn of its own |
+| The game's flow: states (intro, play, block won, Game Over, the walk to the next block, the city's end), the block, the respawns' lives, the results screens, time up, the cameras and the HUD of the intros | host | every event the host's game gives (GE_*) with its state, reliable, at its host time; the guest's game makes no decisions (game_net_follow) and hands them out as its own. The snapshots carry the state too |
 | Buildings: every hit, roof hit, cell change, collapse | host | reliable, in order; the guest's game makes the same calls (building_net_gate), so cracks, debris and falls play as usual |
 | Clock, points, kills, lives | host | in each snapshot (game_net_put) |
 | The world (city, block, play type, monsters, seeds) | host | reliable, on change; the guest loads it |
@@ -53,6 +56,11 @@ tools\net_test.ps1 -Seconds 0                leave both running to play them you
 ```
 
 `RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents.
+Both copies log the game's flow (`net: flow: ...`: states, defeats, respawns, lives, results screens and their answers,
+the host's events sent and taken). Test hooks, read by the host only: `RAMPAGE_NET_TESTDIE=period[,lives]` fells both
+monsters every `period` seconds of play (lives: each player's from the start), `RAMPAGE_NET_TESTEND=win,secs` brings
+every building down `secs` into each block, `time,secs` runs the clock out (a block with a time limit: `--play timed`).
+A defeated monster lies there until its player presses a button (`Faceup_Idle_Waiting2`), as in the game.
 
 ## Hooks: where online play touches upstream's files
 
@@ -66,7 +74,9 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert) |
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
 | `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest) |
-| `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score) |
+| `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score); `game_net_follow`, `game_net_flow_get` / `_put`, `game_net_push`, `game_net_tap` (the host's flow); the follow gate in `game_update`, the tap in `game_events` |
+| `src/hud.c` / `.h` | `hud_net_tap` in `hud_input_pad` (a results screen's presses), `hud_results_close` |
+| `src/main.c` (script calls, GE_REVIVE) | the guest's `Monsters::becomeHuman` / `startRespawn` do nothing; its GE_REVIVE removes no person |
 | `src/people.c` / `.h` | `people_net_gate` in `emit`, `people_net_tap` in `people_events`, `people_net_eaten` in `people_eat`; the `people_net_*` section at the end (netrep_people.c) |
 | `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |

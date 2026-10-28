@@ -43,6 +43,9 @@ static Viewer *g_ngv;
 static int ng_replaying;                             /* the guest makes the host's building change: the gate is open */
 static double ng_snap_at, ng_digest_at;
 static uint32_t ng_followed;                         /* the host's world the guest last loaded */
+static int ng_hud_shown = -1;                        /* the host: the last GE_HUD's a (-1 none yet) */
+static int ng_guest(void);
+static int ng_host(void);
 
 /* ---- pads: Pad (main.c) <-> NetPad, the buttons MV_UP .. MV_L3 as bits 0 .. 17 */
 static void ng_pad_out(const Pad *p, NetPad *o)
@@ -131,6 +134,7 @@ static void ng_set_world(Viewer *v)
 }
 
 static void ngr_menu_follow(Viewer *v);
+static void ng_flow_reset(Viewer *v);
 
 /* the guest: the host's world loaded as the viewer's start would (--players, a city and block); from the front end,
  * the front end left first as a game's start leaves it (shell_start_game) */
@@ -179,6 +183,7 @@ static void ng_follow(Viewer *v)
         if (v->mon[k].have_graph)
             play_state(&v->mon[k]);
     net_snaps_clear();
+    ng_flow_reset(v);                                /* (the host's events of a game before this one: dropped) */
 }
 
 /* ---- buildings */
@@ -259,6 +264,7 @@ static void ng_on_building(Viewer *v, NetBuf *b)
 /* ---- the messages netgame.c reads itself (the puppets' and the menus' below) */
 static void ng_on_puppet(NetBuf *b, int type);
 static void ngr_menu_message(Viewer *v, NetBuf *b);
+static void ng_on_flow(NetBuf *b);
 static void ng_handler(const uint8_t *data, int len)
 {
     if (!g_ngv)
@@ -269,6 +275,8 @@ static void ng_handler(const uint8_t *data, int len)
         ng_on_building(g_ngv, &b);
     else if ((type == NM_PUPPET || type == NM_PEVENT) && net_role() == NET_GUEST && net_live())
         ng_on_puppet(&b, type);
+    else if (type == NM_EVENT && net_role() == NET_GUEST && net_live())
+        ng_on_flow(&b);
     else if (type == NM_MENU)
         ngr_menu_message(g_ngv, &b);
 }
@@ -307,6 +315,12 @@ typedef struct {
     Hand hand[2];                                    /* its hands on the wall */
     int16_t column;
     uint8_t no_gravity;
+    uint8_t human, dropping, hidden;                 /* its look: turned human (its streaker the host's person
+                                                      * `streaker`), dropping in, not drawn */
+    int16_t streaker;
+    float scale, look_yaw, look_pitch;               /* the dynamic scale now, the head's angles */
+    char face[32];                                   /* the face's expression playing (Expression_*), "" none */
+    uint8_t face_head, face_loop;
 } NgMon;
 
 /* on a wall, getting on or off one, or a hand still on it: then the mount and the hands go in the snapshot */
@@ -353,6 +367,17 @@ static void ng_send_snap(Viewer *v)
             net_w_bytes(&b, &mo->mount, (int)sizeof mo->mount);
             net_w_bytes(&b, mo->hand, (int)sizeof mo->hand);
         }
+        net_w_u8(&b, (uint32_t)((mo->human ? 1 : 0) | (mo->dropping ? 2 : 0) | (mon_in(mo) && mon_in(mo)->hidden ? 4 : 0)));
+        net_w_u16(&b, (uint32_t)(uint16_t)mo->streaker);
+        net_w_f32(&b, mo->scale);
+        net_w_f32(&b, mo->look_yaw);
+        net_w_f32(&b, mo->look_pitch);
+        const char *face = mo->face && mo->faces.n > 0 && mo->faces.list[0].name ? mo->faces.list[0].name : "";
+        int fl = (int)strlen(face) < 31 ? (int)strlen(face) : 31;
+        net_w_u8(&b, (uint32_t)fl);
+        net_w_bytes(&b, face, fl);
+        net_w_u8(&b, (uint32_t)(fl ? mo->faces.list[0].head : 0));
+        net_w_u8(&b, (uint32_t)(fl ? mo->faces.list[0].loop : 0));
     }
     for (int k = 0; k < 2; k++) {                    /* both players' pads (the guest's monsters animate by them) */
         NetPad p;
@@ -374,11 +399,19 @@ static void ng_send_snap(Viewer *v)
         }
         net_w_u8(&b, (uint32_t)gs.lives[k]);
     }
+    GameNetFlow fl;                                  /* the game's flow (the guest's game follows it) */
+    game_net_flow_get(v->game, &fl);
+    net_w_bytes(&b, &fl, (int)sizeof fl);            /* (both are the same build: the handshake says so) */
+    net_w_u8(&b, (uint32_t)(uint8_t)ng_hud_shown);
+    net_w_u8(&b, (uint32_t)(v->hud && hud_results_showing(v->hud)));
     if (!b.err)
         net_send_snap(m, b.len);
 }
 
-typedef struct { int n; NgMon m[MONSTERS]; NetPad pad[2]; int game_state, block; float clock; GameNetSync gs; } NgSnap;
+typedef struct {
+    int n; NgMon m[MONSTERS]; NetPad pad[2]; int game_state, block; float clock; GameNetSync gs;
+    GameNetFlow flow; int hud, results_up;
+} NgSnap;
 
 static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
 {
@@ -405,6 +438,21 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
             net_r_bytes(&b, &m->mount, (int)sizeof m->mount);
             net_r_bytes(&b, m->hand, (int)sizeof m->hand);
         }
+        int look = (int)net_r_u8(&b);
+        m->human = look & 1;
+        m->dropping = look >> 1 & 1;
+        m->hidden = look >> 2 & 1;
+        m->streaker = (int16_t)net_r_u16(&b);
+        m->scale = net_r_f32(&b);
+        m->look_yaw = net_r_f32(&b);
+        m->look_pitch = net_r_f32(&b);
+        int fl = (int)net_r_u8(&b);
+        if (fl > 31)
+            return 0;
+        net_r_bytes(&b, m->face, fl);
+        m->face[fl] = 0;
+        m->face_head = (uint8_t)net_r_u8(&b);
+        m->face_loop = (uint8_t)net_r_u8(&b);
     }
     for (int k = 0; k < 2; k++) {
         NetPad *p = &o->pad[k];
@@ -423,6 +471,9 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
         }
         o->gs.lives[k] = (int)net_r_u8(&b);
     }
+    net_r_bytes(&b, &o->flow, (int)sizeof o->flow);
+    o->hud = (int)(int8_t)net_r_u8(&b);
+    o->results_up = (int)net_r_u8(&b);
     return !b.err;
 }
 
@@ -434,6 +485,187 @@ static float ng_lerp_angle(float a, float b, float t)   /* degrees, the short wa
 
 /* the guest: is that held kind's system a puppet yet (its indices the host's)? */
 static int ng_held_live(int i);
+
+/* ---- the game's flow: the host's decides. The guest's game makes no decisions of its own (game_net_follow): every
+ * event the host's game hands out (game_net_tap) comes as an NM_EVENT (reliable, in order, with the host's flow as it
+ * was then) and the guest's game hands it out at its host time as its own, so main.c's game_step does what the host's
+ * did (the block, the cameras, the HUD, the results screens, the revivals). The snapshots carry the flow too (a guest
+ * that joined late, a lost moment). Not given to the guest: GE_EXIT (it leaves with the host, netrep_menu.c) */
+static double ng_flow_t = -1e30;                     /* the guest: the host time of the flow it last took */
+static double ng_results_t = -1e30;                  /* the guest: the host time its results screen was opened at */
+static int ng_hud_applied = -1;                      /* the guest: the HUD's fade it last set from the host's */
+static char ng_names[64][64];                        /* the guest: the events' names (the host's pointers mean nothing) */
+static int ng_nname;
+
+typedef struct NgFlowQ { struct NgFlowQ *next; double t; int len; uint8_t data[]; } NgFlowQ;
+static NgFlowQ *ng_flowq, **ng_flowq_tail = &ng_flowq;
+
+static int ng_flow_logged(int type)
+{
+    return type == GE_STATE || type == GE_RESULTS || type == GE_REVIVE || type == GE_BLOCK || type == GE_TIME_UP ||
+           type == GE_EXIT;
+}
+
+static void ng_flow_tap(const GameEvent *e)
+{
+    if (e->type == GE_HUD)
+        ng_hud_shown = e->a;
+    if (!ng_host() || !g_ngv || !g_ngv->game)
+        return;
+    uint8_t m[64 + sizeof(GameNetFlow) + 64];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_EVENT);
+    net_w_f64(&b, net_now());
+    GameNetFlow f;
+    game_net_flow_get(g_ngv->game, &f);
+    net_w_bytes(&b, &f, (int)sizeof f);
+    net_w_u8(&b, (uint32_t)e->type);
+    net_w_u8(&b, (uint32_t)(uint8_t)(int8_t)e->slot);
+    net_w_u32(&b, (uint32_t)e->a);
+    net_w_u32(&b, (uint32_t)e->b);
+    int nl = e->name ? (int)strlen(e->name) : 0;
+    if (nl > 63)
+        nl = 63;
+    net_w_u8(&b, (uint32_t)nl);
+    net_w_bytes(&b, e->name ? e->name : "", nl);
+    for (int i = 0; i < 3; i++)
+        net_w_f32(&b, e->pos[i]);
+    for (int i = 0; i < 3; i++)
+        net_w_f32(&b, e->v[i]);
+    net_w_f32(&b, e->f);
+    if (!b.err)
+        net_send_msg(1, m, b.len);
+    if (ng_flow_logged(e->type))
+        net_log("flow: sent event %d a %d b %d slot %d %s", e->type, e->a, e->b, e->slot, e->name ? e->name : "");
+}
+
+static void ng_on_flow(NetBuf *b)                    /* the guest: one of the host's events, kept till its time */
+{
+    double t = net_r_f64(b);
+    int len = b->cap - b->len;
+    if (b->err || len <= 0)
+        return;
+    NgFlowQ *q = malloc(sizeof *q + (size_t)len);
+    if (!q)
+        return;
+    q->next = NULL;
+    q->t = t;
+    q->len = len;
+    memcpy(q->data, b->p + b->len, (size_t)len);
+    *ng_flowq_tail = q;
+    ng_flowq_tail = &q->next;
+}
+
+static void ng_flow_reset(Viewer *v)
+{
+    (void)v;
+    while (ng_flowq) {
+        NgFlowQ *q = ng_flowq;
+        ng_flowq = q->next;
+        free(q);
+    }
+    ng_flowq_tail = &ng_flowq;
+    ng_hud_applied = -1;
+    ng_results_t = -1e30;
+}
+
+/* the guest's results screen: down when the host's is (as of host time t), unless it opened since */
+static void ng_results_follow(Viewer *v, int host_up, double t)
+{
+    if (!host_up && v->hud && hud_results_showing(v->hud) && t > ng_results_t + 0.05) {
+        net_log("flow: the host's results screen is gone: ours closed");
+        hud_results_close(v->hud);
+    }
+}
+
+static void ng_flow_run(Viewer *v)                   /* the guest: the host's events whose time is shown now */
+{
+    const NetSnapBuf *mb = net_snaps();
+    double shown = mb->have_offset ? net_now() - mb->offset - ng_delay() : 1e30;
+    while (ng_flowq && ng_flowq->t <= shown) {
+        NgFlowQ *q = ng_flowq;
+        ng_flowq = q->next;
+        if (!ng_flowq)
+            ng_flowq_tail = &ng_flowq;
+        NetBuf b = netbuf(q->data, q->len);
+        GameNetFlow f;
+        GameEvent e;
+        memset(&e, 0, sizeof e);
+        net_r_bytes(&b, &f, (int)sizeof f);
+        e.type = (int)net_r_u8(&b);
+        e.slot = (int)(int8_t)net_r_u8(&b);
+        e.a = (int)net_r_u32(&b);
+        e.b = (int)net_r_u32(&b);
+        int nl = (int)net_r_u8(&b);
+        char *name = ng_names[ng_nname++ & 63];
+        if (nl > 63)
+            nl = 63;
+        net_r_bytes(&b, name, nl);
+        name[nl] = 0;
+        e.name = nl ? name : NULL;
+        for (int i = 0; i < 3; i++)
+            e.pos[i] = net_r_f32(&b);
+        for (int i = 0; i < 3; i++)
+            e.v[i] = net_r_f32(&b);
+        e.f = net_r_f32(&b);
+        if (!b.err && v->game) {
+            game_net_flow_put(v->game, &f);
+            ng_flow_t = q->t;
+            if (ng_flow_logged(e.type))
+                net_log("flow: host event %d a %d b %d slot %d %s", e.type, e.a, e.b, e.slot, e.name ? e.name : "");
+            if (e.type == GE_HUD)
+                ng_hud_applied = e.a;
+            if (e.type == GE_RESULTS)
+                ng_results_t = q->t;
+            if (e.type != GE_EXIT)                   /* (the guest leaves with the host: netrep_menu.c) */
+                game_net_push(v->game, &e);
+        }
+        free(q);
+    }
+}
+
+/* the guest: the flow of a snapshot (host time t), unless an event already gave a newer one */
+static void ng_flow_from_snap(Viewer *v, const NgSnap *s, double t)
+{
+    if (!v->game || t <= ng_flow_t)
+        return;
+    ng_flow_t = t;
+    game_net_flow_put(v->game, &s->flow);
+    if (s->hud >= 0 && s->hud != ng_hud_applied) {   /* (a guest that came in after the host's GE_HUD) */
+        ng_hud_applied = s->hud;
+        for (int k = 0; k < v->nmon; k++)
+            if (v->mon[k].hud)
+                hud_show(v->mon[k].hud, (float)s->hud);
+    }
+    ng_results_follow(v, s->results_up, t);
+}
+
+/* the guest: a monster's look as the host's (after scene_monster_place, which set its model's matrix afresh) */
+static void ng_apply_look(Viewer *v, Mon *mo, const NgMon *hi, const NgMon *lo, float alpha)
+{
+    Instance *in = mon_in(mo);
+    mo->human = hi->human;
+    mo->dropping = hi->dropping;
+    mo->streaker = hi->streaker;
+    if (in)
+        in->hidden = hi->hidden;
+    float sc = lo ? lo->scale + (hi->scale - lo->scale) * alpha : hi->scale;
+    if (!(sc > 0.01f && sc < 100))
+        sc = 1;
+    mo->scale = mo->scale_to = mo->scale_from = sc;
+    mo->scale_left = 0;
+    if (sc != 1 && in)                               /* (as mon_step's end scales it) */
+        for (int k = 0; k < 11; k++)
+            if ((k & 3) != 3)
+                in->base.m[k] *= sc;
+    mo->look_yaw = mo->head.yaw = hi->look_yaw;
+    mo->look_pitch = mo->head.pitch = hi->look_pitch;
+    v->scene.mon[mo->slot].look_yaw = hi->mirror ? -hi->look_yaw : hi->look_yaw;
+    v->scene.mon[mo->slot].look_pitch = hi->look_pitch;
+    const char *now = mo->face && mo->faces.n > 0 && mo->faces.list[0].name ? mo->faces.list[0].name : "";
+    if (hi->face[0] && strcmp(now, hi->face))
+        face_play(mo, hi->face, hi->face_head, hi->face_loop, 0);
+}
 
 static NgSnap ng_last;                               /* the newest the guest read (its pads, its flow) */
 static int ng_have_last;
@@ -468,6 +700,7 @@ static void ng_apply_snap(Viewer *v)
         /* the model too: mon_step placed it where the guest's own step had it (scene_monster_place at its end), and
          * drawn so the monster showed in two places by turns, the guest's step and the host's */
         scene_monster_place(&v->scene, k, mo->mx, mo->my, mo->mz, mo->heading);
+        ng_apply_look(v, mo, hi, r == 2 ? &sa.m[k] : NULL, alpha);
         memcpy(mo->vel, hi->vel, sizeof mo->vel);
         if (mo->have_graph && hi->state >= 0 && hi->state < mo->graph.n) {
             if (mo->run.state != hi->state) {
@@ -513,8 +746,12 @@ static void ng_apply_snap(Viewer *v)
     }
     const NetSnapSample *n = netsnap_newest(net_snaps());
     ng_have_last = n && ng_read_snap(n, &ng_last);
-    if (r == 2 || r == 1)                            /* the host's clock and score, as of the sample shown */
+    if (r == 2 || r == 1) {                          /* the host's flow, clock and score, as of the sample shown */
+        const NgSnap *at = r == 2 ? &sa : &sb;
+        double t = r == 2 ? a->t : b->t;
+        ng_flow_from_snap(v, at, t);
         game_net_put(v->game, &sb.gs, v->nmon < 2 ? v->nmon : 2);
+    }
     if (ng_have_last && ng_last.block != v->block) {
         static int warned = -1;
         if (warned != ng_last.block)
@@ -702,6 +939,8 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     if (appid)
         fclose(appid);
     building_net_gate = ng_building_gate;
+    game_net_tap = ng_flow_tap;
+    hud_net_tap = ng_results_tap;
     const char *rate = getenv("RAMPAGE_NET_RATE");
     if (rate)
         netgame_set_rate(atoi(rate));
@@ -746,6 +985,10 @@ static void netgame_frame(Viewer *v, Window *w, double now)
  * (player 1's keys and pad 0) and plays it on its player 2 at once, player 1 by the host's */
 static void netgame_pads(Viewer *v, const Window *w)
 {
+    if (v->game && game_net_following(v->game) != ng_guest()) {   /* the guest's game follows the host's */
+        net_log("flow: our game %s", ng_guest() ? "follows the host's" : "is our own again");
+        game_net_follow(v->game, ng_guest());
+    }
     if (!net_live() || v->nmon < 2)
         return;
     if (net_role() == NET_HOST) {
@@ -795,12 +1038,131 @@ static void netgame_pads(Viewer *v, const Window *w)
         memset(&v->mon[0].pad, 0, sizeof v->mon[0].pad);
 }
 
+/* the game's flow as this copy has it, logged as it changes (both sides: build\nettest\host.out / guest.out) */
+static void ng_flow_log(Viewer *v)
+{
+    static int was_state = -1, was_results = -1, was_result = -1, was_lives[2] = { -1, -1 };
+    static int was_def[MONSTERS], was_human[MONSTERS], was_streaker[MONSTERS], was_hidden[MONSTERS];
+    if (!v->game)
+        return;
+    int s = game_state(v->game);
+    if (s != was_state)
+        net_log("flow: state %d (block %d)", s, v->block);
+    was_state = s;
+    int res = v->hud && hud_results_showing(v->hud), r = game_result_state(v->game);
+    if (res != was_results)
+        net_log("flow: results screen %s", res ? "up" : "down");
+    if (r != was_result && r)
+        net_log("flow: result answered %d (state %d)", r, s);
+    was_results = res;
+    was_result = r;
+    for (int k = 0; k < v->nmon && k < MONSTERS; k++) {
+        const Mon *mo = &v->mon[k];
+        int hidden = mon_in(mo) && mon_in(mo)->hidden;
+        if (mo->defeated != was_def[k] || mo->human != was_human[k] || (mo->streaker >= 0) != was_streaker[k] ||
+            hidden != was_hidden[k])
+            net_log("flow: monster %d %s%s%s%s hp %.0f at %.1f %.1f %.1f", k, mo->defeated ? "defeated" : "up",
+                    mo->human ? ", human" : "", mo->streaker >= 0 ? ", streaker" : "", hidden ? ", hidden" : "",
+                    mo->hp, mo->mx, mo->my, mo->mz);
+        was_def[k] = mo->defeated;
+        was_human[k] = mo->human;
+        was_streaker[k] = mo->streaker >= 0;
+        was_hidden[k] = hidden;
+        if (k < 2 && game_lives(v->game, k) != was_lives[k]) {
+            net_log("flow: player %d lives %d", k + 1, game_lives(v->game, k));
+            was_lives[k] = game_lives(v->game, k);
+        }
+    }
+}
+
+/* the test's deaths (RAMPAGE_NET_TESTDIE=period[,lives], the host alone; never set in play): every `period` seconds
+ * of play both monsters lose all their HP; lives, if given, are each player's from the first */
+static void ng_test_end(Viewer *v)
+{
+    /* RAMPAGE_NET_TESTEND=win,secs | time,secs (the host alone; never set in play): `secs` into each block's play every
+     * building is brought down (building_destroy: the guest's made by NM_BUILDING), or the clock is run out */
+    static const char *spec;
+    static int read, was_state = -1, done;
+    static double at;
+    if (!read) {
+        spec = getenv("RAMPAGE_NET_TESTEND");
+        read = 1;
+    }
+    if (!spec || !v->game)
+        return;
+    int s = game_state(v->game);
+    if (s != was_state && s == GS_PLAY) {
+        const char *c = strchr(spec, ',');
+        at = net_now() + (c ? atof(c + 1) : 10);
+        done = 0;
+    }
+    was_state = s;
+    if (s != GS_PLAY || done || net_now() < at)
+        return;
+    done = 1;
+    if (!strncmp(spec, "win", 3)) {
+        net_log("test: every building brought down");
+        for (uint32_t i = 0; i < v->scene.nbuildings; i++)
+            if (v->scene.buildings[i].b.state == BUILDING_STANDING)
+                building_destroy(&v->scene.buildings[i].b);
+    } else {
+        GameNetSync gs;
+        game_net_get(v->game, &gs);
+        gs.elapsed = 100000;
+        net_log("test: the clock run out");
+        game_net_put(v->game, &gs, v->nmon < 2 ? v->nmon : 2);
+    }
+}
+
+static void ng_test_die(Viewer *v)
+{
+    ng_test_end(v);
+    static const char *spec;
+    static int read;
+    static double next;
+    static int lives_set;
+    if (!read) {
+        spec = getenv("RAMPAGE_NET_TESTDIE");
+        read = 1;
+    }
+    if (!spec || !v->game || game_state(v->game) != GS_PLAY)
+        return;
+    float period = (float)atof(spec);
+    const char *c = strchr(spec, ',');
+    if (period < 1)
+        period = 1;
+    if (!lives_set && c) {
+        GameNetSync s;
+        game_net_get(v->game, &s);
+        for (int k = 0; k < 2; k++)
+            s.lives[k] = atoi(c + 1);
+        game_net_put(v->game, &s, 2);
+        lives_set = 1;
+        net_log("test: lives %d each", atoi(c + 1));
+    }
+    if (!next)
+        next = net_now() + period;
+    if (net_now() < next)
+        return;
+    next = net_now() + period;
+    for (int k = 0; k < v->nmon && k < 2; k++) {
+        Mon *mo = &v->mon[k];
+        if (mo->defeated || mo->human || mo->dropping || mo->hp <= 0)
+            continue;
+        float d[2] = { 0, 1 };
+        net_log("test: monster %d felled", k);
+        monster_take(mo, "test", mo->hp + 1, 0, -1, d, 0);
+    }
+}
+
 /* after the world's step, before the monsters are posed: the host's snapshot, or the guest's taking it */
 static void netgame_after_step(Viewer *v)
 {
     if (!net_live())
         return;
+    ng_flow_log(v);
     if (net_role() == NET_HOST) {
+        ng_test_die(v);
         ng_building_flush();
         if (net_now() - ng_snap_at >= 1.0 / ng_rate - 0.002) {   /* (2 ms early: a 60 Hz frame's jitter) */
             ng_snap_at = net_now();
@@ -810,6 +1172,7 @@ static void netgame_after_step(Viewer *v)
         ng_puppets_send(v);
     } else {
         ng_apply_snap(v);
+        ng_flow_run(v);
         ng_puppets_apply(v);
     }
 }

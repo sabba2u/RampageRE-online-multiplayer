@@ -84,6 +84,7 @@ struct Game {
     int button, button_end;                          /* gWorld +0x1B (0x4D6A9B): a pad button (game_attract_button);
                                                       * the demo ended by it */
     int weapons_on;                                  /* gp-0x772C (game_weapons_on) */
+    int net_follow;                                  /* NET: the guest's: the host's flow, none of its own */
     GameEvent ev[MAX_EVENTS]; int nev;
 };
 
@@ -1175,6 +1176,8 @@ void game_update(Game *g, float dt, const GameInput *in)
         g->buildings = in->buildings;
         g->centre_down = in->centre_down;
     }
+    if (g->net_follow)                               /* NET: the host's game decides (game_net_flow_put) */
+        return;
     if (g->results_screen >= 0 && g->auto_results > 0 && g->result == GR_NONE) {
         g->results_age += dt;
         if (g->results_age >= g->auto_results)
@@ -1189,6 +1192,8 @@ int game_events(Game *g, GameEvent *out, int max)
         return 0;
     int n = g->nev < max ? g->nev : max;
     memcpy(out, g->ev, (size_t)n * sizeof *out);
+    for (int i = 0; game_net_tap && i < n; i++)      /* NET: the host's events, sent */
+        game_net_tap(&out[i]);
     memmove(g->ev, g->ev + n, (size_t)(g->nev - n) * sizeof *out);
     g->nev -= n;
     return n;
@@ -1388,6 +1393,8 @@ void game_net_put(Game *g, const GameNetSync *s, int players)
 {
     if (!g)
         return;
+    if (g->net_follow)                               /* (the guest's clock starts and stops with the host's) */
+        g->running = s->running;
     if (s->running && g->running)
         g->start = (float)g->now - s->elapsed;
     else if (!s->running && !g->running)
@@ -1397,4 +1404,93 @@ void game_net_put(Game *g, const GameNetSync *s, int players)
         memcpy(g->p[k].kills, s->kills[k], sizeof s->kills[k]);
         g->lives[k] = s->lives[k];
     }
+}
+
+/* NET: the guest's game follows the host's (game.h) */
+void (*game_net_tap)(const GameEvent *e);
+
+void game_net_follow(Game *g, int on) { if (g) g->net_follow = on != 0; }
+int game_net_following(const Game *g) { return g && g->net_follow; }
+
+void game_net_flow_get(const Game *g, GameNetFlow *f)
+{
+    memset(f, 0, sizeof *f);
+    if (!g)
+        return;
+    f->state = (int16_t)g->state;
+    f->cur = (int16_t)g->cur;
+    f->start_block = (int16_t)g->start_block;
+    f->ni_on = (uint8_t)g->ni_on;
+    f->weapons_on = (uint8_t)g->weapons_on;
+    f->enabled = (uint8_t)g->enabled;
+    f->visible = (uint8_t)g->visible;
+    f->game_over = (uint8_t)g->game_over;
+    f->level_done = (uint8_t)g->level_done;
+    f->city_destroyed = (uint8_t)g->city_destroyed;
+    f->quit = (uint8_t)g->quit;
+    f->select = (uint8_t)g->select;
+    f->world_done = (uint8_t)g->world_done;
+    f->king_block = (int8_t)g->king_block;
+    f->king_city = (int8_t)g->king_city;
+    f->king_world = (int8_t)g->king_world;
+    f->first_place = (int8_t)g->first_place;
+    f->second_place = (int8_t)g->second_place;
+    f->result = (int8_t)g->result;
+    f->results_screen = (int8_t)g->results_screen;
+    for (int k = 0; k < GAME_PLAYERS; k++) {
+        f->human[k] = (int8_t)g->human[k];
+        f->blocks_won[k] = g->p[k].blocks_won;
+        f->cities_won[k] = g->p[k].cities_won;
+        f->city_score[k] = g->p[k].city_score;
+    }
+    f->city_total = g->city_total;
+    f->time_bonus = g->time_bonus;
+    f->city_flags = g->city_flags;
+    f->limit = g->limit;
+    f->max_time = g->max_time;
+    f->clock_limit = g->clock_limit;
+}
+
+void game_net_flow_put(Game *g, const GameNetFlow *f)
+{
+    if (!g)
+        return;
+    g->state = g->entered = f->state;
+    g->cur = f->cur;
+    g->start_block = f->start_block;
+    g->ni_on = f->ni_on;
+    g->weapons_on = f->weapons_on;
+    g->enabled = f->enabled;
+    g->visible = f->visible;
+    g->game_over = f->game_over;
+    g->level_done = f->level_done;
+    g->city_destroyed = f->city_destroyed;
+    g->quit = f->quit;
+    g->select = f->select;
+    g->world_done = f->world_done;
+    g->king_block = f->king_block;
+    g->king_city = f->king_city;
+    g->king_world = f->king_world;
+    g->first_place = f->first_place;
+    g->second_place = f->second_place;
+    g->result = f->result;
+    g->results_screen = f->results_screen;
+    for (int k = 0; k < GAME_PLAYERS; k++) {
+        g->human[k] = f->human[k];
+        g->p[k].blocks_won = f->blocks_won[k];
+        g->p[k].cities_won = f->cities_won[k];
+        g->p[k].city_score = f->city_score[k];
+    }
+    g->city_total = f->city_total;
+    g->time_bonus = f->time_bonus;
+    g->city_flags = f->city_flags;
+    g->limit = f->limit;
+    g->max_time = f->max_time;
+    g->clock_limit = f->clock_limit;
+}
+
+void game_net_push(Game *g, const GameEvent *e)
+{
+    if (g && e)
+        *emit(g, e->type, e->slot) = *e;
 }
