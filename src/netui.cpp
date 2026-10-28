@@ -225,8 +225,8 @@ static void corner(void)                             /* online, the panel closed
     if (net_role() == NET_OFF)
         return;
     ImGuiIO &io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10, 10), ImGuiCond_Always, ImVec2(1, 0));
-    ImGui::SetNextWindowBgAlpha(0.65f);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 8, io.DisplaySize.y - 8), ImGuiCond_Always, ImVec2(1, 1));   /* the bottom right: the top's corners are the players' HUDs */
+    ImGui::SetNextWindowBgAlpha(0.4f);
     ImGui::Begin("##netcorner", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                  ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
     status_line();
