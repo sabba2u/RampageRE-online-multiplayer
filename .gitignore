@@ -50,3 +50,8 @@ steam_appid.txt
 lookfx.cfg
 # agents' worktrees
 .claude/worktrees/
+# the lobby server (lobby/): its packages and its own settings (config.example.json is the committed one); the
+# game's lobby settings as last set in the Insert panel (src/netlobby.c)
+lobby/node_modules/
+lobby/config.json
+netlobby.cfg

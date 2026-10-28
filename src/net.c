@@ -2,6 +2,7 @@
 #include "net.h"
 #include "netwire.h"
 #include "nettransport.h"
+#include "netlobby.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@
 #define DIGESTS 256                                  /* the host's own, at most 30 a second: eight seconds */
 
 static struct {
-    int role, state;
+    int role, state, port;
     double now;
     char peer[64], reject[128];
     uint32_t world, host_world;
@@ -117,6 +118,9 @@ static uint32_t build_id(void)
     return id ? id : 1;
 }
 
+uint32_t net_build_id(void) { return build_id(); }
+int net_port(void) { return g.port; }
+
 static void w_world(NetBuf *b)
 {
     net_w_u32(b, g.world);
@@ -178,6 +182,7 @@ void net_start_host(int port)
         return;
     }
     g.state = NETS_WAITING;
+    g.port = port ? port : NET_PORT;                 /* (the lobby lists it: netlobby.c) */
     net_log("hosting on port %d", port ? port : NET_PORT);
 }
 
@@ -211,6 +216,14 @@ int net_is_steam(void) { return nt_is_steam(); }
 
 void net_start_join(const char *addr)
 {
+    char to[64];                                     /* the lobby's: a join code, a rampage://join/ link (netlobby.c) */
+    int kind = netlobby_join_kind(addr, to, sizeof to);
+    if (kind == NLJ_CODE) {
+        netlobby_lookup(to);                         /* (its answer joins the address, from netlobby_update) */
+        return;
+    }
+    if (kind == NLJ_ADDR)
+        addr = to;
     net_stop();
     g.role = NET_GUEST;
     char ip[64];
@@ -420,6 +433,7 @@ static void on_data(const uint8_t *data, int len)
 void net_update(double now)
 {
     g.now = now;
+    netlobby_update(now);                            /* the lobby's answers, the listing's heartbeat (netlobby.c) */
     uint64_t lobby = nts_take_pending();             /* a Steam invite taken, Join Game, +connect_lobby */
     if (lobby)
         net_start_join_steam(lobby);
