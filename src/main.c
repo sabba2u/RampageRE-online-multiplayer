@@ -9376,7 +9376,8 @@ static int viewer_main(int argc, char **argv)
         if (now - title_at > 0.5 && DEBUG_TITLE) {
             char title[256], fx[96];
             settings_describe(&gfx, fx, sizeof fx);
-            snprintf(title, sizeof title, "RampageRE - %s, %s%s%s%s - %u triangles, %.0f fps%s%s", CITIES[v.city_index],
+            snprintf(title, sizeof title, "RampageRE %s- %s, %s%s%s%s - %u triangles, %.0f fps%s%s",
+                     netgame_title(&v), CITIES[v.city_index],   /* NET: HOST / GUEST first */
                      v.nblocks ? v.blocks[v.block] : "-", v.night ? ", night" : "",
                      have_monster(&v) ? ", " : "", have_monster(&v) && v.scene.mon[0].clip ? v.scene.mon[0].clip : "",
                      rnd_triangles(v.rnd), frames / (now - title_at), v.fog ? ", fog" : "", fx);

@@ -717,9 +717,13 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 }
 
 /* once a frame, before the input: the connection, the world, the guest following the host */
+static void netgame_plain_title(const Viewer *v, Window *w);
+
 static void netgame_frame(Viewer *v, Window *w, double now)
 {
     net_update(now);
+    if (!DEBUG_TITLE)                                /* (the developer build's title says it every half second) */
+        netgame_plain_title(v, w);
     if (net_role() == NET_OFF) {
         ngr_menu_frame(v);                           /* (a guest that left the host's game: its menus again) */
         return;
@@ -804,6 +808,33 @@ static void netgame_after_step(Viewer *v)
     } else {
         ng_apply_snap(v);
         ng_puppets_apply(v);
+    }
+}
+
+/* the window title's start while online: who this window is ("HOST (player 1, George) "), else "" */
+static const char *netgame_title(const Viewer *v)
+{
+    static char t[96];
+    int role = net_role();
+    if (role == NET_OFF)
+        return "";
+    int k = role == NET_HOST ? 0 : 1;
+    const char *name = k < v->nmon && v->mon[k].monster >= 0 ? v->monsters[v->mon[k].monster] : NULL;
+    snprintf(t, sizeof t, "%s (player %d%s%s) ", role == NET_HOST ? "HOST" : "GUEST", k + 1, name ? ", " : "",
+             name ? name : "");
+    return t;
+}
+
+/* the player build's plain title (no DEBUG_TITLE): set when who this window is changes */
+static void netgame_plain_title(const Viewer *v, Window *w)
+{
+    static char was[96] = "-";
+    const char *t = netgame_title(v);
+    if (strcmp(t, was)) {
+        char title[128];
+        snprintf(title, sizeof title, "RampageRE%s%s", *t ? " - " : "", t);
+        win_title(w, title);
+        snprintf(was, sizeof was, "%s", t);
     }
 }
 
