@@ -454,18 +454,23 @@ static void netgame_pads(Viewer *v, const Window *w)
     keys_pad(w, DRIVE_KEYS1, &mine);
     if (v->pads_live && (v->pads_on & 1))
         pad_to_pad(&v->pads[0], &v->pads_prev[0], &mine);
-    if (getenv("RAMPAGE_NET_TESTPAD")) {             /* tools/net_test.ps1 -TestPad: walk left and right 3 s each,
-                                                      * a punch every 0.6 s */
+    if (getenv("RAMPAGE_NET_TESTPAD")) {             /* tools/net_test.ps1 -TestPad: up to the buildings 1.5 s, punch
+                                                      * and kick 4.5 s, along the street 2 s (left and right in turn) */
         static double t0;
         static int was;
         if (!t0)
             t0 = net_now();
-        double t = net_now() - t0;
+        double t = net_now() - t0, c = fmod(t, 8.0);
         memset(&mine, 0, sizeof mine);
-        mine.lx = fmod(t, 6.0) < 3.0 ? 1.0f : -1.0f;
-        int on = fmod(t, 0.6) < 0.1;
-        mine.held[MV_SQUARE] = (uint8_t)on;
-        mine.pressed[MV_SQUARE] = (uint8_t)(on && !was);
+        int on = 0, btn = fmod(t, 1.2) < 0.6 ? MV_SQUARE : MV_TRIANGLE;
+        if (c < 1.5)
+            mine.ly = -1;
+        else if (c < 6.0)
+            on = fmod(t, 0.6) < 0.1;
+        else
+            mine.lx = fmod(t, 16.0) < 8.0 ? 1.0f : -1.0f;
+        mine.held[btn] = (uint8_t)on;
+        mine.pressed[btn] = (uint8_t)(on && !was);
         was = on;
     }
     NetPad np;
