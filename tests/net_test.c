@@ -165,8 +165,21 @@ static void test_digest(void)
     CHECK(NET_DSYS_NAME[NDS_ARMY] && !strcmp(NET_DSYS_NAME[NDS_ARMY], "army"));
 }
 
+/* the message types: each its own number (a type given another's number silently routes it to the wrong reader) */
+static void test_message_types_distinct(void)
+{
+    int t[] = { NM_HELLO, NM_WELCOME, NM_REJECT, NM_PAD, NM_SNAP, NM_BUILDING, NM_WORLD, NM_DIGEST, NM_EVENT, NM_PUPPET,
+                NM_PEVENT, NM_MENU, NM_STATE, NM_CHAT };
+    int n = (int)(sizeof t / sizeof *t), same = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++)
+            same += t[i] == t[j];
+    CHECK(same == 0);
+}
+
 int main(void)
 {
+    test_message_types_distinct();
     test_wire_round_trip();
     test_wire_read_past_end();
     test_snap_interpolates_halfway();

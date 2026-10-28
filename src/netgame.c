@@ -1316,7 +1316,7 @@ static void ng_digest_send(Viewer *v)
  * monsters are) and its events (NM_PEVENT, reliable and in order: effects, sounds, spawns, played on the guest when its
  * shown time reaches the host time they were sent at). The guest's own system makes no decisions: its step in main.c
  * asks net_guest_world() and leaves its logic out. */
-enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_N };
+enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_HUD, NGP_N };
 typedef struct {
     const char *name;
     float rate;                                      /* snapshots a second (0: events only) */
@@ -1458,6 +1458,37 @@ static int ng_held_live(int i)
     return i >= 0 && i < 6 && (ng_pup[CH[i]].apply || ng_pup[CH[i]].event);
 }
 
+/* ---- the score popups (NGP_HUD): every hud_float the host makes goes to the guest, played at its host time; the
+ * guest makes none of its own (its edibles, army and buildings would make theirs at other moments, or not at all) */
+static void net_float(Hud *h, int amount, const float pos[3], int building, float scale)
+{
+    if (net_role() == NET_GUEST && net_live())
+        return;
+    hud_float(h, amount, pos, building, scale);
+    if (!ng_host() || !pos)
+        return;
+    uint8_t m[32];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u32(&b, (uint32_t)amount);
+    for (int i = 0; i < 3; i++)
+        net_w_f32(&b, pos[i]);
+    net_w_u8(&b, (uint32_t)building);
+    net_w_f32(&b, scale);
+    ng_event(NGP_HUD, m, b.len);
+}
+
+static void ng_hud_event(Viewer *v, NetBuf *b)
+{
+    int amount = (int)net_r_u32(b);
+    float pos[3];
+    for (int i = 0; i < 3; i++)
+        pos[i] = net_r_f32(b);
+    int building = (int)net_r_u8(b);
+    float scale = net_r_f32(b);
+    if (!b->err && v->hud)
+        hud_float(v->hud, amount, pos, building, scale);
+}
+
 /* each system's side, one file each */
 #include "netrep_traffic.c"                          /* vehicles, street objects, rail, parade */
 #include "netrep_army.c"                             /* the army and the bosses */
@@ -1471,6 +1502,7 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 {
     g_ngv = v;
     net_set_handler(ng_handler);
+    ng_pup[NGP_HUD] = (NgPuppet){ "popups", 0, NULL, NULL, ng_hud_event, NULL };
     ngr_traffic_init();
     ngr_army_init();
     ngr_people_init();

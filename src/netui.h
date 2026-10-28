@@ -31,7 +31,8 @@ int netui_chat_open(void);
 int netui_chat_take(char *out, int cap);            /* 1: a line was sent (Enter), into out */
 int netui_chat_wndproc(unsigned msg, uintptr_t wp, intptr_t lp);
 void netui_chat_draw(void);
-int netui_panel_open(void);                          /* the Insert panel is up */
+int netui_panel_open(void);
+void *netui_bold_font(void);                         /* (an ImFont *: the chat's, NULL none) */                          /* the Insert panel is up */
 /* this frame's notice over the game (netrep_menu.c: what the other player is doing in the menus): big, the screen
  * dimmed and the box in its middle; else a line at the top. Drawn by the next netui_frame, then forgotten */
 void netui_notice(int big, const char *title, const char *text);

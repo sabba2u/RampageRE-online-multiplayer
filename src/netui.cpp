@@ -15,6 +15,8 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 static int g_ready, g_open;
+static ImFont *g_bold;                               /* the chat's and the labels' font (NULL: the panel's) */
+extern "C" void *netui_bold_font(void) { return g_bold; }
 static struct { float x, y; char text[32]; } g_labels[4];
 static int g_nlabels;
 
@@ -31,11 +33,14 @@ extern "C" void netui_label(float x, float y, const char *text)
 static void labels(void)                             /* "IN MENU" over a player's head (netgame.c) */
 {
     ImDrawList *dl = ImGui::GetForegroundDrawList();
+    ImFont *f = g_bold ? g_bold : ImGui::GetFont();
+    float fs = g_bold ? g_bold->FontSize : ImGui::GetFontSize();
     for (int i = 0; i < g_nlabels; i++) {
-        ImVec2 sz = ImGui::CalcTextSize(g_labels[i].text), p(g_labels[i].x - sz.x / 2, g_labels[i].y - sz.y);
+        ImVec2 sz = f->CalcTextSizeA(fs, 1e9f, 0, g_labels[i].text), p(g_labels[i].x - sz.x / 2, g_labels[i].y - sz.y);
         dl->AddRectFilled(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(20, 20, 30, 200), 6);
         dl->AddRect(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(140, 240, 150, 230), 6);
-        dl->AddText(p, IM_COL32(140, 240, 150, 255), g_labels[i].text);
+        dl->AddText(f, fs, ImVec2(p.x + 1.5f, p.y + 1.5f), IM_COL32(0, 0, 0, 220), g_labels[i].text);
+        dl->AddText(f, fs, p, IM_COL32(140, 240, 150, 255), g_labels[i].text);
     }
     g_nlabels = 0;
 }
@@ -57,6 +62,9 @@ extern "C" int netui_init(void *hwnd)
     st.FrameRounding = 4;
     if (GetFileAttributesA("C:\\Windows\\Fonts\\segoeui.ttf") != INVALID_FILE_ATTRIBUTES)
         io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
+    if (GetFileAttributesA("C:\\Windows\\Fonts\\segoeuib.ttf") != INVALID_FILE_ATTRIBUTES)   /* the chat's and the
+                                                      * labels': bold, a size up, easy to read over the game */
+        g_bold = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 21.0f);
     if (!ImGui_ImplWin32_InitForOpenGL(hwnd) || !ImGui_ImplOpenGL3_Init("#version 130")) {
         ImGui::DestroyContext();
         return -1;

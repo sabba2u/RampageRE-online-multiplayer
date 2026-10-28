@@ -61,6 +61,8 @@
 static int net_guest_world(void) { return net_role() == NET_GUEST && net_live(); }
 /* NET: the guest of a game the host has paused (its Pause menu up): the world stands still as the host's does */
 static int net_world_paused;
+/* NET: a score popup (hud_float): the host's shown and sent to the guest (netgame.c), the guest's own never */
+static void net_float(Hud *h, int amount, const float pos[3], int building, float scale);
 #ifdef __ANDROID__
 #include "touch.h"                               /* the on-screen pad, player 1's pad slot */
 #endif
@@ -4331,7 +4333,7 @@ static void edible_step(Viewer *v, float dt)
                 if (getenv("RAMPAGE_NET_TRACE") && net_role() != NET_OFF)   /* NET */
                     net_log("edible float %d", (int)e->amount);
                 if (v->hud)
-                    hud_float(v->hud, (int)e->amount, e->pos, 2, 1.0f);
+                    net_float(v->hud, (int)e->amount, e->pos, 2, 1.0f);   /* NET: hud_float, host-owned */
                 break;
             case EE_MESSAGE:                         /* "Instant Rampage", "Speed Increase", ... (Rage.ifc) */
                 if (v->hud)
@@ -5324,7 +5326,7 @@ static void army_step(Viewer *v, float dt)
                 if (getenv("RAMPAGE_NET_TRACE") && net_role() != NET_OFF)   /* NET: which reach the guest */
                     net_log("float %d at %.0f %.0f", (int)e->amount, e->pos[0], e->pos[2]);
                 if (v->hud)
-                    hud_float(v->hud, (int)e->amount, e->pos, e->level, 0.8f);
+                    net_float(v->hud, (int)e->amount, e->pos, e->level, 0.8f);   /* NET: hud_float, host-owned */
                 break;
             case AE_WINDOW_CLOSE: scene_window_close_at(&v->scene, e->pos); break;
             case AE_OBJECT_HIT: {                    /* a shot's or beam's TakeDamage on another module's object */

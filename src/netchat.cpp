@@ -30,6 +30,23 @@ static struct { char text[64]; double t; } g_said[2];   /* each player's last li
 
 static double now_s(void) { return GetTickCount64() / 1000.0; }
 
+/* a line of text with a dark shadow under it (readable over the game's bright buildings), wrapped at the window's edge
+ * when wrap; then the cursor moves on as ImGui's own text would */
+static void shadowed(ImVec4 c, const char *t, int wrap)
+{
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float ww = wrap ? ImGui::GetContentRegionAvail().x : 0;
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(p.x + 1.5f, p.y + 1.5f),
+                                        IM_COL32(0, 0, 0, (int)(230 * c.w)), t, NULL, ww);
+    ImGui::PushStyleColor(ImGuiCol_Text, c);
+    if (wrap)
+        ImGui::PushTextWrapPos(0);
+    ImGui::TextUnformatted(t);
+    if (wrap)
+        ImGui::PopTextWrapPos();
+    ImGui::PopStyleColor();
+}
+
 static ImVec4 color_of(int who)                      /* -1 system, -2 an error or a defeat, 0 the host, 1 the guest */
 {
     switch (who) {
@@ -170,6 +187,9 @@ extern "C" void netui_chat_draw(void)
                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
                               ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);
     ImGui::PopStyleVar();
+    ImFont *bold = (ImFont *)netui_bold_font();
+    if (bold)
+        ImGui::PushFont(bold);
     if (shown) {
         for (int i = g_nlines - CHAT_SHOW < 0 ? 0 : g_nlines - CHAT_SHOW; i < g_nlines; i++) {
             const ChatLine *l = &g_lines[i];
@@ -180,26 +200,24 @@ extern "C" void netui_chat_draw(void)
             ImVec4 c = color_of(l->who);
             c.w = alpha;
             if (l->name[0]) {
-                ImGui::TextColored(c, "%s:", l->name);
+                char who[40];
+                snprintf(who, sizeof who, "%s:", l->name);
+                shadowed(c, who, 0);
                 ImGui::SameLine();
                 c = ImVec4(1, 1, 1, alpha);
             }
-            ImGui::PushStyleColor(ImGuiCol_Text, c);
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextUnformatted(l->text);         /* (never a format: a player's % is text) */
-            ImGui::PopTextWrapPos();
-            ImGui::PopStyleColor();
+            shadowed(c, l->text, 1);                 /* (never a format: a player's % is text) */
         }
         if (g_open) {
             char row[CHAT_MAX + 8];
             snprintf(row, sizeof row, "> %s%s", g_typing, fmod(now * 2, 2) < 1 ? "_" : " ");
             ImGui::Separator();
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextUnformatted(row);
-            ImGui::PopTextWrapPos();
+            shadowed(ImVec4(1, 1, 1, 1), row, 1);
             ImGui::TextDisabled("Enter: send   Esc: cancel");
         }
     }
+    if (bold)
+        ImGui::PopFont();
     ImGui::End();
 }
 
