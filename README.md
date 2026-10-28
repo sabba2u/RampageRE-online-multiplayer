@@ -24,8 +24,24 @@ host. Each player needs their own copy of the game disc and the same build of th
 Command line, for testing: `rampage.exe Chicago 1 --players 2 --host` on one PC and `rampage.exe --join <ip>` on the
 other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
-The Insert panel also has **Camera and look**: background blur (depth of field), tilt-shift (the miniature-city look),
-zoom out and tilt the camera down, with presets.
+### Camera and look (also new in this fork)
+
+The Insert panel has a **Camera and look** section with picture effects the original game never had. They work online
+and offline, each player sets their own, and they are kept in `lookfx.cfg` for next time:
+
+- **Background blur** (depth of field): the monsters stay sharp and the distance goes soft. It focuses on what is in the
+  middle of the screen by itself. **Sharp distance** sets how much around the focus stays sharp.
+- **Tilt-shift**: the top and bottom of the picture blur while a band across the street stays sharp, so the city looks
+  like a toy model. **Sharp band height** and **Sharp band place** move the sharp band; **Toy colours** makes the
+  colours livelier, like a miniature.
+- **Zoom out**: pulls the camera back to see more of the block.
+- **Tilt camera down**: looks down on the city from higher up (up to 35 degrees).
+- Presets: **Miniature city** (zoomed out, tilted down, tilt-shift), **Soft background** (depth of field) and
+  **The game's look** (everything off).
+
+The score and timer always stay sharp. The blurs switch themselves off while MSAA is on (F7); SMAA is fine. The camera
+change is only what you see: the game still spawns things for its own camera, so zoomed far out you may see people or
+cars appear at the edges.
 
 ### Please read: what has and has not been tested
 
