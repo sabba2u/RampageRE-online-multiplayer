@@ -731,22 +731,9 @@ static int ngr_edible_gate(Edibles *e, int building, int storey, int column, int
  * cells and floors showed, its own deal of a new block differing (the world's random draws are not the same there) */
 static int ngr_edible_write(Viewer *v, NetBuf *b)
 {
-    int ns = v->edibles ? edible_slots(v->edibles) : 0;
     net_w_u8(b, (uint32_t)v->block);
-    net_w_u16(b, (uint32_t)ns);
-    for (int i = 0; i < ns; i++) {
-        const EdibleSlot *sl = edible_slot(v->edibles, i);
-        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
-        int out = d && d->phase == EP_WINDOW;
-        net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
-        net_w_u8(b, (uint32_t)out);
-        if (out) {
-            net_w_f32(b, d->age);
-            for (int k = 0; k < 3; k++)
-                net_w_f32(b, d->pos[k]);
-        }
-    }
-    return ns > 0;
+    ng_edibles_w(v, b);
+    return v->edibles && edible_slots(v->edibles) > 0;
 }
 
 static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSample *s, float alpha, int how)
@@ -759,19 +746,10 @@ static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
         return;
     done = s->t;
     NetBuf b = netbuf((void *)s->data, s->len);
-    int block = (int)net_r_u8(&b), ns = (int)net_r_u16(&b), have = edible_slots(v->edibles);
-    if (b.err || block != v->block)
-        return;
-    for (int i = 0; i < ns && !b.err; i++) {
-        int kind = (int8_t)net_r_u8(&b), out = (int)net_r_u8(&b);
-        float age = out ? net_r_f32(&b) : 0, pos[3] = { 0, 0, 0 };
-        for (int k = 0; out && k < 3; k++)
-            pos[k] = net_r_f32(&b);
-        if (!b.err && i < have)
-            edible_net_slot(v->edibles, i, kind, out, age, out ? pos : NULL);
-    }
+    int block = (int)net_r_u8(&b);
+    if (!b.err && block == v->block)
+        ng_edibles_r(v, &b);
 }
-
 static void ngr_edible_event(Viewer *v, NetBuf *b)
 {
     char as[256], move[256];

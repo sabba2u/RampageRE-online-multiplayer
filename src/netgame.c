@@ -323,6 +323,56 @@ static void ng_state_ask(Viewer *v)                  /* guest, every frame */
     net_send_msg(1, m, b.len);
 }
 
+/* ---- the edibles' slots, the host's (the block's state and NGP_EDIBLES' snapshots): each slot's cell (the guest's
+ * own deal of a block can differ: other cells, another count), its kind and whether its edible is out in the window
+ * (its age there and its place) */
+static void ng_edibles_w(Viewer *v, NetBuf *b)
+{
+    int ns = v->edibles ? edible_slots(v->edibles) : 0;
+    net_w_u16(b, (uint32_t)ns);
+    for (int i = 0; i < ns; i++) {
+        const EdibleSlot *sl = edible_slot(v->edibles, i);
+        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+        int out = d && d->phase == EP_WINDOW;
+        net_w_u16(b, (uint32_t)sl->building);
+        net_w_u8(b, (uint32_t)sl->storey);
+        net_w_u8(b, (uint32_t)sl->column);
+        net_w_u8(b, (uint32_t)sl->side);
+        net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
+        net_w_u8(b, (uint32_t)out);
+        if (out) {
+            net_w_f32(b, d->age);
+            for (int k = 0; k < 3; k++)
+                net_w_f32(b, d->pos[k]);
+        }
+    }
+}
+
+static void ng_edibles_r(Viewer *v, NetBuf *b)
+{
+    int ns = (int)net_r_u16(b), have = v->edibles ? edible_slots(v->edibles) : 0;
+    static int said = -1;
+    if (ns != have && said != ns * 1000 + have) {
+        net_log("edibles: the host has %d slots, we have %d: made the host's", ns, have);
+        said = ns * 1000 + have;
+    }
+    if (!v->edibles)
+        return;
+    for (int i = 0; i < ns && !b->err; i++) {
+        int building = (int)net_r_u16(b), storey = (int)net_r_u8(b), column = (int)net_r_u8(b), side = (int)net_r_u8(b);
+        int kind = (int8_t)net_r_u8(b), out = (int)net_r_u8(b);
+        float age = out ? net_r_f32(b) : 0, pos[3] = { 0, 0, 0 };
+        for (int k = 0; out && k < 3; k++)
+            pos[k] = net_r_f32(b);
+        if (b->err)
+            return;
+        edible_net_where(v->edibles, i, building, storey, column, side);
+        edible_net_slot(v->edibles, i, kind, out, age, out ? pos : NULL);
+    }
+    if (!b->err)
+        edible_net_count(v->edibles, ns);
+}
+
 static void ng_state_send(Viewer *v)                 /* host, after the frame's building changes went */
 {
     if (ng_state_due < 0 || !(net_role() == NET_HOST && net_live()))
@@ -357,19 +407,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_u8(&b, NM_STATE);
     net_w_u8(&b, NST_EDIBLES);
     net_w_u8(&b, (uint32_t)v->block);
-    net_w_u16(&b, (uint32_t)ns);
-    for (int i = 0; i < ns; i++) {
-        const EdibleSlot *sl = edible_slot(v->edibles, i);
-        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
-        int out = d && d->phase == EP_WINDOW;
-        net_w_u8(&b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
-        net_w_u8(&b, (uint32_t)out);
-        if (out) {
-            net_w_f32(&b, d->age);
-            for (int k = 0; k < 3; k++)
-                net_w_f32(&b, d->pos[k]);
-        }
-    }
+    ng_edibles_w(v, &b);
     if (!b.err) {
         net_send_msg(1, m, b.len);
         total += b.len;
@@ -440,20 +478,7 @@ static void ng_state_building(Viewer *v, NetBuf *b)
         }
 }
 
-static void ng_state_edibles(Viewer *v, NetBuf *b)
-{
-    int ns = (int)net_r_u16(b), have = v->edibles ? edible_slots(v->edibles) : 0;
-    if (ns != have)
-        net_log("the host has %d edible slots, we have %d", ns, have);
-    for (int i = 0; i < ns && !b->err; i++) {
-        int kind = (int8_t)net_r_u8(b), out = (int)net_r_u8(b);
-        float age = out ? net_r_f32(b) : 0, pos[3] = { 0, 0, 0 };
-        for (int k = 0; out && k < 3; k++)
-            pos[k] = net_r_f32(b);
-        if (!b->err && i < have)
-            edible_net_slot(v->edibles, i, kind, out, age, out ? pos : NULL);
-    }
-}
+static void ng_state_edibles(Viewer *v, NetBuf *b) { ng_edibles_r(v, b); }
 
 /* the guest: the challenge's upgrade object as the host's, its effect on while it waits (as its CUE_SPAWN) */
 static void ng_challenge_put(Viewer *v, int st, int made, float delay, float pulse, uint32_t up, uint32_t taken)
@@ -783,6 +808,16 @@ static void ng_digest(const Viewer *v, NetDigest *d)
             }
             if (len)
                 net_log("digest buildings (state/HP/storeys/roof/cells/floors):%s", line);
+            static char el[2048];                    /* the edibles' slots: kind, none 0 / hidden 1 / out 2 */
+            len = 0;
+            for (int i = 0; v->edibles && i < edible_slots(v->edibles) && len < (int)sizeof el - 16; i++) {
+                const EdibleSlot *sl = edible_slot(v->edibles, i);
+                const Edible *e = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+                len += snprintf(el + len, sizeof el - (size_t)len, " %d:%d/%d", i, sl->kind,
+                                sl->kind < 0 || (e && e->phase != EP_WINDOW) ? 0 : e ? 2 : 1);
+            }
+            for (int at = 0; at < len; at += 400)    /* (net_log's line is short) */
+                net_log("digest edibles (block %d):%.400s", v->block, el + at);
         }
     }
 }

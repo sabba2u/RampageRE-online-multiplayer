@@ -1041,3 +1041,33 @@ void edible_net_slot(Edibles *e, int i, int kind, int out, float age, const floa
         }
     }
 }
+
+void edible_net_where(Edibles *e, int i, int building, int storey, int column, int side)
+{
+    if (i < 0 || i > e->nslots)
+        return;
+    if (i == e->nslots) {
+        new_slot(e, building, storey, column, side, -1);
+        return;
+    }
+    EdibleSlot *s = &e->slot[i];
+    if (s->building != building || s->storey != storey || s->column != column) {
+        if (s->item >= 0 && s->item < e->n && e->ed[s->item].phase != EP_GONE)
+            remove_edible(e, &e->ed[s->item]);
+        s->item = -1;
+        s->kind = -1;
+        s->building = building;
+        s->storey = storey;
+        s->column = column;
+    }
+    s->side = side;
+}
+
+void edible_net_count(Edibles *e, int n)
+{
+    for (int i = n < 0 ? 0 : n; i < e->nslots; i++)
+        if (e->slot[i].item >= 0 && e->slot[i].item < e->n && e->ed[e->slot[i].item].phase != EP_GONE)
+            remove_edible(e, &e->ed[e->slot[i].item]);
+    if (n >= 0 && n < e->nslots)
+        e->nslots = n;
+}
