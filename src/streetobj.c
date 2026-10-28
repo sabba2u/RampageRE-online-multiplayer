@@ -2773,3 +2773,14 @@ void streetobj_net_event(StreetObjs *s, const StreetEvent *e)
     if (s->nev < MAX_EVENTS)
         s->ev[s->nev++] = *e;
 }
+
+int streetobj_net_make(StreetObjs *s, int i, Group tmpl, const float world[16])
+{
+    if (i != s->n || !tmpl.at)
+        return -1;
+    int nev = s->nev, k = add_kind(s, streetobj_kind_of(tmpl), tmpl, (Group){ 0 }, world, -1, 0);
+    s->nev = nev;
+    if (k >= 0)
+        s->o[k].made = 1;
+    return k;
+}

@@ -354,6 +354,9 @@ typedef struct Viewer {
                                                       * scripts load (open_city), on through its blocks and continues */
     int band_sound;                                  /* BandMember.bsf's bandSFXAllocated: the same life */
 } Viewer;
+/* NET: a pad's rumble and a camera shake: the host's, sent to the guest (netgame.c); 1 = taken there, not made here */
+static int net_rumble(const Mon *mo, int ms);
+static int net_shake(Viewer *v, CamShake *s, const ShakeDef *d, const float pos[3], float strength, int check);
 
 /* gCommon.getPlayType() of the game played: the demo's 0, else --play's or the shell's (unset: the campaign) */
 static int play_type(const Viewer *v) { return v->attract ? GP_ATTRACT : v->play_type ? v->play_type : GP_CAMPAIGN; }
@@ -397,6 +400,8 @@ static CamShake *mon_shake(Mon *mo)
  * at 0xC0 and the small one off for that long), on the monster's pad (+0xFC); never a computer's monster (+0x108) */
 static void mon_rumble(const Mon *mo, int ms)
 {
+    if (net_rumble(mo, ms))                          /* NET: player 2's on the guest's pad (netgame.c) */
+        return;
     if (mo->v->pads_live && mo->v->vibrate && !mo->is_ai && mo->drive != DRIVE_COMPUTER)
         pad_rumble(mo->slot, 0xC0 / 255.0f, ms / 1000.0f);
 }
@@ -2295,7 +2300,8 @@ static void clip_event(Mon *mo, const MoveEvent *e)
     if (e->type == 9) {                              /* 0x2E7E18 -> 0x2F5AC0: the camera shakes, f32 strength at +8 */
         union { uint32_t u; float f; } k = { e->value };
         float at[3] = { mo->mx, mo->my, mo->mz };
-        shake_start(mon_shake(mo), &SHAKE_MONSTER, at, k.f, 1, &v->shake_seed);
+        if (!net_shake(v, mon_shake(mo), &SHAKE_MONSTER, at, k.f, 1))   /* NET: the host's (netgame.c) */
+            shake_start(mon_shake(mo), &SHAKE_MONSTER, at, k.f, 1, &v->shake_seed);
         return;
     }
     if (e->type == 12) {                             /* 0x2E7E90 -> 0x2F5800: an effect on or off in a slot */
@@ -3543,7 +3549,8 @@ static void fx_shake(void *ctx, const char *name, const float pos[3])
         if (!v->shakes[j].def || v->shakes[j].age > v->shakes[slot].age)
             slot = j;
     const ShakeDef *d = name && _stricmp(name, "camshake_collapse") == 0 ? &SHAKE_COLLAPSE : &SHAKE_MONSTER;
-    shake_start(&v->shakes[slot], d, pos, 1, 0, &v->shake_seed);
+    if (!net_shake(v, &v->shakes[slot], d, pos, 1, 0))   /* NET: the host's (netgame.c) */
+        shake_start(&v->shakes[slot], d, pos, 1, 0, &v->shake_seed);
 }
 
 /* the army each frame (army.c): the monster as it sees it, the buildings, then what it makes happen */
@@ -6601,7 +6608,8 @@ static void play_step(Viewer *v, float dt, float aspect)
             hud_frame(v, 1);
     }
     popup_step(v, dt);                               /* the SaveGame popup over the screens */
-    for (int k = 0; k < v->nmon && v->challenge.up_state == CU_WAITING; k++) {   /* a monster's touch (TakeDamage,
+    for (int k = 0; k < v->nmon && v->challenge.up_state == CU_WAITING && !net_guest_world(); k++) {   /* a monster's
+                                                      * touch (NET: the host's; netrep_people.c) (TakeDamage,
                                                       * Collision): its collision spheres, armed or not [R 0x2E22B0] */
         Mon *mo = &v->mon[k];
         if (!mon_in(mo))
@@ -6611,7 +6619,8 @@ static void play_step(Viewer *v, float dt, float aspect)
         for (int i = 0; i < ns && v->challenge.up_state == CU_WAITING; i++)
             upgrade_touch(mo, sp[i], sp[i][3]);
     }
-    switch (challenge_upgrade_tick(&v->challenge, dt)) {   /* gAIMgr: the MonsterUpgrade object, its last banner */
+    switch (net_guest_world() ? CUE_NONE : challenge_upgrade_tick(&v->challenge, dt)) {   /* gAIMgr: the MonsterUpgrade
+                                                      * object, its last banner (NET: the guest's, the host's) */
     case CUE_SPAWN:
         if (v->fxw && v->challenge.up.effect)
             v->upgrade_fx = fx_spawn(v->fxw, v->challenge.up.effect, v->challenge.up.pos, NULL, 1);

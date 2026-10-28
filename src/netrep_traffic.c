@@ -107,7 +107,8 @@ static void ngt_r_mat(NetBuf *b, float m[16])
 }
 
 /* ---- a snapshot as the guest reads it */
-enum { NGT_ALIVE = 1, NGT_HELD = 2, NGT_MOVED = 4, NGT_HIDDEN = 8, NGT_PUSH = 16, NGT_PICKUP = 32 };
+enum { NGT_ALIVE = 1, NGT_HELD = 2, NGT_MOVED = 4, NGT_HIDDEN = 8, NGT_PUSH = 16, NGT_PICKUP = 32,
+       NGT_MADE = 64 };                              /* (street: one a script made: its template and matrix) */
 typedef struct {
     int i, phase, kind, flags;
     uint32_t gen, oflags;
@@ -167,7 +168,9 @@ static void ngt_read_obj(NetBuf *b, int sys, const NgtStrs *t, NgtObj *o)
     o->flags = (int)net_r_u8(b);
     if (sys == NGT_STREET) {
         o->shape = ngt_name(t, (int)net_r_u8(b));
-        if (o->flags & NGT_MOVED)
+        if (o->flags & NGT_MADE)
+            o->name = ngt_name(t, (int)net_r_u8(b));
+        if (o->flags & (NGT_MOVED | NGT_MADE))
             ngt_r_mat(b, o->m);
         return;
     }
@@ -211,7 +214,9 @@ static int ngt_write(Viewer *v, NetBuf *b, int sys, int n, const NgtOut *o, int 
         net_w_u8(b, (uint32_t)e->flags);
         if (sys == NGT_STREET) {
             net_w_u8(b, (uint32_t)ngt_str(&t, e->shape));
-            if (e->flags & NGT_MOVED)
+            if (e->flags & NGT_MADE)
+                net_w_u8(b, (uint32_t)ngt_str(&t, e->name));
+            if (e->flags & (NGT_MOVED | NGT_MADE))
                 ngt_w_mat(b, e->m);
             continue;
         }
@@ -514,7 +519,7 @@ static void ngr_parade_out(const ParadeEvent *e)
     if (e->type == PAE_REMOVED && e->obj >= 0 && e->obj < NGT_MAX)
         ngt_host_gen[NGT_PARADE][e->obj]++;
     if (!ng_host() || (e->type != PAE_EFFECT && e->type != PAE_SOUND && e->type != PAE_MONSTER_SOUND &&
-                       e->type != PAE_CHALLENGE_FX))
+                       e->type != PAE_CHALLENGE_FX && e->type != PAE_FART))   /* (a fart: a food cart eaten) */
         return;
     NgtEv n = { e->type, e->id, e->obj, e->monster, e->level, 0, e->name, NULL, { 0 }, { 0 }, { 0 }, e->amount };
     memcpy(n.pos, e->pos, sizeof n.pos);
@@ -538,7 +543,7 @@ static void ngt_parade_event(Viewer *v, NetBuf *b)
     e.amount = n.amount;
     memcpy(e.pos, n.pos, sizeof e.pos);
     memcpy(e.v, n.dir, sizeof e.v);
-    if (e.type == PAE_CHALLENGE_FX && e.obj < 0)
+    if ((e.type == PAE_CHALLENGE_FX && e.obj < 0) || (e.type == PAE_FART && (e.monster < 0 || e.monster >= v->nmon)))
         return;
     parade_net_event(v->parade, &e);
 }
@@ -608,6 +613,8 @@ static void ngt_parade_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
 
 /* ================================================================ street objects (never reused: by index) */
 
+static void ngt_street_made(Viewer *v, const NgtSnap *s);
+
 static void ngr_street_out(const StreetEvent *e)
 {
     if (!ng_host() || (e->type != SE_EFFECT && e->type != SE_EFFECT_STOP && e->type != SE_SOUND &&
@@ -640,7 +647,13 @@ static void ngt_street_event(Viewer *v, NetBuf *b)
     memcpy(e.pos, n.pos, sizeof e.pos);
     memcpy(e.v, n.dir, sizeof e.v);
     memcpy(e.off, n.off, sizeof e.off);
-    if (e.obj >= streetobj_count(v->sobj)) {         /* one the host's scripts made (a geyser): where it started */
+    if (e.obj >= streetobj_count(v->sobj)) {         /* one the host's scripts made: from the newest snapshot */
+        const NetSnapSample *s = netsnap_newest(&ng_pup_snaps[NGP_STREET]);
+        const NgtSnap *ns = ngt_read(NGT_STREET, s, NULL);
+        if (ns && ns->block == v->block)
+            ngt_street_made(v, ns);
+    }
+    if (e.obj >= streetobj_count(v->sobj)) {         /* (still not here: where it started) */
         e.obj = -1;
         if (e.type == SE_EFFECT)
             e.level = 0;
@@ -657,10 +670,30 @@ static int ngt_street_write(Viewer *v, NetBuf *b)
     for (int i = 0; i < n && i < NGT_MAX; i++) {
         const StreetObj *o = streetobj_get(v->sobj, i);
         int f = (o->alive ? NGT_ALIVE : 0) | (o->oflags & SF_HELD ? NGT_HELD : 0) | (o->moved ? NGT_MOVED : 0) |
-                (o->oflags & SF_PUSH_OUT ? NGT_PUSH : 0) | (o->oflags & SF_PICKUP ? NGT_PICKUP : 0);
-        out[count++] = (NgtOut){ i, 0, 0, f, 0, 0, NULL, o->shape, NULL, o->world, { 0 } };
+                (o->oflags & SF_PUSH_OUT ? NGT_PUSH : 0) | (o->oflags & SF_PICKUP ? NGT_PICKUP : 0) |
+                (o->made ? NGT_MADE : 0);
+        out[count++] = (NgtOut){ i, 0, 0, f, 0, 0, o->made ? o->name : NULL, o->shape, NULL, o->world, { 0 } };
     }
     return ngt_write(v, b, NGT_STREET, n, out, count);
+}
+
+/* the guest: the objects the host's scripts made mid-block (a broken fountain's geyser, a water tower's puddle), made
+ * here too as the host's snapshot s has them, so their indices, effects and digest are the host's */
+static void ngt_street_made(Viewer *v, const NgtSnap *s)
+{
+    int at = 0;
+    for (int i = streetobj_count(v->sobj); s && i < s->n && i < NGT_MAX && i < SCENE_STREET_MAX; i++) {
+        const NgtObj *o = ngt_find(s, i, &at);
+        Group g = o && (o->flags & NGT_MADE) && o->name ? rubble_tmpl(v, o->name) : (Group){ 0 };
+        if (streetobj_net_make(v->sobj, i, g, o ? o->m : NULL) < 0) {
+            static int said = -1;
+            if (said != i)
+                net_log("street objects: the host's %d (%s) not made here", i, o && o->name ? o->name : "?");
+            said = i;
+            return;
+        }
+        net_log("street objects: made the host's %d (%s)", i, o->name);
+    }
 }
 
 static void ngt_street_apply(Viewer *v, const NetSnapSample *a, const NetSnapSample *b, float alpha, int how)
@@ -668,6 +701,7 @@ static void ngt_street_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
     const NgtSnap *sa, *sb = v->sobj ? ngt_pair(v, NGT_STREET, a, b, how, &sa) : NULL;
     if (!sb)
         return;
+    ngt_street_made(v, sb);
     int ia = 0, ib = 0;
     for (int i = 0, n = streetobj_count(v->sobj); i < n && i < sb->n; i++) {
         const NgtObj *ob = ngt_find(sb, i, &ib), *oa = ngt_find(sa, i, &ia);

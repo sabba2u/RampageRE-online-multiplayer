@@ -37,7 +37,7 @@ static double ng_delay(void)
     return d < 0.03 ? 0.03 : d > 0.2 ? 0.2 : d;
 }
 #define NG_DIGEST_EVERY 2.0
-#define NG_BUILDING_OPS 256                          /* a frame's building changes at most (more go next frame) */
+#define NG_BUILDING_OPS 256                          /* a message's building changes at most (more: another) */
 
 static Viewer *g_ngv;
 static int ng_guest_menu;                            /* the host: the guest's pad says it has a menu up */
@@ -113,7 +113,7 @@ static uint32_t ng_world_id(const NgWorld *w)
     return h ? h : 1;
 }
 
-static void ng_puppets_reset(Viewer *v);
+static void ng_puppets_reset(Viewer *v, int new_world);
 
 static void ng_set_world(Viewer *v)
 {
@@ -128,7 +128,7 @@ static void ng_set_world(Viewer *v)
     static uint32_t was_id;
     static int was_block = -1;
     if (id != was_id || v->block != was_block)       /* a new world or block: the puppets start again */
-        ng_puppets_reset(v);
+        ng_puppets_reset(v, id != was_id);
     was_id = id;
     was_block = v->block;
     net_set_world(id, &w, (int)sizeof w);
@@ -205,6 +205,8 @@ static uint32_t ng_bseq;                             /* host: the NM_BUILDING me
 static int ng_bs_block = -1;
 static uint32_t ng_bs_seq;
 
+static void ng_building_flush(void);
+
 static int ng_building_gate(Building *b, int op, const float *p, float r, int a0, int a1, int a2)
 {
     if (net_role() == NET_GUEST && net_live())
@@ -212,8 +214,15 @@ static int ng_building_gate(Building *b, int op, const float *p, float r, int a0
     if (net_role() != NET_HOST || !net_live() || !g_ngv)
         return 0;
     int i = ng_building_index(g_ngv, b);
-    if (i < 0 || ng_nops >= NG_BUILDING_OPS)
+    if (i < 0)
         return 0;
+    if (ng_nops >= NG_BUILDING_OPS) {                /* (a full message: sent now, the rest in the next one; dropped,
+                                                      * the guest's buildings would miss them) */
+        static int said;
+        if (!said++)
+            net_log("buildings: over %d changes in a frame: sent in more than one message", NG_BUILDING_OPS);
+        ng_building_flush();
+    }
     if (!ng_nops) {
         ng_opbuf = netbuf(ng_ops, sizeof ng_ops);
         net_w_u8(&ng_opbuf, NM_BUILDING);
@@ -314,6 +323,56 @@ static void ng_state_ask(Viewer *v)                  /* guest, every frame */
     net_send_msg(1, m, b.len);
 }
 
+/* ---- the edibles' slots, the host's (the block's state and NGP_EDIBLES' snapshots): each slot's cell (the guest's
+ * own deal of a block can differ: other cells, another count), its kind and whether its edible is out in the window
+ * (its age there and its place) */
+static void ng_edibles_w(Viewer *v, NetBuf *b)
+{
+    int ns = v->edibles ? edible_slots(v->edibles) : 0;
+    net_w_u16(b, (uint32_t)ns);
+    for (int i = 0; i < ns; i++) {
+        const EdibleSlot *sl = edible_slot(v->edibles, i);
+        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+        int out = d && d->phase == EP_WINDOW;
+        net_w_u16(b, (uint32_t)sl->building);
+        net_w_u8(b, (uint32_t)sl->storey);
+        net_w_u8(b, (uint32_t)sl->column);
+        net_w_u8(b, (uint32_t)sl->side);
+        net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
+        net_w_u8(b, (uint32_t)out);
+        if (out) {
+            net_w_f32(b, d->age);
+            for (int k = 0; k < 3; k++)
+                net_w_f32(b, d->pos[k]);
+        }
+    }
+}
+
+static void ng_edibles_r(Viewer *v, NetBuf *b)
+{
+    int ns = (int)net_r_u16(b), have = v->edibles ? edible_slots(v->edibles) : 0;
+    static int said = -1;
+    if (ns != have && said != ns * 1000 + have) {
+        net_log("edibles: the host has %d slots, we have %d: made the host's", ns, have);
+        said = ns * 1000 + have;
+    }
+    if (!v->edibles)
+        return;
+    for (int i = 0; i < ns && !b->err; i++) {
+        int building = (int)net_r_u16(b), storey = (int)net_r_u8(b), column = (int)net_r_u8(b), side = (int)net_r_u8(b);
+        int kind = (int8_t)net_r_u8(b), out = (int)net_r_u8(b);
+        float age = out ? net_r_f32(b) : 0, pos[3] = { 0, 0, 0 };
+        for (int k = 0; out && k < 3; k++)
+            pos[k] = net_r_f32(b);
+        if (b->err)
+            return;
+        edible_net_where(v->edibles, i, building, storey, column, side);
+        edible_net_slot(v->edibles, i, kind, out, age, out ? pos : NULL);
+    }
+    if (!b->err)
+        edible_net_count(v->edibles, ns);
+}
+
 static void ng_state_send(Viewer *v)                 /* host, after the frame's building changes went */
 {
     if (ng_state_due < 0 || !(net_role() == NET_HOST && net_live()))
@@ -348,16 +407,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_u8(&b, NM_STATE);
     net_w_u8(&b, NST_EDIBLES);
     net_w_u8(&b, (uint32_t)v->block);
-    net_w_u16(&b, (uint32_t)ns);
-    for (int i = 0; i < ns; i++) {
-        const EdibleSlot *sl = edible_slot(v->edibles, i);
-        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
-        int out = d && d->phase == EP_WINDOW;
-        net_w_u8(&b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
-        net_w_u8(&b, (uint32_t)out);
-        if (out)
-            net_w_f32(&b, d->age);
-    }
+    ng_edibles_w(v, &b);
     if (!b.err) {
         net_send_msg(1, m, b.len);
         total += b.len;
@@ -428,27 +478,12 @@ static void ng_state_building(Viewer *v, NetBuf *b)
         }
 }
 
-static void ng_state_edibles(Viewer *v, NetBuf *b)
-{
-    int ns = (int)net_r_u16(b), have = v->edibles ? edible_slots(v->edibles) : 0;
-    if (ns != have)
-        net_log("the host has %d edible slots, we have %d", ns, have);
-    for (int i = 0; i < ns && !b->err; i++) {
-        int kind = (int8_t)net_r_u8(b), out = (int)net_r_u8(b);
-        float age = out ? net_r_f32(b) : 0;
-        if (!b->err && i < have)
-            edible_net_slot(v->edibles, i, kind, out, age);
-    }
-}
+static void ng_state_edibles(Viewer *v, NetBuf *b) { ng_edibles_r(v, b); }
 
-static void ng_state_challenge(Viewer *v, NetBuf *b)
+/* the guest: the challenge's upgrade object as the host's, its effect on while it waits (as its CUE_SPAWN) */
+static void ng_challenge_put(Viewer *v, int st, int made, float delay, float pulse, uint32_t up, uint32_t taken)
 {
     Challenge *c = &v->challenge;
-    int st = (int)net_r_u8(b), made = (int)net_r_u8(b);
-    float delay = net_r_f32(b), pulse = net_r_f32(b);
-    uint32_t up = net_r_u32(b), taken = net_r_u32(b);
-    if (b->err)
-        return;
     if (st == CU_WAITING && c->up_state != CU_WAITING && v->fxw && c->up.effect && v->upgrade_fx < 0)
         v->upgrade_fx = fx_spawn(v->fxw, c->up.effect, c->up.pos, NULL, 1);   /* (as its CUE_SPAWN) */
     else if (st != CU_WAITING && v->upgrade_fx >= 0) {
@@ -462,6 +497,15 @@ static void ng_state_challenge(Viewer *v, NetBuf *b)
     c->up_pulse = pulse;
     c->upgrade = up;
     c->up_taken = taken;
+}
+
+static void ng_state_challenge(Viewer *v, NetBuf *b)
+{
+    int st = (int)net_r_u8(b), made = (int)net_r_u8(b);
+    float delay = net_r_f32(b), pulse = net_r_f32(b);
+    uint32_t up = net_r_u32(b), taken = net_r_u32(b);
+    if (!b->err)
+        ng_challenge_put(v, st, made, delay, pulse, up, taken);
 }
 
 static void ng_on_state(Viewer *v, NetBuf *b)
@@ -747,6 +791,33 @@ static void ng_digest(const Viewer *v, NetDigest *d)
             for (int k = 0; k < NET_DSYS && len < (int)sizeof line - 40; k++)
                 len += snprintf(line + len, sizeof line - (size_t)len, " %s %08X", NET_DSYS_NAME[k], d->s[k].h);
             net_log("digest:%s", line);
+            len = 0;                                 /* the buildings not standing: state, storeys, roof, floors HP */
+            for (uint32_t i = 0; i < v->scene.nbuildings && len < (int)sizeof line - 40; i++) {
+                const Building *b = &v->scene.buildings[i].b;
+                int floors = 0, cells = 0;
+                for (int ls = 0; ls < b->n; ls++) {
+                    floors += b->floor_hp[b->live[ls]];
+                    for (int col = 0; col < b->width; col++) {
+                        int ci = building_cell_index(b, FACE_FRONT, col);
+                        cells += ci >= 0 ? b->cell[b->live[ls]][ci].state : 0;
+                    }
+                }
+                if (b->state != BUILDING_STANDING || b->hp < 100)
+                    len += snprintf(line + len, sizeof line - (size_t)len, " %u:%d/%d/%d/%d/%d/%d", i, b->state, b->hp,
+                                    b->n, b->roof, cells, floors);
+            }
+            if (len)
+                net_log("digest buildings (state/HP/storeys/roof/cells/floors):%s", line);
+            static char el[2048];                    /* the edibles' slots: kind, none 0 / hidden 1 / out 2 */
+            len = 0;
+            for (int i = 0; v->edibles && i < edible_slots(v->edibles) && len < (int)sizeof el - 16; i++) {
+                const EdibleSlot *sl = edible_slot(v->edibles, i);
+                const Edible *e = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+                len += snprintf(el + len, sizeof el - (size_t)len, " %d:%d/%d", i, sl->kind,
+                                sl->kind < 0 || (e && e->phase != EP_WINDOW) ? 0 : e ? 2 : 1);
+            }
+            for (int at = 0; at < len; at += 400)    /* (net_log's line is short) */
+                net_log("digest edibles (block %d):%.400s", v->block, el + at);
         }
     }
 }
@@ -1317,7 +1388,7 @@ static void ng_digest_send(Viewer *v)
  * shown time reaches the host time they were sent at). The guest's own system makes no decisions: its step in main.c
  * asks net_guest_world() and leaves its logic out. */
 enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_HUD, NGP_SCENE,
-       NGP_N };
+       NGP_FEEL, NGP_CHALLENGE, NGP_N };
 typedef struct {
     const char *name;
     float rate;                                      /* snapshots a second (0: events only) */
@@ -1336,7 +1407,7 @@ static double ng_pup_at[NGP_N];
 static int ng_guest(void) { return net_role() == NET_GUEST && net_live(); }
 static int ng_host(void) { return net_role() == NET_HOST && net_live(); }
 
-/* the host: an event of channel ch, now (reliable, in order with every other channel's) */
+/* the host: an event of channel ch, now (reliable, in order with every other channel's), with the block it is of */
 static void ng_event(int ch, const void *data, int len)
 {
     if (!ng_host() || len < 0 || len > 4000)
@@ -1346,13 +1417,14 @@ static void ng_event(int ch, const void *data, int len)
     net_w_u8(&b, NM_PEVENT);
     net_w_u8(&b, (uint32_t)ch);
     net_w_f64(&b, net_now());
+    net_w_u8(&b, (uint32_t)(g_ngv ? g_ngv->block : 0));
     net_w_bytes(&b, data, len);
     if (!b.err)
         net_send_msg(1, m, b.len);
 }
 
-/* the guest's queue of events not yet due */
-typedef struct NgQueued { struct NgQueued *next; double t; int ch, len; uint8_t data[]; } NgQueued;
+/* the guest's queue of events not yet due (each with the host's block it is of) */
+typedef struct NgQueued { struct NgQueued *next; double t; int ch, block, len; uint8_t data[]; } NgQueued;
 static NgQueued *ng_queue, **ng_queue_tail = &ng_queue;
 
 static void ng_queue_clear(void)
@@ -1365,7 +1437,7 @@ static void ng_queue_clear(void)
     ng_queue_tail = &ng_queue;
 }
 
-static void ng_queue_push(int ch, double t, const uint8_t *data, int len)
+static void ng_queue_push(int ch, double t, int block, const uint8_t *data, int len)
 {
     NgQueued *q = malloc(sizeof *q + (size_t)len);
     if (!q)
@@ -1373,22 +1445,30 @@ static void ng_queue_push(int ch, double t, const uint8_t *data, int len)
     q->next = NULL;
     q->t = t;
     q->ch = ch;
+    q->block = block;
     q->len = len;
     memcpy(q->data, data, (size_t)len);
     *ng_queue_tail = q;
     ng_queue_tail = &q->next;
 }
 
-static void ng_queue_run(Viewer *v)                  /* the events whose host time is shown now */
+/* the events whose host time is shown now. One of another block than ours waits (the host's next block's, sent
+ * before ours began here: ng_puppets_reset keeps them), at most 3 s, then it goes */
+static void ng_queue_run(Viewer *v)
 {
     const NetSnapBuf *mb = net_snaps();
     double shown = mb->have_offset ? net_now() - mb->offset - ng_delay() : 1e30;
     while (ng_queue && ng_queue->t <= shown) {
         NgQueued *q = ng_queue;
+        if (q->block != v->block && q->t > shown - 3)
+            break;
         ng_queue = q->next;
         if (!ng_queue)
             ng_queue_tail = &ng_queue;
-        if (q->ch >= 0 && q->ch < NGP_N && ng_pup[q->ch].event) {
+        if (q->block != v->block)
+            net_log("%s: an event of block %d dropped (we are in %d)", q->ch < NGP_N ? ng_pup[q->ch].name : "?",
+                    q->block, v->block);
+        else if (q->ch >= 0 && q->ch < NGP_N && ng_pup[q->ch].event) {
             NetBuf b = netbuf(q->data, q->len);
             ng_pup[q->ch].event(v, &b);
         }
@@ -1396,9 +1476,30 @@ static void ng_queue_run(Viewer *v)                  /* the events whose host ti
     }
 }
 
-static void ng_puppets_reset(Viewer *v)
+/* a new world (all the events go) or block (the events of that block, sent before it began here, are kept) */
+static void ng_puppets_reset(Viewer *v, int new_world)
 {
-    ng_queue_clear();
+    if (new_world)
+        ng_queue_clear();
+    else {
+        int kept = 0, gone = 0;
+        NgQueued **pp = &ng_queue;
+        ng_queue_tail = &ng_queue;
+        while (*pp) {
+            NgQueued *q = *pp;
+            if (q->block == v->block) {
+                kept++;
+                ng_queue_tail = &q->next;
+                pp = &q->next;
+            } else {
+                gone++;
+                *pp = q->next;
+                free(q);
+            }
+        }
+        if (kept || gone)
+            net_log("block %d: %d events of it kept, %d of others dropped", v->block, kept, gone);
+    }
     for (int c = 0; c < NGP_N; c++) {
         netsnap_clear(&ng_pup_snaps[c]);
         ng_pup_at[c] = 0;
@@ -1449,8 +1550,11 @@ static void ng_on_puppet(NetBuf *b, int type)
         return;
     if (type == NM_PUPPET)
         netsnap_push(&ng_pup_snaps[ch], t, net_now(), b->p + b->len, b->cap - b->len);
-    else
-        ng_queue_push(ch, t, b->p + b->len, b->cap - b->len);
+    else {
+        int block = (int)net_r_u8(b);
+        if (!b->err)
+            ng_queue_push(ch, t, block, b->p + b->len, b->cap - b->len);
+    }
 }
 
 static int ng_held_live(int i)
@@ -1543,6 +1647,97 @@ static void ng_scene_apply(Viewer *v, const NetSnapSample *a, const NetSnapSampl
         v->scene.cloth_time = t;                     /* (the wind's phase the host's; its step on between them) */
 }
 
+/* ---- the feel (NGP_FEEL): the host's camera shakes and its player 2's rumble, played on the guest at their host
+ * time. A shake goes as it started (its slot, kind, place, strength and phases), so the guest's camera turns as the
+ * host's; the guest starts none of its own but its own monster's clip events' (its step plays them at once, as its
+ * pad moves it). Player 2's rumble goes to the guest's own pad (pad 0); the host's pad 1 is not player 2's */
+enum { NGF_SHAKE, NGF_RUMBLE };
+static int ng_feel_replaying;
+
+static int ng_shake_own(const Viewer *v, const CamShake *s)   /* the guest's own monster's clip events' shake */
+{
+    return v->nmon > 1 && s == &v->shakes[7 + v->mon[1].slot];
+}
+
+static int net_shake(Viewer *v, CamShake *s, const ShakeDef *d, const float pos[3], float strength, int check)
+{
+    if (ng_guest())
+        return !ng_feel_replaying && !ng_shake_own(v, s);
+    if (!ng_host())
+        return 0;
+    shake_start(s, d, pos, strength, check, &v->shake_seed);
+    int slot = (int)(s - v->shakes);
+    if (s->age != 0 || slot < 0 || slot >= 8 + MONSTERS - 1 || (v->nmon > 1 && slot == 7 + v->mon[1].slot))
+        return 1;                                    /* (kept the stronger one; the guest's own monster's: its own) */
+    uint8_t m[48];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NGF_SHAKE);
+    net_w_u8(&b, (uint32_t)slot);
+    net_w_u8(&b, (uint32_t)(s->def == &SHAKE_COLLAPSE));
+    for (int k = 0; k < 3; k++)
+        net_w_f32(&b, s->pos[k]);
+    net_w_f32(&b, s->strength);
+    net_w_f32(&b, s->phase[0]);
+    net_w_f32(&b, s->phase[1]);
+    ng_event(NGP_FEEL, m, b.len);
+    if (getenv("RAMPAGE_NET_TRACE"))
+        net_log("feel: shake %d (%s) %.2f at %.0f %.0f %.0f", slot, s->def == &SHAKE_COLLAPSE ? "collapse" : "monster",
+                strength, pos[0], pos[1], pos[2]);
+    return 1;
+}
+
+static int net_rumble(const Mon *mo, int ms)
+{
+    if (ng_guest())
+        return !ng_feel_replaying;                   /* (the host's player 2's come) */
+    if (!ng_host() || mo->slot != 1)
+        return 0;
+    uint8_t m[8];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NGF_RUMBLE);
+    net_w_u32(&b, (uint32_t)ms);
+    ng_event(NGP_FEEL, m, b.len);
+    if (getenv("RAMPAGE_NET_TRACE"))
+        net_log("feel: player 2's rumble %d ms sent", ms);
+    return 1;
+}
+
+static void ng_feel_event(Viewer *v, NetBuf *b)
+{
+    int kind = (int)net_r_u8(b);
+    if (kind == NGF_RUMBLE) {
+        int ms = (int)net_r_u32(b);
+        if (b->err)
+            return;
+        if (getenv("RAMPAGE_NET_TRACE"))
+            net_log("feel: player 2's rumble %d ms%s", ms, v->pads_live && v->vibrate ? "" : " (vibration off here)");
+        if (v->pads_live && v->vibrate)              /* (the guest's own pad: its pad 0) */
+            pad_rumble(0, 0xC0 / 255.0f, ms / 1000.0f);
+        return;
+    }
+    if (kind != NGF_SHAKE)
+        return;
+    int slot = (int)net_r_u8(b), collapse = (int)net_r_u8(b);
+    float pos[3], strength, ph[2];
+    for (int k = 0; k < 3; k++)
+        pos[k] = net_r_f32(b);
+    strength = net_r_f32(b);
+    ph[0] = net_r_f32(b);
+    ph[1] = net_r_f32(b);
+    if (b->err || slot >= 8 + MONSTERS - 1)
+        return;
+    CamShake *s = &v->shakes[slot];
+    uint32_t seed = 1;
+    ng_feel_replaying = 1;
+    shake_start(s, collapse ? &SHAKE_COLLAPSE : &SHAKE_MONSTER, pos, strength, 0, &seed);
+    ng_feel_replaying = 0;
+    s->phase[0] = ph[0];
+    s->phase[1] = ph[1];
+    if (getenv("RAMPAGE_NET_TRACE"))
+        net_log("feel: shake %d (%s) %.2f at %.0f %.0f %.0f", slot, collapse ? "collapse" : "monster", strength, pos[0],
+                pos[1], pos[2]);
+}
+
 /* each system's side, one file each */
 #include "netrep_traffic.c"                          /* vehicles, street objects, rail, parade */
 #include "netrep_army.c"                             /* the army and the bosses */
@@ -1558,6 +1753,7 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     net_set_handler(ng_handler);
     ng_pup[NGP_HUD] = (NgPuppet){ "popups", 0, NULL, NULL, ng_hud_event, NULL };
     ng_pup[NGP_SCENE] = (NgPuppet){ "scene", 2, ng_scene_write, ng_scene_apply, ng_scene_event, NULL };
+    ng_pup[NGP_FEEL] = (NgPuppet){ "feel", 0, NULL, NULL, ng_feel_event, NULL };
     ngr_traffic_init();
     ngr_army_init();
     ngr_people_init();
@@ -1752,7 +1948,14 @@ static void ng_test_end(Viewer *v)
     if (s != GS_PLAY || done || net_now() < at)
         return;
     done = 1;
-    if (!strncmp(spec, "win", 3)) {
+    if (!strncmp(spec, "fountains", 9)) {           /* fountains,secs: every fountain and hydrant broken (a shot's
+                                                      * TakeDamage): their geysers, made mid-block */
+        net_log("test: every fountain broken");
+        static const float up[3] = { 0, 0, 1 };
+        for (int i = 0, n = v->sobj ? streetobj_count(v->sobj) : 0; i < n; i++)
+            if (streetobj_get(v->sobj, i)->kind == SK_FOUNTAIN)
+                streetobj_shot(v->sobj, i, up);
+    } else if (!strncmp(spec, "win", 3)) {
         net_log("test: every building brought down");
         for (uint32_t i = 0; i < v->scene.nbuildings; i++)
             if (v->scene.buildings[i].b.state == BUILDING_STANDING)
@@ -1815,6 +2018,7 @@ static void netgame_after_step(Viewer *v)
     ng_flow_log(v);
     if (net_role() == NET_HOST) {
         ng_test_die(v);
+        ngr_challenge_host(v);                       /* (the upgrade taken, its banner: to the guest) */
         ng_building_flush();
         ng_state_send(v);                            /* (after the frame's building changes: they are in it) */
         if (net_now() - ng_snap_at >= 1.0 / ng_rate - 0.002) {   /* (2 ms early: a 60 Hz frame's jitter) */

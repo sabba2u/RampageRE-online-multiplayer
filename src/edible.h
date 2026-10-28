@@ -241,7 +241,12 @@ extern int (*edible_net_gate)(Edibles *e, int building, int storey, int column, 
                               const char *monster_move);
 /* NET: the guest's slot i made as the host's (a guest that joined late): its kind (-1 none left), its edible out in
  * its window `age` seconds (out 1) or not (0: one out here goes, its effect with it, EE_REMOVED) */
-void edible_net_slot(Edibles *e, int i, int kind, int out, float age);
+void edible_net_slot(Edibles *e, int i, int kind, int out, float age, const float pos[3]);
+/* (pos: the host's place, NULL none: taken where its floor is gone here) */
+/* NET: the guest's slot i at the host's cell (its own deal of a block can differ: another cell's slot is emptied and
+ * moved; i one past the last: a new slot), and the host's count of slots (the guest's past it emptied, dropped) */
+void edible_net_where(Edibles *e, int i, int building, int storey, int column, int side);
+void edible_net_count(Edibles *e, int n);
 /* NET: set on the guest of an online game: no edible appears by itself (a cell broken, a floor fallen), only the
  * host's through edible_net_slot */
 extern int edible_net_no_spawn;

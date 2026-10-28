@@ -38,8 +38,13 @@ Both players need the same build of RampageRE and their own disc image.
 | Clock, points, kills, lives | host | in each snapshot (game_net_put) |
 | The world (city, block, play type, monsters, seeds) | host | reliable, on change; the guest loads it |
 | People: each one's template, look, play time, place and turn, phase, window; the script objects, the challenge's counts, every open window | host | 20 snapshots a second (netrep_people.c), shown 100 ms behind; their sounds, effects and banners as events. A person in a monster's hand is posed at the guest's own hand |
-| Edibles | host | every grab made again on the guest (edible_net_gate), so it goes and plays there; its stats come by the snapshot |
-| Army, traffic, bosses, street objects | each side by itself | **phase 2** |
+| Edibles | host | every grab made again on the guest (edible_net_gate), so it goes and plays there; its stats come by the snapshot; the slots (their cells, kinds, out or not, age and place) by NGP_EDIBLES' snapshot, so a guest whose own deal of a block differed takes the host's |
+| Army, traffic, bosses, street objects | host | puppets (netrep_*.c): snapshots and events; a street object the host's scripts make mid-block (a broken fountain's geyser) is made on the guest from the snapshot |
+| Camera shakes, player 2's rumble | host | events (NGP_FEEL) at their host time: each shake as it started (slot, kind, place, strength, phases), so the guest's camera turns as the host's (its own monster's clip-event shakes are its own); player 2's rumble on the guest's pad |
+| The challenge's upgrade object | host | its state in a small snapshot (NGP_CHALLENGE), its taking and last banner as events; the guest's own touch and tick are off |
+
+Every puppet event carries the host's block: at a block change the guest keeps the events of its new block already
+queued (they came before its block began) and drops the old block's.
 
 **Joining late, coming back, a new block.** Buildings and edibles go as the changes the host makes, so a guest that
 was not there for them asks for the block's whole state (`NM_STATE`) when it joins, reconnects or starts a block (again
@@ -72,7 +77,7 @@ tools\net_test.ps1 -JoinDelay 30 -HostDo "wait 3, hitcell 3 0 0 10, ..."
 Both copies log the game's flow (`net: flow: ...`: states, defeats, respawns, lives, results screens and their answers,
 the host's events sent and taken). Test hooks, read by the host only: `RAMPAGE_NET_TESTDIE=period[,lives]` fells both
 monsters every `period` seconds of play (lives: each player's from the start), `RAMPAGE_NET_TESTEND=win,secs` brings
-every building down `secs` into each block, `time,secs` runs the clock out (a block with a time limit: `--play timed`).
+every building down `secs` into each block, `fountains,secs` breaks every fountain and hydrant (their geysers), `time,secs` runs the clock out (a block with a time limit: `--play timed`).
 A defeated monster lies there until its player presses a button (`Faceup_Idle_Waiting2`), as in the game.
 
 ## Hooks: where online play touches upstream's files
@@ -91,7 +96,9 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | `src/hud.c` / `.h` | `hud_net_tap` in `hud_input_pad` (a results screen's presses), `hud_results_close` |
 | `src/main.c` (script calls, GE_REVIVE) | the guest's `Monsters::becomeHuman` / `startRespawn` do nothing; its GE_REVIVE removes no person |
 | `src/people.c` / `.h` | `people_net_gate` in `emit`, `people_net_tap` in `people_events`, `people_net_eaten` in `people_eat`; the `people_net_*` section at the end (netrep_people.c) |
-| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (a late guest's slots made the host's) |
+| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (the guest's slots made the host's, at the host's place where the guest's floor fell first); the guest's `edible_floor_fell` does nothing |
+| `src/streetobj.c` / `.h` | `streetobj_net_make` (a script-made object of the host's, made on the guest) |
+| `src/main.c` (feel, challenge) | `net_rumble` first in `mon_rumble`, `net_shake` before both `shake_start`s; the guest's upgrade touch loop and `challenge_upgrade_tick` are skipped |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
 | `src/main.c` (play_step, edible_step) | the guest runs no `scene_people_spawn` / `people_update`; a held index not here yet is let go; the guest's edible events pay no stats or reactions |
 

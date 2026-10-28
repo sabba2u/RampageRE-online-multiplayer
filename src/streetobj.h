@@ -267,5 +267,8 @@ int streetobj_events(StreetObjs *s, StreetEvent *out, int max);   /* takes the e
 /* ---- NET: online play's guest (netrep_traffic.c): its objects are the host's, written from the snapshots */
 StreetObj *streetobj_net_obj(StreetObjs *s, int i);   /* object i to write; NULL past the list */
 void streetobj_net_event(StreetObjs *s, const StreetEvent *e);   /* one of the host's, taken as this module's own */
+/* one the host's scripts made mid-block (a geyser, a puddle: made 1), of template tmpl at world, as object i; its own
+ * Construct's events dropped (the host's come). Its index, -1 when i is not the next one */
+int streetobj_net_make(StreetObjs *s, int i, Group tmpl, const float world[16]);
 
 #endif
