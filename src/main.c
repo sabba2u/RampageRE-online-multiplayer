@@ -7690,7 +7690,7 @@ static int card_job(Viewer *v, Shell *sh, const ShellEvent *e)
     ShellProfile sp;
     int st = SHELL_CARD_OK;
     uint64_t now = (uint64_t)time(NULL) * 1000;
-    int write = v->prof_write && net_role() != NET_GUEST;   /* NET: the guest of an online game writes no profile */
+    int write = v->prof_write && (net_role() != NET_GUEST || sh == v->shell);   /* NET: none from the host's game */
     if (e->kind == SHELL_EVT_PROFILE_LOAD) {         /* the one profile file */
         Profile p = v->prof;
         int r = v->prof_write ? profile_read(&p, v->prof_path) : -1;

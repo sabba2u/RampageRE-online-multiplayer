@@ -257,6 +257,22 @@ typedef struct {
     const char *ms_name[4];         /* NET: MonsterSelect's monster on each player's card (online play's guest is told) */
 } ShellAutoView;
 void shell_auto_view(const Shell *s, ShellAutoView *out);
+/* NET: online play, the guest's front end shows the host's (src/netshell.c, included by shell.c): where the host's
+ * shell stands, plain data (sent as it is: both copies are the same build) */
+typedef struct {
+    uint8_t state, popup, focus;    /* shell_state; the profile popup up; the interface with the pad + 1 (0: none
+                                     * the guest can show: the boot, the attract mode, loading, the Victory) */
+    uint8_t mm_state, mm_play_mode, mm_players_sel, mm_bots_sel, mm_retro;
+    uint8_t play_type, num_players, num_bots, ms_players, ms_ready, ms_back;   /* (bits: player n) */
+    int16_t ms_monster[4], sheet_monster;
+    uint8_t sheet_player, cs_index, cs_night, cs_stats;
+    uint8_t monster_flags[4][SHELL_MONSTERS], city_flags[SHELL_CITIES];
+    uint32_t cheats;
+} ShellNetView;
+void shell_net_view(const Shell *s, ShellNetView *out);
+/* the guest's shell made the host's, each frame (1: done; 0: not now, its own popup or loading screen up); NULL: the
+ * host gone, back to its own main menu */
+int shell_net_mirror(Shell *s, const ShellNetView *host);
 
 typedef struct {
     float x[4], y[4];               /* the corners in the reference screen: the picture's top-left, top-right,
