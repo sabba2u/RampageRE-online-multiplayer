@@ -8,6 +8,7 @@
  * threads), and to the panel by net_upnp_state. */
 #include "netupnp.h"
 #include "net.h"
+#include "netlobby.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -28,6 +29,8 @@ static int nup_state = NUP_OFF;
 static char nup_text[160];
 static char nup_news[4][160];                        /* lines for the log, from the thread (net_upnp_poll) */
 static int nup_nnews;
+static char nup_ext[64];                             /* the router's address on the internet, once mapped */
+static int nup_ext_told;                             /* (told to the lobby: netlobby_set_external) */
 /* the router, kept by the thread for the removal (read by net_upnp_close once the thread is over) */
 static struct UPNPUrls nup_urls;
 static struct IGDdatas nup_data;
@@ -118,6 +121,9 @@ static DWORD WINAPI nup_run(LPVOID arg)
         return 0;
     }
     nup_mapped = 1;
+    EnterCriticalSection(&nup_lock);
+    snprintf(nup_ext, sizeof nup_ext, "%s", ext);
+    LeaveCriticalSection(&nup_lock);
     if (r == 2)                                      /* the router's own address is a private one: another router or
                                                       * the provider's NAT (CGNAT) is in front of it */
         nup_set(NUP_MAPPED, "%s:%d forwarded to %s, but that address is private (a second router, or the provider's "
@@ -182,22 +188,30 @@ void net_upnp_close(void)
     }
     EnterCriticalSection(&nup_lock);
     nup_state = NUP_OFF;
-    nup_text[0] = 0;
+    nup_text[0] = nup_ext[0] = 0;
     LeaveCriticalSection(&nup_lock);
+    if (nup_ext_told)
+        netlobby_set_external("");
+    nup_ext_told = 0;
 }
 
 void net_upnp_poll(void)
 {
     if (!nup_lock_ok)
         return;
-    char news[4][160];
+    char news[4][160], ext[64];
     EnterCriticalSection(&nup_lock);
+    snprintf(ext, sizeof ext, "%s", nup_state == NUP_MAPPED ? nup_ext : "");
     int n = nup_nnews;
     memcpy(news, nup_news, sizeof news);
     nup_nnews = 0;
     LeaveCriticalSection(&nup_lock);
     for (int i = 0; i < n; i++)
         net_log("%s", news[i]);
+    if (*ext && !nup_ext_told) {                     /* the lobby lists the address friends join (netlobby.c) */
+        netlobby_set_external(ext);
+        nup_ext_told = 1;
+    }
 }
 
 int net_upnp_state(const char **text)

@@ -60,6 +60,108 @@ tolerance. The host compares each part with its own from within 0.25 s of the ti
 newest time it has); a part that differs twice in a row is a `MISMATCH`, logged with the system's name and both sides'
 values, and the Insert panel lists "In sync: ..." / "Out of sync: army (3 times)".
 
+## The lobby: finding games
+
+`lobby/` is a small server (Node, TypeScript, Colyseus 0.16, after the Fire Fight lobby) that lists games, so the guest
+doesn't need the host's address. It carries no game traffic and there is no relay: it hands out an address, and the
+guest's game joins the host's over ENet exactly as if the address had been typed. The same server runs on a VPS or on
+the hosting player's own PC.
+
+```
+ host's PC                                 lobby (the host's PC, or a VPS)            guest's PC
+ rampage --host ── POST /games ──────────▶ lobby/  TCP 19980  ◀── GET /games.txt ─── Insert: Games online
+          (every 10 s: PUT /games/<code>)  code K7PQ2 → address                       or --join K7PQ2
+          ◀════════════════════ ENet, UDP 27960, straight from the guest ══════════════════
+```
+
+### Running it
+
+- **On the host's PC**: install Node.js 20 or newer, then `lobby\start.bat` (the first start runs `npm install` and makes
+  `config.json`). It prints this PC's addresses. The game's default lobby is `http://localhost:19980`, so the host's own
+  game finds it with nothing set. Guests on the same network use `http://<the host's LAN address>:19980`; guests on the
+  internet need TCP 19980 forwarded to the host's PC, besides UDP 27960 for the game itself.
+- **On a VPS**: clone the repo there (only `lobby/` is needed), `sh lobby/start.sh`, and open TCP 19980 in its firewall
+  (`ufw allow 19980/tcp`, or the provider's panel). To keep it running, either pm2 (`npm i -g pm2`, then
+  `cd lobby && pm2 start npm --name rampage-lobby -- start && pm2 save && pm2 startup`) or a systemd unit:
+  ```ini
+  # /etc/systemd/system/rampage-lobby.service    (then: systemctl enable --now rampage-lobby)
+  [Service]
+  WorkingDirectory=/opt/rampage.se/lobby
+  ExecStart=/usr/bin/npm start
+  Restart=always
+  User=rampage
+  [Install]
+  WantedBy=multi-user.target
+  ```
+  Behind nginx or Caddy (for https), set `"trustProxy": true` so the lobby takes players' addresses from
+  `X-Forwarded-For`, and proxy WebSockets too (the page's live list).
+- `lobby/config.json` (from `config.example.json`): `port` (19980; `PORT` overrides it), `publicAddress` (this PC's
+  internet address, for a lobby on the host's PC: what guests from the internet are given for games registered from
+  this PC or its network that don't know their own; leave it empty on a VPS), `trustProxy`.
+- `cd lobby && npm test` runs its tests (registry, addresses, codes, rate limits, HTTP, the Colyseus listing).
+
+### Pointing the game at it
+
+The game's lobby: `--lobby <url>` on the command line, else the `RAMPAGE_LOBBY` environment variable, else the panel's
+**Lobby** field (kept in `netlobby.cfg` beside the game, with **List my game** and **Your name**), else
+`http://localhost:19980`. `--lobby` and `RAMPAGE_LOBBY` are for that run only and are not saved.
+
+### Hosting and joining
+
+- **Host:** when hosting over ENet (not Steam) with **List my game in the lobby** ticked (the default), the game lists
+  itself: its name, monster, city and block, players, port and build id (net.c's hash of the exe: guest and host must
+  match). The lobby answers with a **join code** (5 of `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`: no 0/O or 1/I) that the
+  panel shows with a **Copy** button. A heartbeat every 10 s keeps it listed (and says when a guest came: 2 / 2); the
+  lobby drops a game silent for 30 s. Leave, a failed connection or quitting the game takes it off at once.
+- **Guest:** the panel's **Games online** lists them (every 5 s while the panel is open; **Refresh** now). **Join** on a
+  row does what typing its address and Join does. Rows of another build are greyed out with the reason in a tooltip,
+  as are full ones. Or type the code under **Join code**; or start the game with `--join K7PQ2`, `--join
+  rampage://join/K7PQ2` or `--join rampage://join/203.0.113.5:27960`: net_start_join hands a code to the lobby
+  (`GET /games/<code>.txt`) and joins the address it answers.
+- **Which address:** the lobby gives each guest the one that reaches the host from where that guest is: the host's
+  UPnP address when the game said one (`netlobby_set_external`), else the address its registration came from; for a
+  guest behind the same router (the same public address), or with both on the lobby's network, the host's LAN address
+  (the game sends it); for both on the lobby's PC, 127.0.0.1. A host on the lobby's own PC or network with no UPnP is
+  given to internet guests as `publicAddress`:port, else its LAN address (fine over Tailscale / ZeroTier).
+- Nothing waits on the lobby: every request runs on a thread of its own (WinHTTP; netlobby.c) and the frame only
+  reads finished answers. A lobby that is down shows as a status line ("the lobby is not reachable"), and the host
+  tries again every 10 s.
+
+### The games page and rampage:// links
+
+`http://<lobby>:19980/` lists the games live (the Colyseus `lobby` room lists each game as a room; the page reads
+`/games` for the addresses), with each game's code, a **Copy** button for `rampage --join <code>`, a **Join** link
+`rampage://join/<code>` and the game's address as a `rampage://join/<address>` link. For those links to start the game,
+each player sets them up once, from the page:
+
+- **Windows:** `/install.ps1` (served with the lobby's address filled in; `lobby/launcher/install.ps1` and
+  `rampage-handler.ps1`) registers `rampage://` for the current user (HKCU\Software\Classes\rampage, no admin), asks
+  for RampageRE.exe, and runs `RampageRE.exe --lobby <lobby> --join <code or address>` for a link. Any web page can open
+  a `rampage://` link, so the handler takes only `rampage://join/<code>` and `rampage://join/<host[:port]>`, and the
+  game and lobby come from its config, never from the link. `-Uninstall` removes it.
+- **Linux:** `/install-linux.sh` (`lobby/launcher/install-linux.sh <path to rampage>`) writes
+  `~/.local/share/applications/rampage.desktop` (`Exec=<game> --lobby <lobby> --join %u`,
+  `MimeType=x-scheme-handler/rampage;`), runs `xdg-mime default rampage.desktop x-scheme-handler/rampage` and
+  `update-desktop-database` when there. `--uninstall` removes it. The game checks the link itself
+  (netlobby_join_kind). **But:** the Linux build (build.sh) doesn't build online play (src/net*.c) yet, so for now the
+  handler is ready and the game isn't; netlobby.c itself builds there (plain sockets for http://, pthreads; https needs
+  Windows' WinHTTP), and resolves codes the same way once net is in build.sh.
+- **macOS:** not done: it needs a .app bundle with `CFBundleURLTypes` for `rampage` in its Info.plist.
+
+### The lobby's HTTP (lobby/src/http.ts)
+
+| | |
+|---|---|
+| `POST /games` | name, monster, city, players, max, port, build (8 hex), external?, lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
+| `PUT /games/<code>` | the heartbeat: `token` (or `X-Token`) and any changed fields. 404: forgotten, list again; 403: not your token |
+| `DELETE /games/<code>` | unlist, with the token |
+| `GET /games`, `GET /games/<code>` | JSON, each game with `join`: the address for whoever asked |
+| `GET /games.txt`, `GET /games/<code>.txt` | `rampage-lobby 1`, then a line per game, tab-separated: code, join (`-` none), players, max, build, name, monster, city |
+| `GET /` `/install.ps1` `/install-linux.sh` `/health` | the page, the link installers, `rampage_lobby` |
+
+Colyseus clients join `lobby` (the built-in LobbyRoom): each listed game is a `game` room whose id is its code and whose
+metadata is the listing.
+
 ## Testing on one PC
 
 ```
@@ -87,12 +189,13 @@ A defeated monster lies there until its player presses a button (`Faceup_Idle_Wa
 ## Hooks: where online play touches upstream's files
 
 All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `nettransport.*`, `netgame.c`,
-`netui.*`, `src/net/third_party/` for ENet and Dear ImGui). Upstream's files have only these, each marked `NET:`:
+`netui.*`, `netlobby.*`, `src/net/third_party/` for ENet and Dear ImGui). Upstream's files have only these, each marked `NET:`:
 
 | File | Hook |
 |---|---|
 | `build.bat` | the net sources in SRC; `NETINC`, `NET`, `:net_libs` (ENet and ImGui built once into `build\net`); `-lws2_32 -lwinmm -ldwmapi` |
 | `src/main.c` | `netgame_shell_input` in `shell_frame` (the guest's menu presses go to the host); `netgame_game_input` before a game's menus take the pad; `netgame_shell_start` before `shell_enter` from a game; `card_job` writes no profile on the guest; `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
+| `build.bat`, `src/main.c` (the lobby) | `src\netlobby.c` in SRC and `-lwinhttp`; `#include "netlobby.h"` and `--lobby <url>` (netlobby_set_url) in the argument loop |
 | `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert) |
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
 | `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest) |
