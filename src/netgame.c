@@ -677,8 +677,10 @@ static void netgame_pads(Viewer *v, const Window *w)
             mine.ly = -1;
         else if (c < 6.0)
             on = fmod(t, 0.6) < 0.1;
-        else
+        else {
             mine.lx = fmod(t, 16.0) < 8.0 ? 1.0f : -1.0f;
+            mine.ly = fmod(t, 24.0) < 8.0 ? 1.0f : 0.0f;  /* (down a building now and then: its windows again) */
+        }
         mine.held[btn] = (uint8_t)on;
         mine.pressed[btn] = (uint8_t)(on && !was);
         was = on;

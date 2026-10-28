@@ -406,6 +406,8 @@ static void ngr_gone(Viewer *v, int who)
     Person *q = people_net_person(v->scene.folk, who, (Group){ 0 });
     if (!q)
         return;
+    if (getenv("RAMPAGE_NET_TRACE"))
+        net_log("person %d (%s): phase %d -> gone", who, q->name ? q->name : "-", q->phase);
     q->phase = PP_GONE;
     q->building = -1;
     q->mv.active = 0;
@@ -526,6 +528,9 @@ static void ngr_people_apply(Viewer *v, const NetSnapSample *sa, const NetSnapSa
         q->anim_done = (e->bits & 32) != 0;
         /* the place: between the samples, unless one of the guest's monsters holds it (people_hold's) */
         int ph = e->bits & 3, held_here = 0;
+        if (ph != q->phase && q->phase != PP_GONE && getenv("RAMPAGE_NET_TRACE"))
+            net_log("person %d (%s): phase %d -> %d at %.1f %.1f %.1f", e->who, q->name, q->phase, ph, e->pos[0],
+                    e->pos[1], e->pos[2]);
         for (int k = 0; k < v->nmon && ph == PP_HELD; k++)
             held_here |= v->mon[k].held == e->who;
         if (ph == PP_HELD && q->phase != PP_HELD && q->phase != PP_GONE)
