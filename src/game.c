@@ -1367,3 +1367,34 @@ const char *game_block_name(const Game *g, int which)   /* 0x2B4B20: 0 = the one
 
 int game_num_blocks(const Game *g) { return g ? g->last - g->first + 1 : 0; }   /* 0x2AF270 [R] */
 int game_result_state(const Game *g) { return g ? g->result : GR_NONE; }
+
+/* NET: online play (src/netgame.c): the host's clock and score, which the guest takes. The clock is put by its start
+ * (the guest's own world time runs on: its NIs' timers stay its own), the points, kills and lives as they are */
+void game_net_get(const Game *g, GameNetSync *s)
+{
+    memset(s, 0, sizeof *s);
+    if (!g)
+        return;
+    s->running = g->running;
+    s->elapsed = (g->running ? (float)g->now : g->stop) - g->start;
+    for (int k = 0; k < GAME_PLAYERS; k++) {
+        memcpy(s->points[k], g->p[k].points, sizeof s->points[k]);
+        memcpy(s->kills[k], g->p[k].kills, sizeof s->kills[k]);
+        s->lives[k] = g->lives[k];
+    }
+}
+
+void game_net_put(Game *g, const GameNetSync *s, int players)
+{
+    if (!g)
+        return;
+    if (s->running && g->running)
+        g->start = (float)g->now - s->elapsed;
+    else if (!s->running && !g->running)
+        g->stop = g->start + s->elapsed;
+    for (int k = 0; k < players && k < GAME_PLAYERS; k++) {
+        memcpy(g->p[k].points, s->points[k], sizeof s->points[k]);
+        memcpy(g->p[k].kills, s->kills[k], sizeof s->kills[k]);
+        g->lives[k] = s->lives[k];
+    }
+}

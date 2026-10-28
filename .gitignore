@@ -37,3 +37,7 @@ android/local.properties
 *.keystore
 *.jks
 *.key
+
+# online play: the test rig's output, ImGui's window layout
+imgui.ini
+tests/*.exe

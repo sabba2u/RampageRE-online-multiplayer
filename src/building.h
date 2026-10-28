@@ -135,6 +135,11 @@ void building_set_one_hit(int on);
  * Only a standing building. */
 int building_hit_roof(Building *b, const float p[3], float radius, int *col);
 void building_destroy(Building *b);                 /* the collapseBuilding binding (0x2BB8B0): it falls */
+/* NET: online play (src/netgame.c): called first by building_hit, building_hit_roof, building_set_cell and
+ * building_destroy with their arguments (set_cell: a0 face, a1 storey, a2 column | state << 16); non-zero: the change
+ * is not made (the guest's own; the host's come over the network and are made with the gate open). NULL offline */
+enum { BNET_HIT = 1, BNET_ROOF, BNET_CELL, BNET_DESTROY };
+extern int (*building_net_gate)(Building *b, int op, const float *p, float r, int a0, int a1, int a2);
 /* setCellDamage(face, floor, column, state): the cell of template storey o (0 the first above the ground floor) on
  * that face to damage state 0 .. 3, its HP left as it was, that cell alone (a front cell above 0 drops its open
  * windows first, 0x2BB580); face 5 (the roof) sets the roof's state, whatever the storey and column (0x2CFDA0) */

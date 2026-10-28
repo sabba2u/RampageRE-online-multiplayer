@@ -54,6 +54,7 @@
 #include "settings.h"
 #include "wrand.h"
 #include "autoplay.h"
+#include "net.h"                                 /* NET: online play (net.h, netgame.c) */
 #ifdef __ANDROID__
 #include "touch.h"                               /* the on-screen pad, player 1's pad slot */
 #endif
@@ -7674,6 +7675,8 @@ static int card_job(Viewer *v, Shell *sh, const ShellEvent *e)
  * (opened over the screens once, kept for the game), which writes only with autosave on [R 0x345950] */
 static void save_profile(Viewer *v)
 {
+    if (net_role() == NET_GUEST)                     /* NET: the guest never writes the profile */
+        return;
     if (!profile_needs_save(&v->prof) || !v->prof.allow_save || !v->prof_write)
         return;
     ShellProfile sp;
@@ -8485,6 +8488,8 @@ static void gui_log_bound(void)                      /* a bound for whatever sti
 #define DEBUG_TITLE 1                                /* city, block, clip, triangles, fps and effects in the title */
 #endif
 
+#include "netgame.c"                               /* NET: online play, the game's side */
+
 static int viewer_main(int argc, char **argv)
 {
     static Viewer v;
@@ -8576,6 +8581,9 @@ static int viewer_main(int argc, char **argv)
                 view[k] = (float)atof(argv[++i]);
             have_view = 1;
         }
+        else if (strcmp(argv[i], "--host") == 0) {   /* NET: online play (netgame_init reads them) */
+            if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') i++;
+        } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
         else if (strcmp(argv[i], "--ap-log") == 0 && i + 1 < argc) ap_log = argv[++i];
         else if (strcmp(argv[i], "--ap-shots") == 0 && i + 1 < argc) ap_shots = argv[++i];
@@ -8705,6 +8713,7 @@ static int viewer_main(int argc, char **argv)
         return 1;
     }
     settings_apply(&gfx, &w);
+    netgame_init(&v, argc, argv, w.hwnd, shot != NULL);   /* NET: --host, --join, the panel */
     v.gfx = &gfx;
     v.win = &w;
     v.gfx_write = !shot;
@@ -8961,6 +8970,7 @@ static int viewer_main(int argc, char **argv)
             v.ap_t += dt;
             now = start + v.ap_t;
         }
+        netgame_frame(&v, &w, now);                  /* NET: the connection; the panel's keys */
         int cap_draw = 0;                            /* RAMPAGE_CAPTURE: this step's picture is a frame */
         if (cap_v) {
             if (cap_step == cap_to) {
@@ -9043,6 +9053,7 @@ static int viewer_main(int argc, char **argv)
                 }
                 break;
             }
+            netgame_draw();                          /* NET: the panel */
             win_swap(&w);
             continue;
         }
@@ -9189,7 +9200,9 @@ static int viewer_main(int argc, char **argv)
                                                       * menu's: not a jump too (one on a wall lets go of it) */
                         memset(v.mon[k].pad.pressed, 0, sizeof v.mon[k].pad.pressed);
                 }
+            netgame_pads(&v, &w);                    /* NET: player 2's pad over the network */
             play_step(&v, shot && !v.ap ? 0 : (dt > 0.1f ? 0.1f : dt), aspect);
+            netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */
             pose_monsters(&v, shot && !v.ap ? shot_time : world_t);   /* the clips at the states' times (clip_at),
                                                       * against the clock the scene poses by (scene_update's t) */
             memcpy(cam.pos, v.view.pos, sizeof cam.pos);
@@ -9308,6 +9321,7 @@ static int viewer_main(int argc, char **argv)
             if (shot_png(name, w.width, w.height) == 0)
                 printf("wrote %s\n", name);
         }
+        netgame_draw();                              /* NET: the panel */
         win_swap(&w);
         frames++;
 #if defined RAMPAGE_GUI && defined _WIN32
@@ -9326,6 +9340,8 @@ static int viewer_main(int argc, char **argv)
             frames = 0;
         }
     }
+    net_stop();                                      /* NET */
+    netui_shutdown();
     popup_free(&v);
     rnd_free(v.rnd);
     for (int k = 0; k < MONSTERS; k++)

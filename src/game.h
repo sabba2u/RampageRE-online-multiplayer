@@ -265,4 +265,10 @@ const char *game_block_name(const Game *g, int which);   /* gWorld.getBlockName(
 int game_num_blocks(const Game *g);                  /* gWorld.getNumBlocks: BlockEnd - BlockStart + 1 */
 int game_result_state(const Game *g);                /* WorldGuiDriver::getResultState */
 
+/* NET: online play (src/netgame.c): the host's clock and score for the guest */
+typedef struct { int running; float elapsed; int points[GAME_PLAYERS][7], kills[GAME_PLAYERS][7], lives[GAME_PLAYERS]; }
+    GameNetSync;
+void game_net_get(const Game *g, GameNetSync *s);
+void game_net_put(Game *g, const GameNetSync *s, int players);
+
 #endif

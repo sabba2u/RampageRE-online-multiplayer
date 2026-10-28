@@ -351,8 +351,13 @@ static int cell_damage(Building *b, int s, int col, int amt, int spread, float f
 static int one_hit;
 void building_set_one_hit(int on) { one_hit = on; }
 
+/* NET: online play's gate (building.h): the host hears of every change, the guest makes none of its own */
+int (*building_net_gate)(Building *b, int op, const float *p, float r, int a0, int a1, int a2);
+
 int building_hit(Building *b, const float p[3], float radius)
 {
+    if (building_net_gate && building_net_gate(b, BNET_HIT, p, radius, 0, 0, 0))   /* NET */
+        return 0;
     if (b->state != BUILDING_STANDING)
         return 0;
     if (one_hit) {
@@ -436,6 +441,8 @@ int building_hit_roof(Building *b, const float p[3], float radius, int *col_out)
 {
     if (col_out)
         *col_out = -1;
+    if (building_net_gate && building_net_gate(b, BNET_ROOF, p, radius, 0, 0, 0))   /* NET */
+        return 0;
     if (b->state != BUILDING_STANDING)
         return 0;
     if (one_hit) {
@@ -569,6 +576,8 @@ static int crack_step(Building *b)
  * writes only the state and, when given, the sheet column +5) */
 void building_set_cell(Building *b, int face, int o, int col, int state)
 {
+    if (building_net_gate && building_net_gate(b, BNET_CELL, NULL, 0, face, o, col | state << 16))   /* NET */
+        return;
     if (state < 0 || state > 3)
         return;
     if (face == FACE_ROOF) {                         /* 0x2CFDA0: one state for the whole roof, G+0x658 */
@@ -594,6 +603,8 @@ void building_set_cell(Building *b, int face, int o, int col, int state)
 
 void building_destroy(Building *b)
 {
+    if (building_net_gate && building_net_gate(b, BNET_DESTROY, NULL, 0, 0, 0, 0))   /* NET */
+        return;
     if (b->state == BUILDING_STANDING || b->state == BUILDING_FLOOR_FALLING)
         destroyed(b);
 }

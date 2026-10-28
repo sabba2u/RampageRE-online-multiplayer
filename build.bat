@@ -22,15 +22,20 @@ cd /d "%~dp0"
 set "ZIG_VER=0.16.0"
 set "ZIG_SHA=68659eb5f1e4eb1437a722f1dd889c5a322c9954607f5edcf337bc3684a75a7e"
 set "ZIG_NAME=zig-x86_64-windows-%ZIG_VER%"
-set "SRC=src\main.c src\shot.c src\render_gl.c src\city.c src\vol.c src\bundle.c src\tex.c src\mesh.c src\prb.c src\tree.c src\anim.c src\camera.c src\moves.c src\building.c src\climb.c src\ik.c src\people.c src\fx.c src\cloth.c src\sound.c src\army.c src\hud.c src\vehicle.c src\water.c src\edible.c src\game.c src\boss.c src\look.c src\shadow.c src\director.c src\footstep.c src\challenge.c src\reveal.c src\rail.c src\parade.c src\streetobj.c src\profile.c src\collide.c src\shell.c src\movie.c src\wrand.c src\texpack.c src\iso.c src\pad.c src\settings.c src\postfx.c src\gtao.c src\autoplay.c"
-set "LIBS=-lopengl32 -lgdi32 -luser32 -lhid -lsetupapi -lcomdlg32 -lole32 -ldbghelp"
+set "SRC=src\main.c src\shot.c src\render_gl.c src\city.c src\vol.c src\bundle.c src\tex.c src\mesh.c src\prb.c src\tree.c src\anim.c src\camera.c src\moves.c src\building.c src\climb.c src\ik.c src\people.c src\fx.c src\cloth.c src\sound.c src\army.c src\hud.c src\vehicle.c src\water.c src\edible.c src\game.c src\boss.c src\look.c src\shadow.c src\director.c src\footstep.c src\challenge.c src\reveal.c src\rail.c src\parade.c src\streetobj.c src\profile.c src\collide.c src\shell.c src\movie.c src\wrand.c src\texpack.c src\iso.c src\pad.c src\settings.c src\postfx.c src\gtao.c src\autoplay.c src\net.c src\netwire.c src\netsnap.c src\nettransport.c"
+set "LIBS=-lopengl32 -lgdi32 -luser32 -lhid -lsetupapi -lcomdlg32 -lole32 -ldbghelp -lws2_32 -lwinmm -ldwmapi"
 rem zig cc compiles for the CPU of the build machine unless told otherwise: an exe built on a new PC or on the CI runner
 rem would then use AVX2 / AVX-512 and die with "illegal instruction" on older CPUs. Plain x86-64 runs everywhere.
 set "CPU=-target x86_64-windows-gnu -mcpu=baseline"
 rem the helpers of tools\native\ read the disc image with src\iso.c (RAMPAGE_TOOL: without its file dialog)
 set "TOOL=-std=c99 -O2 -Wall %CPU% -DRAMPAGE_TOOL -Isrc"
 
+rem online play (src\net*.c, docs\superpowers\specs\2026-10-27-online-multiplayer-design.md): ENet and Dear ImGui
+rem (src\net\third_party) built once into build\net\*.a, the panel src\netui.cpp each time; NET joins them to the link
+set "NETINC=-Isrc\net\third_party\enet\include -Isrc\net\third_party\imgui"
+set "NET=build\net\enet.a build\net\imgui.a build\net\netui.o -lc++"
 call :find_zig || goto :fail
+call :net_libs || goto :fail
 
 if /i "%~1"=="apkbundle" (
     call :apkbundle || goto :fail
@@ -43,13 +48,13 @@ if /i "%~1"=="tools" (
 )
 if /i "%~1"=="dev" (
     echo Building rampage.exe ^(developer build^)...
-    %ZIG% cc -std=c99 -O2 -Wall %CPU% -o rampage.exe %SRC% res\rampagere.rc %LIBS% || goto :fail
+    %ZIG% cc -std=c99 -O2 -Wall %CPU% %NETINC% -o rampage.exe %SRC% res\rampagere.rc %NET% %LIBS% || goto :fail
     echo Done: rampage.exe
     exit /b 0
 )
 
 echo Building RampageRE.exe...
-%ZIG% cc -std=c99 -O2 -Wall %CPU% -DRAMPAGE_GUI -Wl,--subsystem,windows -o RampageRE.exe %SRC% res\rampagere.rc %LIBS% || goto :fail
+%ZIG% cc -std=c99 -O2 -Wall %CPU% -DRAMPAGE_GUI -Wl,--subsystem,windows %NETINC% -o RampageRE.exe %SRC% res\rampagere.rc %NET% %LIBS% || goto :fail
 echo Done: RampageRE.exe
 if /i not "%~1"=="standalone" exit /b 0
 
@@ -77,6 +82,26 @@ if not exist build mkdir build
 echo Building build\apkbundle.exe...
 %ZIG% cc %TOOL% -o build\apkbundle.exe tools\native\apkbundle.c src\iso.c -lbcrypt -lshell32 || exit /b 1
 echo Done: build\apkbundle.exe
+exit /b 0
+
+:net_libs
+if not exist build\net mkdir build\net
+set "IMDIR=src\net\third_party\imgui"
+if not exist build\net\enet.a (
+    echo Building ENet...
+    for %%f in (callbacks compress host list packet peer protocol win32) do (
+        %ZIG% cc -std=gnu99 -O2 -w %CPU% -Isrc\net\third_party\enet\include -c src\net\third_party\enet\%%f.c -o build\net\enet_%%f.o || exit \b 1
+    )
+    %ZIG% ar rcs build\net\enet.a build\net\enet_callbacks.o build\net\enet_compress.o build\net\enet_host.o build\net\enet_list.o build\net\enet_packet.o build\net\enet_peer.o build\net\enet_protocol.o build\net\enet_win32.o || exit \b 1
+)
+if not exist build\net\imgui.a (
+    echo Building Dear ImGui...
+    for %%f in (imgui imgui_draw imgui_tables imgui_widgets backends\imgui_impl_win32 backends\imgui_impl_opengl3) do (
+        %ZIG% c++ -std=c++17 -O2 -w %CPU% -I%IMDIR% -c %IMDIR%\%%f.cpp -o build\net\im_%%~nf.o || exit \b 1
+    )
+    %ZIG% ar rcs build\net\imgui.a build\net\im_imgui.o build\net\im_imgui_draw.o build\net\im_imgui_tables.o build\net\im_imgui_widgets.o build\net\im_imgui_impl_win32.o build\net\im_imgui_impl_opengl3.o || exit \b 1
+)
+%ZIG% c++ -std=c++17 -O2 -Wall %CPU% -I%IMDIR% -Isrc -c src\netui.cpp -o build\net\netui.o || exit \b 1
 exit /b 0
 
 :find_zig

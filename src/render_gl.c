@@ -70,12 +70,15 @@ int gl_offscreen(int width, int height)
 }
 
 #ifdef _WIN32
+#include "netui.h"                               /* NET */
 static Window *g_win;
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     Window *w = g_win;
     static int last_x, last_y;
+    if (netui_wndproc(hwnd, msg, (uintptr_t)wp, (intptr_t)lp))   /* NET: the online panel's Insert */
+        return 0;
     switch (msg) {
     case WM_CLOSE: if (w) w->quit = 1; return 0;
     case WM_SIZE: if (w) { w->width = LOWORD(lp); w->height = HIWORD(lp); } return 0;
