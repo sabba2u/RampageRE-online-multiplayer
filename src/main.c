@@ -4275,6 +4275,8 @@ static void edible_step(Viewer *v, float dt)
         for (int i = 0; i < ne; i++) {
             const EdibleEvent *e = &ev[i];
             Mon *mo = ev_mon(v, e->monster);
+            if (net_guest_world() && (e->type == EE_STATS || e->type == EE_REACTION))
+                continue;                            /* NET: the monster's HP, energy, score and move are the host's */
             switch (e->type) {
             case EE_EFFECT:
                 if (v->fxw) {
@@ -6400,15 +6402,19 @@ static void play_step(Viewer *v, float dt, float aspect)
             /* 0x347DC0, the time left; without a game, as an unstarted clock (all its limit: the range's end) */
             v->scene.spawn_left = v->game ? game_clock(v->game, NULL) : v->scene.military_range;
         }
-        scene_people_spawn(&v->scene, dt);
-        people_set_world_state(v->scene.folk, v->game ? game_state(v->game) : GS_PLAY);   /* (the chains in play) */
-        people_set_drop(v->scene.folk, people_drop, v);
-        people_update(v->scene.folk, dt, pm, v->nmon);
+        if (!net_guest_world()) {                    /* NET: the guest's people are the host's (netrep_people.c) */
+            scene_people_spawn(&v->scene, dt);
+            people_set_world_state(v->scene.folk, v->game ? game_state(v->game) : GS_PLAY);   /* (the chains in play) */
+            people_set_drop(v->scene.folk, people_drop, v);
+            people_update(v->scene.folk, dt, pm, v->nmon);
+        }
         scene_huts_update(&v->scene, dt);           /* (no touch flies them: OnlyHitWithEffNodes, scene_huts_hit) */
         for (int k = 0; k < v->nmon; k++) {
             Mon *mo = &v->mon[k];
             Mat4 h;
-            if (mo->held >= 0 && people_get(v->scene.folk, mo->held)->phase != PP_HELD)
+            const Person *hp = mo->held >= 0 ? people_get(v->scene.folk, mo->held) : NULL;   /* NET: (the host's
+                                                      * index, maybe not here yet) */
+            if (mo->held >= 0 && (!hp || hp->phase != PP_HELD))
                 mo->held = -1;
             if (mo->held >= 0 && attach_world(mo, "Helper R Hand", &h) == 0)
                 people_hold(v->scene.folk, mo->held, h.m, mo->mirror, dt);

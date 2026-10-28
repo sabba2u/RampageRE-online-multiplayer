@@ -246,4 +246,26 @@ void people_throw(People *p, int who, float monster_heading);
 int people_hit(People *p, int monster, const float centre[3], float radius, float monster_heading,
                const char *monster_move);
 
+/* ---- NET: online play (port extra, src/netrep_people.c). The host's people run as offline and are sent; the
+ * guest's are the host's: it runs no people_update, makes none of its own events and takes each person's look,
+ * place and phase from the host's snapshots. Unset (offline) none of this does anything */
+/* 1 on the guest: the people's own events (emit, the timers) are not made; people_net_event's are */
+extern int (*people_net_gate)(void);
+/* the host: the events people_events hands out, as it hands them out */
+extern void (*people_net_tap)(People *p, const PeopleEvent *ev, int n);
+/* the host: a person eaten (people_eat) by monster slot `monster`, what the eater got */
+extern void (*people_net_eaten)(People *p, int who, int monster, const PeopleEaten *e);
+/* the guest: person `who` to be written (the list grown to it with gone ones); a person of another template there is
+ * made over as a new one of tmpl (its script's variables none: it only shows). Returns NULL when out of memory */
+Person *people_net_person(People *p, int who, Group tmpl);
+/* the guest: the host's person `who` is now in a monster's hand: the hold blends in from where it is (people_grab's
+ * blend, without its script) */
+void people_net_held(People *p, int who, float blend);
+/* the guest: script object o as the host has it (people_object's: state 0 .. 2, its making's number, its place) */
+void people_net_object(People *p, int o, int hut, int swarm, int state, int made, const float pos[3]);
+int people_net_objects(const People *p);
+int people_net_object_flags(const People *p, int o, int *state);   /* 1 hut, 2 swarm; -1 none */
+/* the guest: one of the host's events into the list people_events hands out (its strings copied) */
+void people_net_event(People *p, const PeopleEvent *e);
+
 #endif

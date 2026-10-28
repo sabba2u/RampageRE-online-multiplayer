@@ -69,7 +69,7 @@ static float tnum(const Person *q, const char *key, float def) { return q->tmpl.
 
 static void emit(People *p, int type, int who, const char *name, const char *node, const float v[3], float amount, int on)
 {
-    if (p->nev >= MAX_EVENTS)
+    if (p->nev >= MAX_EVENTS || (people_net_gate && people_net_gate()))   /* NET: the guest's are the host's */
         return;
     PeopleEvent *e = &p->ev[p->nev++];
     memset(e, 0, sizeof *e);
@@ -1399,6 +1399,8 @@ int people_events(People *p, PeopleEvent *out, int max)
     memcpy(out, p->ev, sizeof *out * (size_t)n);
     memmove(p->ev, p->ev + n, sizeof *p->ev * (size_t)(p->nev - n));
     p->nev -= n;
+    if (people_net_tap && n > 0)                     /* NET: the host's, to the guest */
+        people_net_tap(p, out, n);
     return n;
 }
 
@@ -2138,6 +2140,8 @@ PeopleEaten people_eat(People *p, int who, int monster)
         e.fart = fart_maybe(p);
     }
     gone(p, q);                                      /* 0x2D9DC0: an eaten actor is deleted */
+    if (people_net_eaten)                            /* NET: the eater's effects, to the guest */
+        people_net_eaten(p, who, monster, &e);
     return e;
 }
 
@@ -2189,4 +2193,108 @@ int people_hit(People *p, int monster, const float c[3], float radius, float mon
     }
     p->hitter = 0;
     return n;
+}
+
+/* ---------------------------------------------------------------- NET: online play (people.h; src/netrep_people.c) */
+
+int (*people_net_gate)(void);
+void (*people_net_tap)(People *p, const PeopleEvent *ev, int n);
+void (*people_net_eaten)(People *p, int who, int monster, const PeopleEaten *e);
+
+Person *people_net_person(People *p, int who, Group tmpl)
+{
+    if (who < 0 || who >= 0x10000)
+        return NULL;
+    while (p->n <= who) {                            /* the ones before it: gone until the host's say otherwise */
+        Group none = { NULL, 0 };
+        float at[3] = { 0, 0, 0 };
+        Person *q = new_person(p, none, at, 0);
+        if (!q)
+            return NULL;
+        q->phase = PP_GONE;
+        q->fx = 0;
+    }
+    Person *q = &p->v[who];
+    if (tmpl.at && (q->tmpl.at != tmpl.at || q->tmpl.book != tmpl.book)) {
+        float at[3];
+        memcpy(at, q->pos, sizeof at);
+        memset(q, 0, sizeof *q);                     /* made over: new_person's, without its events */
+        q->tmpl = tmpl;
+        q->name = group_name(tmpl);
+        q->kind = script_kind(group_str(tmpl, "Script|ScriptName"));
+        memcpy(q->pos, at, sizeof q->pos);
+        q->building = q->storey = q->column = -1;
+        q->pulse_delay = -1;
+        q->flags = OF_ACTOR;
+        place_matrix(q->world, q->pos, 0, NULL);
+        q->cobj = -1;
+    }
+    return q;
+}
+
+void people_net_held(People *p, int who, float blend)
+{
+    if (who < 0 || who >= p->n)
+        return;
+    Person *q = &p->v[who];
+    q->flags = (q->flags | OF_HELD) & ~(uint32_t)(OF_PICKUP | OF_PUSH_OUT);
+    q->phase = PP_HELD;
+    q->mv.active = 0;
+    q->blend = blend > 0.001f ? blend : 0;
+    q->blend_left = q->blend;
+    mat_quat(q->world, q->from_q);
+    memcpy(q->from_p, &q->world[12], sizeof q->from_p);
+    q->off_set = 0;
+}
+
+void people_net_object(People *p, int o, int hut, int swarm, int state, int made, const float pos[3])
+{
+    if (o < 0 || o >= MAX_OBJECTS)
+        return;
+    while (p->nobj <= o) {
+        memset(&p->obj[p->nobj], 0, sizeof p->obj[p->nobj]);
+        p->obj[p->nobj].state = 2;
+        p->obj[p->nobj++].guard = -1;
+    }
+    p->obj[o].hut = hut;
+    p->obj[o].swarm = swarm;
+    p->obj[o].state = state;
+    p->obj[o].made = made;
+    memcpy(p->obj[o].pos, pos, sizeof p->obj[o].pos);
+    p->obj[o].timer = 1e9f;                          /* (its own pulses never come: the host's say) */
+}
+
+int people_net_objects(const People *p) { return p->nobj; }
+
+int people_net_object_flags(const People *p, int o, int *state)
+{
+    if (o < 0 || o >= p->nobj)
+        return -1;
+    if (state)
+        *state = p->obj[o].state;
+    return (p->obj[o].hut ? 1 : 0) | (p->obj[o].swarm ? 2 : 0);
+}
+
+/* the strings of the host's events, kept until the frame's people_events has handed them out and the viewer used them */
+static char net_str[MAX_EVENTS * 2][96];
+static int net_str_at;
+
+static const char *net_keep(const char *s)
+{
+    if (!s)
+        return NULL;
+    char *d = net_str[net_str_at];
+    net_str_at = (net_str_at + 1) % (MAX_EVENTS * 2);
+    snprintf(d, sizeof net_str[0], "%s", s);
+    return d;
+}
+
+void people_net_event(People *p, const PeopleEvent *e)
+{
+    if (p->nev >= MAX_EVENTS)
+        return;
+    PeopleEvent *d = &p->ev[p->nev++];
+    *d = *e;
+    d->name = net_keep(e->name);
+    d->node = net_keep(e->node);
 }

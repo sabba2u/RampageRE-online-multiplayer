@@ -34,7 +34,9 @@ Both players need the same build of RampageRE and their own disc image.
 | Buildings: every hit, roof hit, cell change, collapse | host | reliable, in order; the guest's game makes the same calls (building_net_gate), so cracks, debris and falls play as usual |
 | Clock, points, kills, lives | host | in each snapshot (game_net_put) |
 | The world (city, block, play type, monsters, seeds) | host | reliable, on change; the guest loads it |
-| People, army, traffic, bosses, edibles, street objects | each side by itself | **phase 2** |
+| People: each one's template, look, play time, place and turn, phase, window; the script objects, the challenge's counts, every open window | host | 20 snapshots a second (netrep_people.c), shown 100 ms behind; their sounds, effects and banners as events. A person in a monster's hand is posed at the guest's own hand |
+| Edibles | host | every grab made again on the guest (edible_net_gate), so it goes and plays there; its stats come by the snapshot |
+| Army, traffic, bosses, street objects | each side by itself | **phase 2** |
 
 Every 2 s the guest sends a digest of the game state, block and the buildings; the host compares it with its own of the
 same moment and logs `MISMATCH` (and counts it in the panel) when two in a row differ.
@@ -65,6 +67,10 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
 | `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest) |
 | `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score) |
+| `src/people.c` / `.h` | `people_net_gate` in `emit`, `people_net_tap` in `people_events`, `people_net_eaten` in `people_eat`; the `people_net_*` section at the end (netrep_people.c) |
+| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take |
+| `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
+| `src/main.c` (play_step, edible_step) | the guest runs no `scene_people_spawn` / `people_update`; a held index not here yet is let go; the guest's edible events pay no stats or reactions |
 
 With online play off (no `--host` / `--join`, panel unused) nothing in the hooks changes the game: a `--shot` of
 `Chicago 1 --players 2` with a `--do` script is byte for byte the same picture as upstream's build.

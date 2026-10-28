@@ -1532,6 +1532,17 @@ static void people_sync(Scene *s, double t)
     }
 }
 
+/* NET: online play (netrep_people.c): person `who` made over as another template, its looks hidden and not its any more */
+void scene_person_forget(Scene *s, int who)
+{
+    for (int i = 0; i < s->nlooks; i++)
+        if (s->looks[i].who == who) {
+            if (s->looks[i].inst >= 0)
+                s->instances[s->looks[i].inst].hidden = 1;
+            s->looks[i].who = -1;
+        }
+}
+
 /* a cell's FloorFlags entry (0x2CBB50 reads the list at 0x2CC014 into +0xE: the list in the Floor| order, left, front,
  * right); 0 without one */
 static int cell_flags(Group floor, int k)
