@@ -465,6 +465,9 @@ static void ng_apply_snap(Viewer *v)
         }
         mo->mx = pos[0]; mo->my = pos[1]; mo->mz = pos[2];
         mo->heading = heading;
+        /* the model too: mon_step placed it where the guest's own step had it (scene_monster_place at its end), and
+         * drawn so the monster showed in two places by turns, the guest's step and the host's */
+        scene_monster_place(&v->scene, k, mo->mx, mo->my, mo->mz, mo->heading);
         memcpy(mo->vel, hi->vel, sizeof mo->vel);
         if (mo->have_graph && hi->state >= 0 && hi->state < mo->graph.n) {
             if (mo->run.state != hi->state) {
