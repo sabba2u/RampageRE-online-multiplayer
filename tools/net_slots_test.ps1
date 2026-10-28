@@ -15,12 +15,12 @@ The guests' output: build\nettest\guest.out, guest_2.out, guest_3.out; the host'
 param([int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [int]$PlaySeconds = 15, [switch]$OnePlayer, [switch]$Quick,
       [string]$GameArgs = "Chicago 1 --players 2 --monster George --monster2 Lizzie", [string]$GuestArgs = "--monster Ralph")
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root "rampage.exe"
+$exe = Join-Path $root "RampageRE-dev.exe"
 if (-not (Test-Path $exe)) { throw "Build first: build.bat dev" }
 if ($OnePlayer) { $GameArgs = "Chicago 1 --players 1 --monster George" }
 $out = Join-Path $root "build\nettest"
 New-Item -ItemType Directory -Force $out | Out-Null
-Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+Get-Process RampageRE-dev -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
 $rejoin = Join-Path $out "rejoin.cfg"
 Remove-Item $rejoin -ErrorAction SilentlyContinue
 $env:RAMPAGE_NET_LAG = "$Lag"

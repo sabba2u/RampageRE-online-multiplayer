@@ -18,8 +18,8 @@ if ($Uninstall) {
 if (-not $Exe) {
   Add-Type -AssemblyName System.Windows.Forms
   $pick = New-Object System.Windows.Forms.OpenFileDialog
-  $pick.Title = 'Where is RampageRE? Pick RampageRE.exe (or rampage.exe)'
-  $pick.Filter = 'RampageRE|RampageRE*.exe;rampage.exe|Programs|*.exe'
+  $pick.Title = 'Where is RampageRE? Pick RampageRE.exe (or RampageRE-dev.exe)'
+  $pick.Filter = 'RampageRE|RampageRE*.exe|Programs|*.exe'
   if ($pick.ShowDialog() -ne 'OK') { Write-Output 'Cancelled.'; exit 1 }
   $Exe = $pick.FileName
 }

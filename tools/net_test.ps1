@@ -1,5 +1,5 @@
 <#
-net_test.ps1 - online play on one PC: starts a host and a guest copy of rampage.exe (build.bat dev) over localhost,
+net_test.ps1 - online play on one PC: starts a host and a guest copy of RampageRE-dev.exe (build.bat dev) over localhost,
 keeps their output in build\nettest\host.out / guest.out, and optionally takes desktop screenshots.
 
   .\tools\net_test.ps1                          Chicago 1, George and Lizzie, 40 seconds
@@ -18,11 +18,11 @@ param([int]$Seconds = 40, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [in
       [string]$GameArgs = "Chicago 1 --players 2 --monster George --monster2 Lizzie")
 $root = Split-Path $PSScriptRoot -Parent
 if ($Menus) { $GameArgs = "--shell"; $GuestArgs = "--shell" }
-$exe = Join-Path $root "rampage.exe"
+$exe = Join-Path $root "RampageRE-dev.exe"
 if (-not (Test-Path $exe)) { throw "Build first: build.bat dev" }
 $out = Join-Path $root "build\nettest"
 New-Item -ItemType Directory -Force $out | Out-Null
-Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force   # (only this folder's)
+Get-Process RampageRE-dev -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force   # (only this folder's)
 $env:RAMPAGE_NET_LAG = "$Lag"
 $env:RAMPAGE_NET_LOSS = "$Loss"
 $env:RAMPAGE_NET_TRACE = if ($Trace) { "$TraceLevel" } else { $null }

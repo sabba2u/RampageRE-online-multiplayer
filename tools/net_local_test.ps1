@@ -7,10 +7,10 @@ net_local_test.ps1 - a hosted 2 player game's player 2 on the host's PC (docs/NE
 #>
 param([int]$Port = 27960)
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root "rampage.exe"
+$exe = Join-Path $root "RampageRE-dev.exe"
 $out = Join-Path $root "build\nettest"
 New-Item -ItemType Directory -Force $out | Out-Null
-Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+Get-Process RampageRE-dev -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
 $env:RAMPAGE_NET_UPNP = "0"
 $env:RAMPAGE_NET_REJOIN = Join-Path $out "rejoin_local.cfg"
 Remove-Item $env:RAMPAGE_NET_REJOIN -ErrorAction SilentlyContinue

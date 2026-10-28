@@ -1,7 +1,7 @@
 # Opens rampage:// links from the lobby's games page:
-#   rampage://join/K7PQ2               rampage.exe --lobby <lobby> --join K7PQ2          (a join code: the game asks
+#   rampage://join/K7PQ2   RampageRE.exe --lobby <lobby> --join K7PQ2          (a join code: the game asks
 #                                                                                         the lobby for the address)
-#   rampage://join/203.0.113.5:27960   rampage.exe --lobby <lobby> --join 203.0.113.5:27960
+#   rampage://join/203.0.113.5:27960   RampageRE.exe --lobby <lobby> --join 203.0.113.5:27960
 # Any web page can open a rampage:// link, so only these two forms are accepted, and the game and the lobby come
 # from config.json next to this script (written by install.ps1), never from the link.
 param([string]$Url, [switch]$DryRun)

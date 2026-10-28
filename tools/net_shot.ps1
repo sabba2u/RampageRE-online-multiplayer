@@ -1,9 +1,9 @@
 <#
-net_shot.ps1 - a picture of each running rampage.exe window (the host's and the guest's), side by side, into
+net_shot.ps1 - a picture of each running RampageRE-dev.exe window (the host's and the guest's), side by side, into
 build\nettest\<name>.png: PrintWindow on each window, so whatever covers them is not in it.
   .\tools\net_shot.ps1 -Name both_1
 #>
-param([string]$Name = "both")
+param([string]$Name = "both", [string]$Program = "RampageRE-dev")   # -Program RampageRE: the player build's windows
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices;
@@ -14,10 +14,10 @@ public static class NetShotW {
 }
 "@
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root "rampage.exe"
-$procs = Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -eq $exe } |
+$exe = Join-Path $root "$Program.exe"
+$procs = Get-Process $Program -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -eq $exe } |
     Sort-Object StartTime   # this folder's copies only
-if (-not $procs) { throw "no rampage.exe window" }
+if (-not $procs) { throw "no $Program.exe window" }
 $imgs = foreach ($p in $procs) {
     $r = New-Object NetShotW+RECT
     [NetShotW]::GetClientRect($p.MainWindowHandle, [ref]$r) | Out-Null

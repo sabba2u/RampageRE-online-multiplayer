@@ -1,5 +1,5 @@
 <#
-net_keys.ps1 - presses keys in a running rampage.exe window of this folder (the host's is the first started, the
+net_keys.ps1 - presses keys in a running RampageRE-dev.exe window of this folder (the host's is the first started, the
 guest's the second), as WM_KEYDOWN / WM_KEYUP: the window need not have the focus.
   .\tools\net_keys.ps1 -Who host -Keys "Return,Right,Return" [-Gap 400]
 Names: Return Space Back Escape Up Down Left Right Insert P C V, Num0 .. Num9, or a number (the virtual key).
@@ -12,8 +12,8 @@ public static class NetKeysW {
 }
 "@
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root "rampage.exe"
-$procs = @(Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -eq $exe } |
+$exe = Join-Path $root "RampageRE-dev.exe"
+$procs = @(Get-Process RampageRE-dev -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -eq $exe } |
     Sort-Object StartTime)
 $p = if ($Who -eq "host") { $procs[0] } else { $procs[1] }
 if (-not $p) { throw "no $Who window" }

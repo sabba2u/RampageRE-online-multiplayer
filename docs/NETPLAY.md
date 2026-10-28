@@ -9,11 +9,11 @@ plan and status: [superpowers/plans/2026-10-27-online-multiplayer-phase1.md](sup
 
 Both players need the same build of RampageRE and their own disc image.
 
-- Host: start a 2-player game, e.g. `rampage.exe Chicago 1 --players 2 --monster George --monster2 Lizzie --host`
+- Host: start a 2-player game, e.g. `RampageRE-dev.exe Chicago 1 --players 2 --monster George --monster2 Lizzie --host`
   (or press **Insert** in a game and click **Host a game**). UDP port 27960 must be reachable: the host asks its
   router to forward it by itself (UPnP, below "Hosting over the internet"); without a router that does UPnP, forward
   it by hand, or use Steam, a LAN or a VPN such as Tailscale or ZeroTier.
-- Guest: `rampage.exe --join <host's address>` (or Insert, type the address, **Join**). The guest loads the host's
+- Guest: `RampageRE-dev.exe --join <host's address>` (or Insert, type the address, **Join**). The guest loads the host's
   city, block, monsters and the world's seeds by itself.
 - The guest plays player 2 with WASD / Space / J K L R or the first controller.
 - **Insert** opens the panel: role, connection, ping, updates a second, the out-of-sync counter (host) and the log.
@@ -306,7 +306,7 @@ tools\net_slots_test.ps1 [-Lag 80 -Loss 3]   the guest killed mid-round and star
                                              then a new guest takes the monster over; screenshots slots_*.png
 tools\net_slots_test.ps1 -OnePlayer -Quick   a 1 player game hosted, the guest drops in as player 2
 tools\net_local_test.ps1                     player 2 taken by the host's numpad, then a guest told "The game is full"
-RAMPAGE_NET_TESTGREY=1 rampage.exe ... --shot grey.png   player 2 drawn grey, offline (the look of a slot nobody plays)
+RAMPAGE_NET_TESTGREY=1 RampageRE-dev.exe ... --shot grey.png   player 2 drawn grey, offline (the look of a slot nobody plays)
 tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
                                              the words 35 s (real time) after the guest came in. --do's waits run
                                              the game's frames at once, with no network: before "after" only
@@ -355,7 +355,7 @@ With online play off (no `--host` / `--join`, panel unused) nothing in the hooks
 
 ## Taking upstream's updates
 
-`tools\update_from_upstream.ps1` fetches jjmhalew/RampageRE, rebases this branch on it, rebuilds and runs the tests.
+`tools\update_from_upstream.ps1` fetches jjmhalew/RampageRE, merges it into this branch (never a rebase: the branch is pushed), rebuilds and runs the tests.
 A conflict can only be in a `NET:` line above. A rename upstream of something `netgame.c` reads (a Viewer or Mon field,
 a building or game function) shows up as a compile error in `netgame.c`, never as a silent change; then run
 `tools\net_test.ps1 -TestPad -Shots 2` and look at both screens.
