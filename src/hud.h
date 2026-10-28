@@ -214,10 +214,12 @@ void hud_set_allow_save(Hud *h, int on);
 /* a test aid in place of a player: press ACCEPT for them this many seconds after a screen takes buttons (Results'
  * Continue, GameOver's Retry); 0 = never (default) */
 void hud_results_auto(Hud *h, float seconds);
-/* NET: online play (netgame.c): every press that reaches a results screen (the host sends them to the guest's, so it
- * moves as the host's does); the screen closed at once (the guest's, when the host's is gone) */
+/* NET: online play (netgame.c): every press that reaches a results screen or the Pause menu's list (the host sends
+ * them to the guest's, so it moves as the host's does); the screen closed at once (the guest's, when the host's is
+ * gone); the Pause menu closed as its Continue would (the guest's, when the host's is gone) */
 extern void (*hud_net_tap)(Hud *h, int ev, int button, int pad);
 void hud_results_close(Hud *h);
+void hud_pause_close(Hud *h);
 
 /* the pad, as GuiEvent ids [R the screens' scripts]. Which direction is which [R by the scripts' use]: the Pause
  * menu's options page picks its rows (stacked down the page) with 8 / 16 while the held left / right move the

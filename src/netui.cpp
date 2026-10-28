@@ -3,6 +3,7 @@
 #include "net.h"
 #include "netwire.h"
 #include "nettransport.h"
+#include "netupnp.h"
 #include "lookfx.h"
 #include "netlobby.h"
 #ifdef _WIN32
@@ -239,7 +240,7 @@ static void panel(void)
         if (ImGui::Button("Host a game"))
             net_start_host(NET_PORT);
         ImGui::SameLine();
-        ImGui::TextColored(OFF, "Your friend joins you. Port %d (UDP).", NET_PORT);
+        ImGui::TextColored(OFF, "Your friend joins you. Port %d (UDP; the router is asked to forward it).", NET_PORT);
         ImGui::SetNextItemWidth(200);
         ImGui::InputText("##addr", g_addr, sizeof g_addr);
         ImGui::SameLine();
@@ -262,6 +263,14 @@ static void panel(void)
     } else {
         if (role == NET_GUEST)
             ImGui::Text("Host: %s", net_peer_text());
+        if (role == NET_HOST && !net_is_steam()) {   /* the router's forward (netupnp.c): where friends join */
+            const char *t;
+            int u = net_upnp_state(&t);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(u == NUP_MAPPED ? ON : u == NUP_FAILED ? BAD : OFF, "Port forward (UPnP): %s",
+                               t && *t ? t : "-");
+            ImGui::PopTextWrapPos();
+        }
         if (role == NET_HOST && net_is_steam()) {
             if (nts_lobby() && ImGui::Button("Invite a friend (Steam)"))
                 nts_invite();

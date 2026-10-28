@@ -2,6 +2,7 @@
 #include "net.h"
 #include "netwire.h"
 #include "nettransport.h"
+#include "netupnp.h"
 #include "netlobby.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -184,6 +185,7 @@ void net_start_host(int port)
     g.state = NETS_WAITING;
     g.port = port ? port : NET_PORT;                 /* (the lobby lists it: netlobby.c) */
     net_log("hosting on port %d", port ? port : NET_PORT);
+    net_upnp_open(port ? port : NET_PORT);           /* the router asked to forward it (netupnp.c, in the background) */
 }
 
 void net_start_host_steam(void)
@@ -249,6 +251,7 @@ void net_stop(void)
 {
     if (g.role != NET_OFF)
         net_log("stopped");
+    net_upnp_close();                                /* (the router's forward, if hosting made one) */
     nt_close();
     uint32_t world = g.world;
     int info_len = g.info_len;
@@ -433,6 +436,7 @@ static void on_data(const uint8_t *data, int len)
 void net_update(double now)
 {
     g.now = now;
+    net_upnp_poll();                                 /* (the router's answer, into the log) */
     netlobby_update(now);                            /* the lobby's answers, the listing's heartbeat (netlobby.c) */
     uint64_t lobby = nts_take_pending();             /* a Steam invite taken, Join Game, +connect_lobby */
     if (lobby)

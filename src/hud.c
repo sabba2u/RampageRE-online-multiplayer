@@ -4724,20 +4724,21 @@ void hud_input_pad(Hud *h, int ev, int button, int pad)
 {
     if (!h)
         return;
+    if (hud_net_tap && (h->pause ? !h->pause->ended && !h->pause->pause_state : h->scr && !h->scr->ended))
+        hud_net_tap(h, ev, button, pad);             /* NET: the host's presses, to the guest's screen (its Pause
+                                                      * menu's list, not its Options page) */
     if (h->pause) {
         if (!h->pause->ended)
             pause_input(h, h->pause, ev, button, pad);
         return;
     }
-    if (h->scr) {
-        if (hud_net_tap && !h->scr->ended)           /* NET: the host's presses, to the guest's screen */
-            hud_net_tap(h, ev, button, pad);
+    if (h->scr)
         screen_input(h, h->scr, ev, button);
-    }
 }
 
 void (*hud_net_tap)(Hud *h, int ev, int button, int pad);
 void hud_results_close(Hud *h) { if (h && h->scr) results_unload(h); }   /* NET */
+void hud_pause_close(Hud *h) { if (h && h->pause && !h->pause->ended) pause_resume(h); }   /* NET */
 
 void hud_input(Hud *h, int ev, int button) { hud_input_pad(h, ev, button, 0); }
 

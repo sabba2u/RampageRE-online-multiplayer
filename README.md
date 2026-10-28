@@ -15,9 +15,14 @@ host. Each player needs their own copy of the game disc and the same build of th
 1. Both players start RampageRE.
 2. Press **Insert** at any time to open the online panel.
 3. **Host:** pick **2 Player** in the main menu as usual, then press **Insert** and click **Host a game**.
-   The game uses UDP port **27960**: forward it on your router, or use a LAN or a VPN like Tailscale or ZeroTier.
-4. **Guest:** press **Insert**, type the host's address and click **Join**. Your controller or keyboard picks
-   player 2's monster on the host's Monster Select, and you both end up in the same city.
+   The game uses UDP port **27960**: the game asks your router to forward it by itself (UPnP); the panel's
+   **Port forward** line says whether it worked and the address friends join. If your router has no UPnP (or it is
+   off), forward the port by hand, or use Steam, a LAN or a VPN like Tailscale or ZeroTier.
+4. **Guest:** press **Insert**, type the host's address and click **Join**. Your screen then shows the host's menus
+   (main menu, Monster Select with both cards, City Select, and in the game its Pause menu and results); your
+   controller or keyboard picks player 2's monster on the host's Monster Select, and you both end up in the same city.
+   What you earn as the guest (monsters unlocked, your monster's upgrades, campaign blocks won) is kept in your own
+   profile; the host's profile never overwrites yours.
 5. The panel shows who is host, the ping, the updates a second (20 / 30 / 60) and whether everything is in sync.
    The window title also says **HOST** or **GUEST**.
 6. **Chat:** press **Enter** in a game to type, **Enter** sends, **Esc** cancels (**P** pauses). Lines show bottom

@@ -2,6 +2,9 @@
 #include "../src/netwire.h"
 #include "../src/netsnap.h"
 #include "../src/netlobby.h"
+#include "../src/netupnp.h"
+#include <stdarg.h>
+#include <windows.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -213,6 +216,45 @@ static void test_lobby_join_kind(void)
           !netlobby_is_code("ABCD1"));
 }
 
+/* netupnp.c's stand-ins for net.c and netlobby.c's network half (not in this test) */
+static char upnp_logged[512];
+void net_log(const char *fmt, ...)
+{
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(upnp_logged, sizeof upnp_logged, fmt, a);
+    va_end(a);
+}
+static char upnp_external[64] = "unset";
+void netlobby_set_external(const char *addr) { snprintf(upnp_external, sizeof upnp_external, "%s", addr); }
+
+/* the port forward with no router to ask: RAMPAGE_NET_UPNP=0 leaves it alone at once; a search from 127.0.0.1
+ * (RAMPAGE_NET_UPNP_IF), where no router can answer, ends in NUP_FAILED within its 2 s, said in the log, and the
+ * lobby is never told an address */
+static void test_upnp_no_router(void)
+{
+    const char *t = NULL;
+    _putenv("RAMPAGE_NET_UPNP=0");
+    net_upnp_open(27999);
+    CHECK(net_upnp_state(&t) == NUP_OFF && t && strstr(t, "off"));
+    _putenv("RAMPAGE_NET_UPNP=");
+    _putenv("RAMPAGE_NET_UPNP_IF=127.0.0.1");
+    net_upnp_open(27999);
+    CHECK(net_upnp_state(NULL) == NUP_WORKING);
+    int s = NUP_WORKING;
+    for (int i = 0; i < 100 && s == NUP_WORKING; i++) {
+        Sleep(100);
+        net_upnp_poll();
+        s = net_upnp_state(&t);
+    }
+    CHECK(s == NUP_FAILED);
+    CHECK(strstr(upnp_logged, "UPnP:") != NULL);
+    CHECK(!strcmp(upnp_external, "unset"));
+    net_upnp_close();
+    CHECK(net_upnp_state(NULL) == NUP_OFF);
+    _putenv("RAMPAGE_NET_UPNP_IF=");
+}
+
 static void test_lobby_games_txt(void)
 {
     NetLobbyGame g[4];
@@ -254,6 +296,7 @@ int main(void)
     test_lobby_url();
     test_lobby_join_kind();
     test_lobby_games_txt();
+    test_upnp_no_router();
     printf("%d checks, %d failed\n", checks, fails);
     return fails != 0;
 }
