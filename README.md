@@ -1,3 +1,53 @@
+# RampageRE: Online Multiplayer
+
+> **This fork adds online 2-player to [jjmhalew/RampageRE](https://github.com/jjmhalew/RampageRE).** Everything
+> below this box is the original project's README. All credit for the port itself goes to jjmhalew; this fork only adds
+> the online play on top (branch `online-multiplayer`).
+
+## Online 2-player (work in progress)
+
+Two players on two PCs. The **host** is player 1 and runs the game; the **guest** is player 2 and sees the host's
+world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
+host. Each player needs their own copy of the game disc and the same build of this fork.
+
+### How to play
+
+1. Both players start RampageRE.
+2. Press **Insert** at any time to open the online panel.
+3. **Host:** pick **2 Player** in the main menu as usual, then press **Insert** and click **Host a game**.
+   The game uses UDP port **27960**: forward it on your router, or use a LAN or a VPN like Tailscale or ZeroTier.
+4. **Guest:** press **Insert**, type the host's address and click **Join**. Your controller or keyboard picks
+   player 2's monster on the host's Monster Select, and you both end up in the same city.
+5. The panel shows who is host, the ping, the updates a second (20 / 30 / 60) and whether everything is in sync.
+   The window title also says **HOST** or **GUEST**.
+
+Command line, for testing: `rampage.exe Chicago 1 --players 2 --host` on one PC and `rampage.exe --join <ip>` on the
+other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
+
+The Insert panel also has **Camera and look**: background blur (depth of field), tilt-shift (the miniature-city look),
+zoom out and tilt the camera down, with presets.
+
+### Please read: what has and has not been tested
+
+This is early. Expect issues.
+
+- **Tested only on one PC**, two copies talking over localhost, including with simulated lag and packet loss.
+  It has **not** been played between two real PCs over the internet yet.
+- **Steam has not been tested.** The code is there (Host on Steam, Invite a friend, Join Game from the friends list,
+  using the Spacewar test app 480), but no one has joined a game through Steam yet.
+- **Only tested with George and Lizzie.** Ralph and the other monsters, and the **Wii disc's extra monsters**, have not
+  been tried online at all.
+- Mostly tested in **Chicago**. Other cities, their bosses, King of the City / King of the World, the Timed Run's
+  details, Change Monster, power-ups being grabbed and the end-of-city screens have not been tested online.
+- The guest has a small delay on their own monster (it is not predicted on the guest's PC yet).
+
+If something goes out of sync, the panel names the system (for example "Out of sync: army"). Bug reports with what you
+were doing, the panel's log and both windows' `rampage.log` / console output are very welcome.
+
+How it works, what is shared and where it hooks into the original code: [docs/NETPLAY.md](docs/NETPLAY.md).
+
+---
+
 # RampageRE
 
 [![build](https://github.com/jjmhalew/RampageRE/actions/workflows/build.yml/badge.svg)](https://github.com/jjmhalew/RampageRE/actions/workflows/build.yml)
