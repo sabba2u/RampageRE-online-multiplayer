@@ -3,6 +3,7 @@
 #include "../src/netsnap.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fails, checks;
@@ -105,6 +106,65 @@ static void test_snap_wraps(void)
     CHECK(r == 2 && xc == xa + 1 && xc == (float)(NET_SNAP_N * 2 + 1));
 }
 
+static void test_pack_round_trip(void)
+{
+    static uint8_t src[70000], dst[70000], m[80000];
+    srand(7);
+    for (int i = 0; i < (int)sizeof src; i++)     /* zero runs of every length, literals, zeros at the end */
+        src[i] = (i / 37) % 3 == 0 ? (uint8_t)(rand() % 2 ? 0 : rand()) : (i / 37) % 3 == 1 ? 0 : (uint8_t)(i * 7 + 1);
+    for (int i = (int)sizeof src - 100; i < (int)sizeof src; i++)
+        src[i] = 0;
+    NetBuf b = netbuf(m, sizeof m);
+    CHECK(net_pack(&b, src, sizeof src) == 0 && !b.err);
+    CHECK(b.len < (int)sizeof src);
+    NetBuf r = netbuf(m, b.len);
+    memset(dst, 0xCC, sizeof dst);
+    CHECK(net_unpack(&r, dst, sizeof dst) == 0 && r.len == b.len);
+    CHECK(!memcmp(src, dst, sizeof src));
+    static const uint8_t small[][5] = { { 0, 0, 0, 0, 0 }, { 1, 2, 3, 4, 5 }, { 0, 1, 0, 0, 1 }, { 1, 0, 0, 0, 0 },
+                                        { 1, 0, 1, 0, 0 } };
+    for (int k = 0; k < 5; k++) {
+        uint8_t o[5], w[32];
+        NetBuf bb = netbuf(w, sizeof w), rr;
+        CHECK(net_pack(&bb, small[k], 5) == 0);
+        rr = netbuf(w, bb.len);
+        CHECK(net_unpack(&rr, o, 5) == 0 && !memcmp(o, small[k], 5));
+    }
+    uint8_t all0[4096], w[16];                       /* all zeros: a few bytes */
+    memset(all0, 0, sizeof all0);
+    NetBuf z = netbuf(w, sizeof w);
+    CHECK(net_pack(&z, all0, sizeof all0) == 0 && z.len <= 4);
+    NetBuf zr = netbuf(w, z.len - 1);                /* cut short: broken */
+    CHECK(net_unpack(&zr, all0, sizeof all0) != 0);
+    NetBuf tiny = netbuf(w, 2);                      /* no room: err */
+    CHECK(net_pack(&tiny, src, 1000) != 0 && tiny.err);
+}
+
+static void test_digest(void)
+{
+    NetDigest a, b;
+    memset(&a, 0, sizeof a);
+    for (int s = 0; s < NET_DSYS; s++) {
+        a.s[s].h = 1000u + (uint32_t)s;
+        for (int k = 0; k < NET_DVALS; k++)
+            a.s[s].v[k] = (float)(s * 10 + k);
+    }
+    uint8_t m[1024];
+    NetBuf w = netbuf(m, sizeof m);
+    net_w_digest(&w, &a);
+    NetBuf r = netbuf(m, w.len);
+    net_r_digest(&r, &b);
+    CHECK(!w.err && !r.err && !memcmp(&a, &b, sizeof a));
+    CHECK(net_dsys_same(&a.s[1], &b.s[1], 0.5f));
+    b.s[1].v[2] += 0.4f;
+    CHECK(net_dsys_same(&a.s[1], &b.s[1], 0.5f));
+    b.s[1].v[2] += 0.2f;
+    CHECK(!net_dsys_same(&a.s[1], &b.s[1], 0.5f));
+    b.s[2].h++;
+    CHECK(!net_dsys_same(&a.s[2], &b.s[2], 100));
+    CHECK(NET_DSYS_NAME[NDS_ARMY] && !strcmp(NET_DSYS_NAME[NDS_ARMY], "army"));
+}
+
 int main(void)
 {
     test_wire_round_trip();
@@ -114,6 +174,8 @@ int main(void)
     test_snap_holds_past_extrapolation();
     test_snap_clear();
     test_snap_wraps();
+    test_pack_round_trip();
+    test_digest();
     printf("%d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

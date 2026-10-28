@@ -41,8 +41,19 @@ Both players need the same build of RampageRE and their own disc image.
 | Edibles | host | every grab made again on the guest (edible_net_gate), so it goes and plays there; its stats come by the snapshot |
 | Army, traffic, bosses, street objects | each side by itself | **phase 2** |
 
-Every 2 s the guest sends a digest of the game state, block and the buildings; the host compares it with its own of the
-same moment and logs `MISMATCH` (and counts it in the panel) when two in a row differ.
+**Joining late, coming back, a new block.** Buildings and edibles go as the changes the host makes, so a guest that
+was not there for them asks for the block's whole state (`NM_STATE`) when it joins, reconnects or starts a block (again
+each second until it comes). The host sends every building as it is (`Building` is plain data, the same build on both,
+packed by `net_pack`: about 1 KB each instead of 104 KB), the edibles' slots (none left / hidden / out, and how old) and
+the challenge's upgrade, then the number of its last building change. Everything is reliable and in order, so the guest
+drops building changes until then (they are in the state) and makes every later one.
+
+**The out-of-sync check.** Every 2 s the guest sends a digest with a part for each system: game (state, block, score,
+lives, clock), monsters (defeated, rage, places, HP), buildings (state, HP, storeys, roof, cells, floors), people, army,
+bosses, traffic, street objects, edibles, challenge. Counts and states must match exactly, places (means) and HP within a
+tolerance. The host compares each part with its own from within 0.25 s of the time the guest shows (the buildings: the
+newest time it has); a part that differs twice in a row is a `MISMATCH`, logged with the system's name and both sides'
+values, and the Insert panel lists "In sync: ..." / "Out of sync: army (3 times)".
 
 ## Testing on one PC
 
@@ -53,6 +64,8 @@ tools\net_test.ps1 -TestPad -Shots 2         host + guest; the guest walks, clim
                                              build\nettest\shot_N.png shows both windows side by side
 tools\net_test.ps1 -TestPad -Lag 100 -Loss 5 the internet on one PC
 tools\net_test.ps1 -Seconds 0                leave both running to play them yourself
+tools\net_test.ps1 -JoinDelay 30 -HostDo "wait 3, hitcell 3 0 0 10, ..."
+                                             the guest joins 30 s late; the host's monster plays --do's words first
 ```
 
 `RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents.
@@ -78,7 +91,7 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | `src/hud.c` / `.h` | `hud_net_tap` in `hud_input_pad` (a results screen's presses), `hud_results_close` |
 | `src/main.c` (script calls, GE_REVIVE) | the guest's `Monsters::becomeHuman` / `startRespawn` do nothing; its GE_REVIVE removes no person |
 | `src/people.c` / `.h` | `people_net_gate` in `emit`, `people_net_tap` in `people_events`, `people_net_eaten` in `people_eat`; the `people_net_*` section at the end (netrep_people.c) |
-| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take |
+| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (a late guest's slots made the host's) |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
 | `src/main.c` (play_step, edible_step) | the guest runs no `scene_people_spawn` / `people_update`; a held index not here yet is let go; the guest's edible events pay no stats or reactions |
 

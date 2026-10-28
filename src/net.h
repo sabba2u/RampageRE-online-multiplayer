@@ -58,12 +58,19 @@ void net_snaps_clear(void);
 void net_send_msg(int reliable, const void *data, int len);
 void net_set_handler(void (*fn)(const uint8_t *data, int len));
 
-/* the desync check: the guest sends its fingerprint of what it shows, with the host time it shows; the host
- * keeps its own of the last few seconds (net_keep_digest) and compares; two in a row that differ are a MISMATCH */
-void net_keep_digest(double t_host, uint32_t digest);
-void net_send_digest(double t_host, uint32_t digest);
+/* the desync check: the guest sends its fingerprint of what it shows (netwire.h NetDigest, a part a system) with
+ * the host time it shows (t_shown: the snapshots' delay behind) and the newest it has (t_new: the buildings, made as
+ * they come); the host keeps its own of the last few seconds (net_keep_digest) and compares each system with its own
+ * near that time (any within NET_DIGEST_WINDOW). A system that differs twice in a row is a MISMATCH, logged by name */
+#define NET_DIGEST_WINDOW 0.25
+void net_keep_digest(double t_host, const void *digest);                   /* a NetDigest */
+void net_send_digest(double t_shown, double t_new, const void *digest);    /* a NetDigest */
 int net_mismatches(void);
 int net_digest_checks(void);
+/* system s (NDS_*) of the last check: 1 in sync, 0 out of sync, -1 not checked yet; *mismatches its MISMATCHes */
+int net_dsys_state(int s, int *mismatches);
+const char *net_dsys_name(int s);
+int net_dsys_count(void);
 
 /* the log: the panel's, and stdout */
 void net_log(const char *fmt, ...);

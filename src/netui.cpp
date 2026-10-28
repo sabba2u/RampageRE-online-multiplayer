@@ -143,7 +143,29 @@ static void panel(void)
         if (role == NET_HOST) {
             int m = net_mismatches();
             ImGui::TextColored(m ? BAD : ON, "In sync checks: %d, out of sync: %d", net_digest_checks(), m);
-        }
+            char in[512] = "", out[512] = "", wait[256] = "";   /* each system by name, as the last check found it */
+            for (int s = 0; s < net_dsys_count(); s++) {
+                int times = 0, st = net_dsys_state(s, &times);
+                char *to = st < 0 ? wait : st ? in : out, more[64] = "";
+                size_t cap = to == wait ? sizeof wait : sizeof in, len = strlen(to);
+                if (st == 1 && times)            /* in sync now, out of sync before */
+                    snprintf(more, sizeof more, " (was out of sync %d %s)", times, times == 1 ? "time" : "times");
+                else if (st == 0 && times)
+                    snprintf(more, sizeof more, " (%d %s)", times, times == 1 ? "time" : "times");
+                else if (st == 0)
+                    snprintf(more, sizeof more, " (differs once, checking again)");
+                snprintf(to + len, cap - len, "%s%s%s", len ? ", " : "", net_dsys_name(s), more);
+            }
+            ImGui::PushTextWrapPos(0);
+            if (in[0])
+                ImGui::TextColored(ON, "In sync: %s", in);
+            if (out[0])
+                ImGui::TextColored(BAD, "Out of sync: %s", out);
+            if (wait[0])
+                ImGui::TextColored(OFF, "Not checked yet: %s", wait);
+            ImGui::PopTextWrapPos();
+        } else if (role == NET_GUEST)
+            ImGui::TextColored(OFF, "The host checks that both games agree (its panel says which parts)");
         ImGui::Text("Game: ours %08X, host's %08X", net_world(), net_host_world());
         if (ImGui::Button("Leave"))
             net_stop();

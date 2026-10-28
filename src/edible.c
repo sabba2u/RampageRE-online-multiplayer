@@ -1001,3 +1001,18 @@ int edible_power_hit_building(EdiblePower *p, int energy_gain, float amount, int
 
 int (*edible_net_gate)(Edibles *e, int building, int storey, int column, int monster, const char *as_type, int eat,
                        const char *monster_move);
+
+void edible_net_slot(Edibles *e, int i, int kind, int out, float age)
+{
+    if (i < 0 || i >= e->nslots || kind < -1 || kind >= e->nkinds)
+        return;
+    EdibleSlot *s = &e->slot[i];
+    if ((kind < 0 || !out) && s->item >= 0 && s->item < e->n)
+        remove_edible(e, &e->ed[s->item]);           /* (its effect stopped, EE_REMOVED) */
+    s->item = s->item >= 0 && s->item < e->n && e->ed[s->item].phase != EP_GONE ? s->item : -1;
+    s->kind = kind;
+    if (kind >= 0 && out && s->item < 0)
+        spawn(e, i);
+    if (kind >= 0 && out && s->item >= 0 && e->ed[s->item].phase == EP_WINDOW)
+        e->ed[s->item].age = age;
+}

@@ -11,7 +11,7 @@
 #endif
 
 #define LOG_LINES 200
-#define DIGESTS 128                                  /* the host's own, 20 a second: six seconds */
+#define DIGESTS 256                                  /* the host's own, at most 30 a second: eight seconds */
 
 static struct {
     int role, state;
@@ -31,8 +31,9 @@ static struct {
     NetPad remote;                                   /* the newest pad, and the presses not yet taken */
     uint32_t remote_frame, remote_pressed;
     int have_remote;
-    struct { double t; uint32_t d; } digests[DIGESTS];
-    int ndigests, digest_head, mismatch_run, mismatches, checks;
+    struct { double t; NetDigest d; } digests[DIGESTS];
+    int ndigests, digest_head, mismatches, checks;
+    int sys_run[NET_DSYS], sys_mismatches[NET_DSYS], sys_state[NET_DSYS];   /* (sys_state: 1 + the last check's) */
     /* the panel's counters */
     double stat_at;
     int snaps_since, snap_bytes;
@@ -158,7 +159,8 @@ void net_set_world(uint32_t id, const void *info, int len)
     if (g.info_len)
         memcpy(g.info, info, (size_t)g.info_len);
     netsnap_clear(&g.snaps);
-    g.ndigests = g.digest_head = g.mismatch_run = 0;
+    g.ndigests = g.digest_head = 0;
+    memset(g.sys_run, 0, sizeof g.sys_run);
     if (g.role != NET_OFF)
         net_log("world %08X", id);
     if (g.role == NET_HOST && g.state == NETS_CONNECTED)
@@ -293,30 +295,79 @@ static void on_pad(NetBuf *b)
     g.have_remote = 1;
 }
 
+/* the host's own of system s nearest t that is the same as the guest's (within NET_DIGEST_WINDOW): 1 found one */
+static int digest_matches(int s, double t, const NetDSys *guest, int *nearby)
+{
+    *nearby = 0;
+    for (int i = 0; i < g.ndigests; i++) {
+        double dt = g.digests[i].t - t;
+        if (dt < -NET_DIGEST_WINDOW || dt > NET_DIGEST_WINDOW)
+            continue;
+        *nearby = 1;
+        if (net_dsys_same(&g.digests[i].d.s[s], guest, NET_DSYS_TOL[s]))
+            return 1;
+    }
+    return 0;
+}
+
+static void trace_dsys(const char *who, const NetDSys *d)
+{
+    net_log("  %s %08X %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f", who, d->h, d->v[0], d->v[1], d->v[2], d->v[3], d->v[4],
+            d->v[5], d->v[6], d->v[7]);
+}
+
 static void on_digest(NetBuf *b)
 {
-    double t = net_r_f64(b);
-    uint32_t d = net_r_u32(b);
+    double t_shown = net_r_f64(b), t_new = net_r_f64(b);
+    NetDigest d;
+    net_r_digest(b, &d);
     if (b->err || !g.ndigests)
         return;
-    int best = -1;
-    double bd = 1e9;
-    for (int i = 0; i < g.ndigests; i++) {           /* the host's own nearest that time */
-        double dt = g.digests[i].t - t;
-        if (dt < 0) dt = -dt;
-        if (dt < bd) { bd = dt; best = i; }
-    }
-    if (best < 0 || bd > 0.06)
-        return;
-    g.checks++;
-    if (g.digests[best].d != d) {
-        if (++g.mismatch_run == 2) {
-            g.mismatches++;
-            net_log("MISMATCH at host time %.2f: host %08X, guest %08X", t, g.digests[best].d, d);
+    int checked = 0;
+    for (int s = 0; s < NET_DSYS; s++) {
+        double t = s == NDS_BUILDINGS ? t_new : t_shown;
+        int nearby;
+        int same = digest_matches(s, t, &d.s[s], &nearby);
+        if (!nearby)
+            continue;                                /* (not kept that far back, or a gap) */
+        checked = 1;
+        g.sys_state[s] = 1 + same;
+        if (same) {
+            g.sys_run[s] = 0;
+            continue;
         }
-    } else
-        g.mismatch_run = 0;
+        if (++g.sys_run[s] % 2 == 0) {               /* (two in a row; still so: counted again every two) */
+            g.mismatches++;
+            g.sys_mismatches[s]++;
+            if (g.sys_run[s] > 2 && g.sys_run[s] % 20)
+                continue;                            /* (the log: the first and every tenth) */
+            net_log("MISMATCH in %s at host time %.2f (%d checks in a row)", NET_DSYS_NAME[s], t, g.sys_run[s]);
+            int best = -1;
+            double bd = 1e9;
+            for (int i = 0; i < g.ndigests; i++) {   /* the host's nearest, for the log */
+                double dt = g.digests[i].t - t;
+                if (dt < 0) dt = -dt;
+                if (dt < bd) { bd = dt; best = i; }
+            }
+            if (best >= 0)
+                trace_dsys("host ", &g.digests[best].d.s[s]);
+            trace_dsys("guest", &d.s[s]);
+        }
+    }
+    g.checks += checked;
 }
+
+int net_dsys_state(int s, int *mismatches)
+{
+    if (s < 0 || s >= NET_DSYS)
+        return -1;
+    if (mismatches)
+        *mismatches = g.sys_mismatches[s];
+    return g.sys_state[s] - 1;
+}
+
+const char *net_dsys_name(int s) { return s >= 0 && s < NET_DSYS ? NET_DSYS_NAME[s] : "?"; }
+int net_dsys_count(void) { return NET_DSYS; }
 
 static void on_data(const uint8_t *data, int len)
 {
@@ -486,23 +537,27 @@ void net_send_msg(int reliable, const void *data, int len)
         nt_send(reliable, data, len);
 }
 
-void net_keep_digest(double t_host, uint32_t digest)
+void net_keep_digest(double t_host, const void *digest)
 {
+    if (g.ndigests && t_host - g.digests[(g.digest_head + DIGESTS - 1) % DIGESTS].t < 1.0 / 30 - 0.002)
+        return;                                      /* (30 a second is plenty for the window) */
     g.digests[g.digest_head].t = t_host;
-    g.digests[g.digest_head].d = digest;
+    memcpy(&g.digests[g.digest_head].d, digest, sizeof(NetDigest));
     g.digest_head = (g.digest_head + 1) % DIGESTS;
     if (g.ndigests < DIGESTS)
         g.ndigests++;
 }
 
-void net_send_digest(double t_host, uint32_t digest)
+void net_send_digest(double t_shown, double t_new, const void *digest)
 {
     if (g.role != NET_GUEST || !net_live())
         return;
-    uint8_t m[16];
+    uint8_t m[32 + NET_DSYS * (4 + 4 * NET_DVALS)];
     NetBuf b = netbuf(m, sizeof m);
     net_w_u8(&b, NM_DIGEST);
-    net_w_f64(&b, t_host);
-    net_w_u32(&b, digest);
-    nt_send(1, m, b.len);
+    net_w_f64(&b, t_shown);
+    net_w_f64(&b, t_new);
+    net_w_digest(&b, (const NetDigest *)digest);
+    if (!b.err)
+        nt_send(1, m, b.len);
 }

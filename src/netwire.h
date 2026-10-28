@@ -24,6 +24,8 @@ enum NetMsg {
     NM_PUPPET,       /* host -> guest, unreliable, each channel's rate: a system's units (netgame.c NGP_*) */
     NM_PEVENT,       /* host -> guest, reliable, in order: a system's effects and sounds, played at their host time */
     NM_MENU,         /* both ways, reliable: the menus' input (netrep_menu.c) */
+    NM_STATE,        /* both ways, reliable: the guest asks for the block's state (a join, a reconnect, a new block);
+                      * the host sends every building whole, the edibles' slots, the challenge's upgrade (netgame.c) */
 };
 
 #define NET_PROTO 1
@@ -44,4 +46,24 @@ double net_r_f64(NetBuf *b);
 void net_r_bytes(NetBuf *b, void *p, int n);
 
 uint32_t net_hash(const void *p, int n, uint32_t h);   /* FNV-1a, h = 2166136261 to start */
+
+/* plain data packed small: runs of zero bytes counted, the rest as it is. Each step is a varint zero run, a varint
+ * literal length and the literals, until n bytes are covered. 0 ok (out->err set when it did not fit) */
+int net_pack(NetBuf *out, const void *src, int n);
+/* the bytes net_pack wrote for n bytes into dst; 0 ok, -1 broken (dst then undefined) */
+int net_unpack(NetBuf *in, void *dst, int n);
+
+/* ---- the desync check's fingerprint: one entry a system, each a hash of what must be the same exactly and a few
+ * values compared within a tolerance (places that the guest's delay and blending move a little) */
+enum { NDS_GAME, NDS_MONSTERS, NDS_BUILDINGS, NDS_PEOPLE, NDS_ARMY, NDS_BOSS, NDS_TRAFFIC, NDS_STREET, NDS_EDIBLES,
+       NDS_CHALLENGE, NET_DSYS };
+#define NET_DVALS 8
+typedef struct { uint32_t h; float v[NET_DVALS]; } NetDSys;
+typedef struct { NetDSys s[NET_DSYS]; } NetDigest;
+extern const char *const NET_DSYS_NAME[NET_DSYS];   /* "game", "monsters", ... */
+extern const float NET_DSYS_TOL[NET_DSYS];           /* each system's tolerance on its values */
+/* the same: hashes equal and every value within tol */
+int net_dsys_same(const NetDSys *a, const NetDSys *b, float tol);
+void net_w_digest(NetBuf *b, const NetDigest *d);
+void net_r_digest(NetBuf *b, NetDigest *d);
 #endif
