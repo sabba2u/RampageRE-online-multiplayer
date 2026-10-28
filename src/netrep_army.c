@@ -6,7 +6,8 @@
  *   snapshots   20 a second each: the army's live units (slot, serial, template, phase, look, place, turn, clip time,
  *               the weapon clusters' turns), the camera's interest, the live shots (place, way, speed; a beam its
  *               firing frame and stream); the bosses' live parts (template, look, place, turn, scale, clip time, the
- *               HUD's share) and the boss. Names go as ids; a name's text rides in the snapshots for half a second
+ *               HUD's share, a serial per slot) and the boss; the camera's RMH, the VolumeTriggers (NY's barriers), the
+ *               boss bars and, once a second, the lasting effects (a guest that came late starts them). Names go as ids; a name's text rides in the snapshots for half a second
  *               after its first use and then once a second, so a guest that missed one has it soon
  *   events      what main.c turns into effects, sounds and the HUD's floats (army_events / boss_events: the host's are
  *               sent as main.c takes them; the guest's own are dropped and the host's given in their place, at their
@@ -727,11 +728,96 @@ static int nga_gate(void) { return ng_guest(); }
 /* ================================================================ the bosses */
 
 typedef struct {
-    int slot, name, owner, is_boss, animate, shape, clip, nw;
+    int slot, ser, name, owner, is_boss, animate, shape, clip, nw;
     NgaFrame f;
     float facing[3], scale, t, len, hp_frac, yaw[BOSS_WEAPONS], pitch[BOSS_WEAPONS];
 } NgbPart;
-typedef struct { int block, count, main, defeated, np; NgbPart p[NGA_PARTS]; } NgbSnap;
+typedef struct {
+    int block, count, main, defeated, np, ntrig, trig_fl[16];
+    float rmh, trig[16][6], bar[2];
+    int nfx;                                         /* the live effects (once a second; -1 none this time) */
+    struct { int id, obj, monster, level, name, node; float pos[3], dir[3]; } fx[32];
+    NgbPart p[NGA_PARTS];
+} NgbSnap;
+
+/* the boss bars (BE_BOSS_HEALTH): the host's last word on each, and the host time of the last one the guest took as an
+ * event (a snapshot older than that does not set the bar back) */
+static BossEvent ngb_pend[NGA_PEND];
+static int ngb_npend;
+static float ngb_hbar[2] = { -1, -1 }, ngb_gbar[2] = { -1, -1 };
+static double ngb_bar_t;
+static int ngb_hbar_block = -1;                      /* the block the host's bars are of */
+
+/* the bosses' lasting effects (the NY barriers' sparks, the generators', the engines): the host's live ones go in a
+ * snapshot once a second, so a guest that was not there for their BE_EFFECT (joined late, still loading) starts them.
+ * The guest starts each host id once a block */
+typedef struct { BossEvent e; double t; } NgbFx;
+static NgbFx ngb_hfx[64];
+static int ngb_nhfx, ngb_hfx_block = -1;
+static double ngb_hfx_at;
+static int ngb_seen[256], ngb_nseen, ngb_seen_block = -1;
+
+static int ngb_seen_has(int id)
+{
+    for (int i = 0; i < ngb_nseen && i < 256; i++)
+        if (ngb_seen[i] == id)
+            return 1;
+    return 0;
+}
+static void ngb_seen_add(int id)
+{
+    if (!ngb_seen_has(id))
+        ngb_seen[ngb_nseen++ % 256] = id;
+}
+
+static void ngb_fx_write(Viewer *v, NetBuf *b)       /* the host: its live effects (older than 2.5 s) */
+{
+    double now = net_now();
+    if (ngb_hfx_block != (int)v->block) {
+        ngb_nhfx = 0;
+        ngb_hfx_block = (int)v->block;
+    }
+    if (now - ngb_hfx_at < 1.0) {
+        net_w_u8(b, 0xFF);
+        return;
+    }
+    ngb_hfx_at = now;
+    int at = b->len, n = 0;
+    net_w_u8(b, 0);
+    for (int i = 0; i < ngb_nhfx; i++) {
+        const BossEvent *e = &ngb_hfx[i].e;
+        int k = 0;
+        while (k < v->nbfx && v->bfx[k].id != e->id)
+            k++;
+        if (k == v->nbfx || !v->fxw || !fx_alive(v->fxw, v->bfx[k].fx)) {   /* gone: stopped or played out */
+            ngb_hfx[i--] = ngb_hfx[--ngb_nhfx];
+            continue;
+        }
+        if (now - ngb_hfx[i].t < 2.5 || n == 32)   /* (a one-shot is mostly over by then: not played again) */
+            continue;
+        float pos[3];                                /* where it is now: its part's or monster's place + its offset */
+        const BossPart *p = v->bfx[k].obj >= 0 && v->boss ? boss_part(v->boss, v->bfx[k].obj) : NULL;
+        const Mon *mo = v->bfx[k].monster >= 0 && v->bfx[k].monster < v->nmon ? &v->mon[v->bfx[k].monster] : NULL;
+        for (int c = 0; c < 3; c++)
+            pos[c] = p && p->alive ? p->pos[c] + v->bfx[k].off[c] :
+                     mo ? (c == 0 ? mo->mx : c == 1 ? mo->my : mo->mz) + v->bfx[k].off[c] : e->pos[c];
+        net_w_u32(b, (uint32_t)e->id);
+        net_w_u16(b, (uint32_t)(uint16_t)(int16_t)(p && p->alive ? e->obj : -1));
+        net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(p && p->alive ? -1 : e->monster));
+        net_w_u32(b, (uint32_t)e->level);
+        net_w_u16(b, (uint32_t)nga_str(e->name, 1));
+        net_w_u16(b, (uint32_t)nga_str(e->node, 1));
+        for (int c = 0; c < 3; c++) net_w_f32(b, pos[c]);
+        for (int c = 0; c < 3; c++) net_w_f32(b, e->dir[c]);
+        n++;
+    }
+    b->p[at] = (uint8_t)n;
+}
+
+/* a part's serial: the host counts each slot's BE_SPAWNED, so a part made again in the same slot between two
+ * snapshots (a bomb after a bomb) is made again on the guest, not slid from the old one's place */
+static uint8_t ngb_hser[NGA_PARTS];
+static int ngb_gser[NGA_PARTS];                      /* the guest's: the serial its part is (-1 not known) */
 
 static int ngb_write(Viewer *v, NetBuf *b)
 {
@@ -746,11 +832,24 @@ static int ngb_write(Viewer *v, NetBuf *b)
     net_w_u8(b, (uint32_t)(uint8_t)(int8_t)boss_main(bo));
     net_w_u8(b, (uint32_t)boss_defeated(bo));
     net_w_u8(b, (uint32_t)live);
+    net_w_f32(b, v->cam.s.rep_monster_height);       /* the camera's frame height (BE_CAMERA_RMH; a late guest's) */
+    float ce[16][6];                                 /* the VolumeTriggers: the guest's monster meets the barriers */
+    int fl[16], nt = boss_net_triggers(bo, ce, fl, 16);
+    net_w_u8(b, (uint32_t)nt);
+    for (int i = 0; i < nt; i++) {
+        net_w_u8(b, (uint32_t)fl[i]);
+        for (int k = 0; k < 6; k++)
+            net_w_f32(b, ce[i][k]);
+    }
+    net_w_f32(b, ngb_hbar_block == (int)v->block ? ngb_hbar[0] : -1);
+    net_w_f32(b, ngb_hbar_block == (int)v->block ? ngb_hbar[1] : -1);
+    ngb_fx_write(v, b);
     for (int i = 0; i < n; i++) {
         const BossPart *p = boss_part(bo, i);
         if (!p->alive)
             continue;
         net_w_u8(b, (uint32_t)i);
+        net_w_u8(b, ngb_hser[i]);
         net_w_u16(b, (uint32_t)nga_str(p->name, 1));
         net_w_u8(b, (uint32_t)(uint8_t)(int8_t)p->owner);
         net_w_u8(b, (uint32_t)(p->is_boss | p->animate << 1));
@@ -782,11 +881,38 @@ static int ngb_read(const NetSnapSample *s, NgbSnap *o)
     o->main = (int8_t)net_r_u8(&b);
     o->defeated = (int)net_r_u8(&b);
     o->np = (int)net_r_u8(&b);
+    o->rmh = net_r_f32(&b);
+    o->ntrig = (int)net_r_u8(&b);
+    if (o->ntrig > 16)
+        return 0;
+    for (int i = 0; i < o->ntrig; i++) {
+        o->trig_fl[i] = (int)net_r_u8(&b);
+        for (int k = 0; k < 6; k++)
+            o->trig[i][k] = net_r_f32(&b);
+    }
+    o->bar[0] = net_r_f32(&b);
+    o->bar[1] = net_r_f32(&b);
+    o->nfx = (int)net_r_u8(&b);
+    if (o->nfx == 0xFF)
+        o->nfx = -1;
+    if (o->nfx > 32)
+        return 0;
+    for (int i = 0; i < o->nfx; i++) {
+        o->fx[i].id = (int)net_r_u32(&b);
+        o->fx[i].obj = (int16_t)net_r_u16(&b);
+        o->fx[i].monster = (int8_t)net_r_u8(&b);
+        o->fx[i].level = (int)net_r_u32(&b);
+        o->fx[i].name = (int)net_r_u16(&b);
+        o->fx[i].node = (int)net_r_u16(&b);
+        for (int c = 0; c < 3; c++) o->fx[i].pos[c] = net_r_f32(&b);
+        for (int c = 0; c < 3; c++) o->fx[i].dir[c] = net_r_f32(&b);
+    }
     if (o->np > NGA_PARTS || o->count > NGA_PARTS)
         return 0;
     for (int i = 0; i < o->np; i++) {
         NgbPart *p = &o->p[i];
         p->slot = (int)net_r_u8(&b);
+        p->ser = (int)net_r_u8(&b);
         p->name = (int)net_r_u16(&b);
         p->owner = (int8_t)net_r_u8(&b);
         int fl = (int)net_r_u8(&b);
@@ -830,14 +956,17 @@ static void ngb_apply(Viewer *v, const NetSnapSample *sa, const NetSnapSample *s
         if (hb->slot >= NGA_PARTS || !name)
             continue;
         seen[hb->slot] = 1;
+        if (ngb_born[hb->slot] > sb->t && ngb_born[hb->slot] < sb->t + 1)
+            continue;                                /* made by an event newer than this snapshot: it waits */
         for (int j = 0; two && j < A.np && !ha; j++)
-            if (A.p[j].slot == hb->slot && A.p[j].name == hb->name)
+            if (A.p[j].slot == hb->slot && A.p[j].name == hb->name && A.p[j].ser == hb->ser)
                 ha = &A.p[j];
         BossPart *p = boss_net_slot(bo, hb->slot);
-        if (!p || !p->alive || p->name != name)
+        if (!p || !p->alive || p->name != name || (ngb_gser[hb->slot] >= 0 && ngb_gser[hb->slot] != hb->ser))
             p = boss_net_part(bo, hb->slot, name, hb->f.pos);
         if (!p)
             continue;
+        ngb_gser[hb->slot] = hb->ser;
         ngb_born[hb->slot] = 0;
         p->owner = hb->owner;
         p->is_boss = hb->is_boss;
@@ -872,16 +1001,45 @@ static void ngb_apply(Viewer *v, const NetSnapSample *sa, const NetSnapSample *s
             top = i + 1;
     }
     boss_net_state(bo, top, B.main, B.defeated);
+    boss_net_set_triggers(bo, B.ntrig, (const float (*)[6])B.trig, B.trig_fl);
+    if (B.rmh > 0)
+        v->cam.s.rep_monster_height = B.rmh;
+    for (int l = 0; l < 2; l++)                      /* the boss bars (a guest that missed the event) */
+        if (B.bar[l] > 0 && sb->t > ngb_bar_t && fabsf(B.bar[l] - ngb_gbar[l]) > 1e-4f && v->hud) {
+            hud_boss_health_id(v->hud, l, B.bar[l]);
+            ngb_gbar[l] = B.bar[l];
+        }
+    if (ngb_seen_block != (int)v->block) {
+        ngb_nseen = 0;
+        ngb_seen_block = (int)v->block;
+    }
+    for (int i = 0; i < B.nfx; i++) {                /* the host's lasting effects this guest has not started */
+        const char *name = nga_name(B.fx[i].name);
+        if (ngb_seen_has(B.fx[i].id) || !name || ngb_npend >= NGA_PEND)
+            continue;
+        BossEvent e;
+        memset(&e, 0, sizeof e);
+        e.type = BE_EFFECT;
+        e.id = B.fx[i].id;
+        e.obj = B.fx[i].obj;
+        e.monster = B.fx[i].monster;
+        e.building = -1;
+        e.level = B.fx[i].level;
+        e.name = name;
+        e.node = B.fx[i].node ? nga_name(B.fx[i].node) : NULL;
+        memcpy(e.pos, B.fx[i].pos, sizeof e.pos);
+        memcpy(e.dir, B.fx[i].dir, sizeof e.dir);
+        ngb_seen_add(e.id);
+        ngb_pend[ngb_npend++] = e;
+        net_log("bosses: started the host's effect %d (%s), not seen here (%d seen)", e.id, name, ngb_nseen);
+    }
 }
 
 static int ngb_relayed(int type)
 {
     return type == BE_EFFECT || type == BE_EFFECT_STOP || type == BE_SOUND || type == BE_BOSS_HEALTH ||
-           type == BE_CAMERA_RMH || type == BE_DEFEATED;
+           type == BE_CAMERA_RMH || type == BE_DEFEATED || type == BE_NO_AUTOCOLLAPSE;
 }
-
-static BossEvent ngb_pend[NGA_PEND];
-static int ngb_npend;
 
 static int ngb_events(Boss *bo, BossEvent *out, int n, int max)
 {
@@ -890,11 +1048,45 @@ static int ngb_events(Boss *bo, BossEvent *out, int n, int max)
         if (out && k > 0) {
             memcpy(out, ngb_pend, (size_t)k * sizeof *out);
             memmove(ngb_pend, ngb_pend + k, (size_t)(ngb_npend - k) * sizeof *ngb_pend);
+            for (int i = 0; i < k; i++) {
+                if (out[i].type == BE_EFFECT)
+                    ngb_seen_add(out[i].id);
+                if (out[i].type == BE_BOSS_HEALTH && out[i].level >= 0 && out[i].level < 2)
+                    ngb_gbar[out[i].level] = out[i].amount;
+            }
         }
         ngb_npend -= k;
         return out ? k : 0;
     }
-    if (!ng_host() || !out || !g_ngv)
+    if (!out)
+        return n;
+    for (int i = 0; i < n; i++) {                    /* (kept before a guest comes too: it may join late) */
+        const BossEvent *e = &out[i];
+        if (e->type == BE_SPAWNED && e->obj >= 0 && e->obj < NGA_PARTS)
+            ngb_hser[e->obj]++;
+        else if (e->type == BE_BOSS_HEALTH && e->level >= 0 && e->level < 2 && g_ngv) {
+            if (ngb_hbar_block != (int)g_ngv->block)
+                ngb_hbar[0] = ngb_hbar[1] = -1;
+            ngb_hbar_block = (int)g_ngv->block;
+            ngb_hbar[e->level] = e->amount;
+        }
+        else if (e->type == BE_EFFECT && e->name) {
+            if (g_ngv && ngb_hfx_block != (int)g_ngv->block) {
+                ngb_nhfx = 0;
+                ngb_hfx_block = (int)g_ngv->block;
+            }
+            if (ngb_nhfx == 64)
+                memmove(ngb_hfx, ngb_hfx + 1, --ngb_nhfx * sizeof *ngb_hfx);
+            ngb_hfx[ngb_nhfx].e = *e;
+            ngb_hfx[ngb_nhfx++].t = net_now();
+        } else if (e->type == BE_EFFECT_STOP)
+            for (int k = 0; k < ngb_nhfx; k++)
+                if (ngb_hfx[k].e.id == e->id) {
+                    ngb_hfx[k] = ngb_hfx[--ngb_nhfx];
+                    break;
+                }
+    }
+    if (!ng_host() || !g_ngv)
         return n;
     static uint8_t m[4000];
     NetBuf b = netbuf(m, sizeof m);
@@ -932,9 +1124,11 @@ static int ngb_events(Boss *bo, BossEvent *out, int n, int max)
         for (int k = 0; k < 3; k++) net_w_f32(&b, e->dir[k]);
         for (int k = 0; k < 3; k++) net_w_f32(&b, e->v[k]);
         net_w_f32(&b, e->amount);
-        const BossPart *p = e->obj >= 0 ? boss_part(bo, e->obj) : NULL;
+        net_w_u8(&b, (uint32_t)(uint8_t)(int8_t)e->building);   /* (BE_NO_AUTOCOLLAPSE's) */
+        const BossPart *p = e->obj >= 0 && e->obj < boss_count(bo) ? boss_part(bo, e->obj) : NULL;
         net_w_u8(&b, (uint32_t)(p && p->alive));
         if (p && p->alive) {                         /* its part, for a guest that has not got it yet */
+            net_w_u8(&b, ngb_hser[e->obj < NGA_PARTS ? e->obj : 0]);
             nga_w_text(&b, p->name);
             nga_w_frame(&b, p->world);
         }
@@ -955,7 +1149,6 @@ static void ngb_event(Viewer *v, NetBuf *b)
         e.type = (int)net_r_u8(b);
         e.obj = (int16_t)net_r_u16(b);
         e.monster = (int8_t)net_r_u8(b);
-        e.building = -1;
         e.id = (int)net_r_u32(b);
         e.level = (int)net_r_u32(b);
         e.name = nga_r_text(b);
@@ -964,14 +1157,20 @@ static void ngb_event(Viewer *v, NetBuf *b)
         for (int k = 0; k < 3; k++) e.dir[k] = net_r_f32(b);
         for (int k = 0; k < 3; k++) e.v[k] = net_r_f32(b);
         e.amount = net_r_f32(b);
+        e.building = (int8_t)net_r_u8(b);
+        if (e.type == BE_BOSS_HEALTH)
+            ngb_bar_t = t;
         if (net_r_u8(b)) {
+            int ser = (int)net_r_u8(b);
             const char *name = nga_r_text(b);
             NgaFrame f;
             nga_r_frame(b, &f);
             BossPart *p = boss_net_slot(v->boss, e.obj);
-            if (!b->err && name && e.obj >= 0 && e.obj < NGA_PARTS && (!p || !p->alive || p->name != name)) {
+            if (!b->err && name && e.obj >= 0 && e.obj < NGA_PARTS &&
+                (!p || !p->alive || p->name != name || (ngb_gser[e.obj] >= 0 && ngb_gser[e.obj] != ser))) {
                 p = boss_net_part(v->boss, e.obj, name, f.pos);
                 if (p) {
+                    ngb_gser[e.obj] = ser;
                     nga_frame_world(&f, &f, 0, p->world);
                     ngb_born[e.obj] = t;
                     if (e.obj >= boss_count(v->boss))
@@ -989,6 +1188,13 @@ static void ngb_reset(Viewer *v)
     (void)v;
     ngb_npend = 0;
     memset(ngb_born, 0, sizeof ngb_born);
+    for (int i = 0; i < NGA_PARTS; i++)
+        ngb_gser[i] = -1;
+    ngb_gbar[0] = ngb_gbar[1] = -1;                  /* (the host's own are kept by block: a block's first effects
+                                                      * may come before this) */
+    ngb_bar_t = 0;
+    ngb_seen_block = -1;
+    ngb_nseen = 0;
 }
 
 static void ngr_army_init(void)
@@ -1000,4 +1206,6 @@ static void ngr_army_init(void)
     army_net_window_open = nga_window_open;
     boss_net_gate = nga_gate;
     boss_net_events = ngb_events;
+    for (int i = 0; i < NGA_PARTS; i++)
+        ngb_gser[i] = -1;
 }

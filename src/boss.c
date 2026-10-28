@@ -3923,6 +3923,37 @@ BossPart *boss_net_part(Boss *b, int slot, const char *name, const float pos[3])
     return &o->p;
 }
 
+int boss_net_triggers(const Boss *b, float ce[][6], int *flags, int max)
+{
+    int n = b ? (b->ntrig < max ? b->ntrig : max) : 0;
+    for (int i = 0; i < n; i++) {
+        const Trigger *t = &b->trig[i];
+        copy3(ce[i], t->c);
+        copy3(ce[i] + 3, t->e);
+        flags[i] = (t->alive != 0) | (t->pushout != 0) << 1;
+    }
+    return n;
+}
+
+void boss_net_set_triggers(Boss *b, int n, const float ce[][6], const int *flags)
+{
+    if (!b || n < 0)
+        return;
+    if (n > MAX_TRIG)
+        n = MAX_TRIG;
+    for (int i = 0; i < n; i++) {
+        Trigger *t = &b->trig[i];
+        memset(t, 0, sizeof *t);
+        copy3(t->c, ce[i]);
+        copy3(t->e, ce[i] + 3);
+        t->alive = flags[i] & 1;
+        t->pushout = flags[i] >> 1 & 1;
+        t->building = -1;
+        t->last = -1e9f;
+    }
+    b->ntrig = n;
+}
+
 void boss_net_state(Boss *b, int n, int main, int defeated)
 {
     if (!b || n < 0 || n > MAX_PARTS)

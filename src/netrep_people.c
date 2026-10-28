@@ -743,6 +743,12 @@ static int ngr_edible_write(Viewer *v, NetBuf *b)
         if (out)
             net_w_f32(b, d->age);
     }
+    /* the cryotube's reveal (reveal.c): the monster it unlocks, its tubes placed, the reveals so far. The guest's own
+     * profile picked its own at the block's load; the host's is the one its tube shows */
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.monster);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.placed);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.revealed);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.count);
     return ns > 0;
 }
 
@@ -764,6 +770,23 @@ static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
         float age = out ? net_r_f32(&b) : 0;
         if (!b.err && i < have)
             edible_net_slot(v->edibles, i, kind, out, age);
+    }
+    int monster = (int8_t)net_r_u8(&b), placed = (int8_t)net_r_u8(&b), revealed = (int8_t)net_r_u8(&b);
+    int count = (int8_t)net_r_u8(&b);
+    /* the host's reveal, while this side is at the same point of it (a tube broken here first, from the host's
+     * building change, is not put back by an older snapshot; none here, the guest's monster unlocked already: the
+     * host's) */
+    static int said = -2;                            /* (the log: a reveal here, by this side's tube) */
+    if (v->reveal.revealed != said && said != -2 && v->reveal.monster >= 0 && v->reveal.monster < v->roster.n)
+        net_log("edibles: the cryotube revealed %s", v->roster.name[v->reveal.monster]);
+    said = v->reveal.revealed;
+    if (!b.err && v->reveal.revealed < 0 && revealed >= 0)
+        v->reveal.revealed = revealed;
+    if (!b.err && revealed == v->reveal.revealed && monster < v->roster.n &&
+        (v->reveal.monster != monster || v->reveal.placed != placed || v->reveal.count != count)) {
+        v->reveal.monster = monster;
+        v->reveal.placed = placed;
+        v->reveal.count = count;
     }
 }
 
