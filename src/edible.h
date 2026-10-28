@@ -234,4 +234,10 @@ void edible_power_use_roar(EdiblePower *p, const char *call);
 int edible_power_hit_building(EdiblePower *p, int energy_gain, float amount, int airborne, int others_full);
 float edible_power_hit_gain(const char *call);      /* that energy for the clip's "<Name>::hitBuildingFront" */
 
+/* ---- NET: online play (port extra, src/netrep_people.c): called by edible_grab once it has an edible to take, before
+ * it takes it. The host sends the grab to the guest and answers 0; the guest answers 1 (not taken) but for the host's
+ * grabs made again. Unset (offline): every grab is made */
+extern int (*edible_net_gate)(Edibles *e, int building, int storey, int column, int monster, const char *as_type, int eat,
+                              const char *monster_move);
+
 #endif

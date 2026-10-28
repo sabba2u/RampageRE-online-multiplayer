@@ -671,7 +671,8 @@ static void netgame_pads(Viewer *v, const Window *w)
             t0 = net_now();
         double t = net_now() - t0, c = fmod(t, 8.0);
         memset(&mine, 0, sizeof mine);
-        int on = 0, btn = fmod(t, 1.2) < 0.6 ? MV_SQUARE : MV_TRIANGLE;
+        int on = 0, btn = fmod(t, 1.8) < 0.6 ? MV_SQUARE : fmod(t, 1.8) < 1.2 ? MV_TRIANGLE : MV_CIRCLE;   /* (circle:
+                                                      * a window person grabbed, eaten) */
         if (c < 1.5)
             mine.ly = -1;
         else if (c < 6.0)

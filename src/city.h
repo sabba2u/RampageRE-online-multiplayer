@@ -396,6 +396,7 @@ void scene_people_spawn(Scene *s, float dt);
  * (leaveBuilding), is grabbed or is smashed: those leave the window open, as the game does. 1 if one was shut. */
 int scene_window_close(Scene *s, int building, int storey, int column);
 int scene_window_close_at(Scene *s, const float pos[3]);
+void scene_person_forget(Scene *s, int who);         /* NET: person who's looks dropped (made over online) */
 /* getBuildingOccupant's actor when it is a soldier (0x2B37C0: the slot's occupant, Military_Window.bsf's as well as
  * the people's): the army unit in that window of the building (storey as built), -1 none; _take: grabBuildingOccupant
  * (0x2B3350 -> 0x318140(.., 1)) takes it out, the slot retired */

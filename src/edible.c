@@ -754,6 +754,8 @@ int edible_grab(Edibles *e, int building, int storey, int column, int monster, c
     Edible *d = &e->ed[e->slot[s].item];
     if (d->phase != EP_WINDOW && d->phase != EP_PICKED)
         return 0;
+    if (edible_net_gate && edible_net_gate(e, building, storey, column, monster, as_type, eat, monster_move))
+        return 0;                                    /* NET: the guest's own grabs are the host's */
     if (as_type) {                                   /* [R] grabBuildingOccupantAsType: its template (+0x80) replaced */
         Group t = find_template(e, as_type);
         if (t.at)
@@ -994,3 +996,8 @@ int edible_power_hit_building(EdiblePower *p, int energy_gain, float amount, int
     edible_power_set_energy(p, p->energy + amount, others_full);   /* addEnergy (0x2E5720) */
     return p->energy >= 100;
 }
+
+/* ---------------------------------------------------------------- NET: online play (edible.h) */
+
+int (*edible_net_gate)(Edibles *e, int building, int storey, int column, int monster, const char *as_type, int eat,
+                       const char *monster_move);
