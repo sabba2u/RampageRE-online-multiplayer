@@ -63,6 +63,8 @@ static int net_guest_world(void) { return net_role() == NET_GUEST && net_live();
 static int net_world_paused;
 /* NET: a score popup (hud_float): the host's shown and sent to the guest (netgame.c), the guest's own never */
 static void net_float(Hud *h, int amount, const float pos[3], int building, float scale);
+/* NET: the adornments knocked off (fire escapes, AC units, banners, roof trim): the host's, sent to the guest */
+static int net_adorn_hit(Scene *s, const float centre[3], float radius);
 #ifdef __ANDROID__
 #include "touch.h"                               /* the on-screen pad, player 1's pad slot */
 #endif
@@ -3108,7 +3110,7 @@ static void hit_spheres(Mon *mo)
         for (int r = 0; r < 3; r++)
             c[r] = bm[r] * l[0] + bm[4 + r] * l[1] + bm[8 + r] * l[2] + bm[12 + r];
         c[3] = sh->radius;
-        scene_adornments_hit(&v->scene, c, c[3]);    /* 0x2D4390: it knocks adornments off */
+        net_adorn_hit(&v->scene, c, c[3]);           /* 0x2D4390: it knocks adornments off (NET: the host's) */
         if (net_guest_world())                       /* NET: the host's hits only */
             continue;
         if (v->army)                                 /* and the army's units: the attack's damage, once an attack */
@@ -3799,7 +3801,7 @@ static void boss_step(Viewer *v, float dt, const ArmyMonster *am, int nm)
             case BE_FORCE_DAMAGE:                    /* RoofItem.bsf's forceDamage: the roof item there is knocked
                                                       * off (the adornment nearest pos, within 2 units [G]) */
                 if (!v->sobj || streetobj_force_damage(v->sobj, e->name, e->pos) == -1)   /* (-2: it is gone) */
-                    scene_adornments_hit(&v->scene, e->pos, 2);
+                    net_adorn_hit(&v->scene, e->pos, 2);   /* (NET: scene_adornments_hit, the host's) */
                 break;
             case BE_CAMERA_RMH:                      /* Levels::changeTwoTiltCameraRMH: how tall the camera frames */
                 v->cam.s.rep_monster_height = e->amount;

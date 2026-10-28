@@ -1316,7 +1316,8 @@ static void ng_digest_send(Viewer *v)
  * monsters are) and its events (NM_PEVENT, reliable and in order: effects, sounds, spawns, played on the guest when its
  * shown time reaches the host time they were sent at). The guest's own system makes no decisions: its step in main.c
  * asks net_guest_world() and leaves its logic out. */
-enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_HUD, NGP_N };
+enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_HUD, NGP_SCENE,
+       NGP_N };
 typedef struct {
     const char *name;
     float rate;                                      /* snapshots a second (0: events only) */
@@ -1489,6 +1490,59 @@ static void ng_hud_event(Viewer *v, NetBuf *b)
         hud_float(v->hud, amount, pos, building, scale);
 }
 
+/* ---- the scene (NGP_SCENE): the adornments a hit knocks off, as the host's hits did (events, made again on the guest
+ * at their host time: the same call on the same adornments), and the flags' wind clock (snapshots, twice a second at
+ * 20 updates: the cloths flap in step) */
+static int net_adorn_hit(Scene *s, const float centre[3], float radius)
+{
+    if (net_role() == NET_GUEST && net_live())
+        return 0;                                    /* the guest's own: none */
+    int n = scene_adornments_hit(s, centre, radius);
+    if (n > 0 && ng_host() && g_ngv) {
+        uint8_t m[32];
+        NetBuf b = netbuf(m, sizeof m);
+        net_w_u8(&b, (uint32_t)g_ngv->block);
+        for (int i = 0; i < 3; i++)
+            net_w_f32(&b, centre[i]);
+        net_w_f32(&b, radius);
+        ng_event(NGP_SCENE, m, b.len);
+    }
+    return n;
+}
+
+static void ng_scene_event(Viewer *v, NetBuf *b)
+{
+    int block = (int)net_r_u8(b);
+    float c[3], r;
+    for (int i = 0; i < 3; i++)
+        c[i] = net_r_f32(b);
+    r = net_r_f32(b);
+    if (!b->err && block == v->block)
+        scene_adornments_hit(&v->scene, c, r);
+}
+
+static int ng_scene_write(Viewer *v, NetBuf *b)
+{
+    if (!v->have_scene)
+        return 0;
+    net_w_f32(b, v->scene.cloth_time);
+    return 1;
+}
+
+static void ng_scene_apply(Viewer *v, const NetSnapSample *a, const NetSnapSample *s, float alpha, int how)
+{
+    NetBuf bb = netbuf((void *)s->data, s->len);
+    float hi = net_r_f32(&bb), t = hi;
+    if (how == 2 && a) {
+        NetBuf ba = netbuf((void *)a->data, a->len);
+        float lo = net_r_f32(&ba);
+        t = lo + (hi - lo) * alpha;
+    } else if (how == 1)
+        t = hi + alpha;
+    if (!bb.err && v->have_scene && fabsf(v->scene.cloth_time - t) > 0.05f)
+        v->scene.cloth_time = t;                     /* (the wind's phase the host's; its step on between them) */
+}
+
 /* each system's side, one file each */
 #include "netrep_traffic.c"                          /* vehicles, street objects, rail, parade */
 #include "netrep_army.c"                             /* the army and the bosses */
@@ -1503,6 +1557,7 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     g_ngv = v;
     net_set_handler(ng_handler);
     ng_pup[NGP_HUD] = (NgPuppet){ "popups", 0, NULL, NULL, ng_hud_event, NULL };
+    ng_pup[NGP_SCENE] = (NgPuppet){ "scene", 2, ng_scene_write, ng_scene_apply, ng_scene_event, NULL };
     ngr_traffic_init();
     ngr_army_init();
     ngr_people_init();
