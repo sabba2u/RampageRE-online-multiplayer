@@ -270,5 +270,25 @@ typedef struct { int running; float elapsed; int points[GAME_PLAYERS][7], kills[
     GameNetSync;
 void game_net_get(const Game *g, GameNetSync *s);
 void game_net_put(Game *g, const GameNetSync *s, int players);
+/* NET: the guest's game follows the host's: its game_update makes no decisions (no state machine, no NIs, no results
+ * of its own); the host's state comes by game_net_flow_put and the host's events by game_net_push, which game_events
+ * then hands out as its own. game_net_tap, when set, sees every event game_events hands out (the host sends them) */
+typedef struct {
+    int16_t state, cur, start_block;
+    uint8_t ni_on, weapons_on, enabled, visible, game_over, level_done;
+    uint8_t city_destroyed, quit, select, world_done;
+    int8_t king_block, king_city, king_world, first_place, second_place, result, results_screen;
+    int8_t human[GAME_PLAYERS];
+    int32_t blocks_won[GAME_PLAYERS], cities_won[GAME_PLAYERS], city_score[GAME_PLAYERS];
+    int32_t city_total, time_bonus;
+    uint32_t city_flags;
+    float limit, max_time, clock_limit;
+} GameNetFlow;
+void game_net_follow(Game *g, int on);
+int game_net_following(const Game *g);
+void game_net_flow_get(const Game *g, GameNetFlow *f);
+void game_net_flow_put(Game *g, const GameNetFlow *f);
+void game_net_push(Game *g, const GameEvent *e);
+extern void (*game_net_tap)(const GameEvent *e);
 
 #endif

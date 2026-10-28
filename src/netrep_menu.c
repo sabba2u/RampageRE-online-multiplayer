@@ -9,10 +9,12 @@
  * The guest's own front end runs on under that notice with none of its presses (they are the host's) and no attract
  * mode. The host's game starting takes the guest out of it (ng_follow); the host's leaving its game (to its menus, or
  * the connection gone) brings the guest back to its main menu, its profile as it was before the online games (the
- * guest never writes it: save_profile, card_job). The guest's results screens answer by themselves (the host's
- * answer is the one that counts), its own Pause menu never opens. */
+ * guest never writes it: save_profile, card_job). The guest's results screens are the host's (netgame.c's flow opens
+ * them); they take none of the guest's presses (those go to the host's, as pad 1's) but every press the host's screen
+ * takes (NGM_RESULTS, host -> guest), so they move as the host's do; its own Pause menu never opens.
+ *   results  host -> guest, reliable: a press the host's results screen took (its own or the guest's) */
 
-enum { NGM_INPUT = 1, NGM_STATE = 2 };
+enum { NGM_INPUT = 1, NGM_STATE = 2, NGM_RESULTS = 3 };
 #define NGM_EVENTS 32
 
 typedef struct {
@@ -183,9 +185,34 @@ static void ngm_send_state(Viewer *v)
         net_send_msg(1, m, b.len);
 }
 
+/* the host: a press its results screen takes (hud_net_tap), for the guest's to take too */
+static void ng_results_tap(Hud *h, int ev, int button, int pad)
+{
+    if (!ngm_host_on() || !g_ngv || h != g_ngv->hud || !net_world())
+        return;
+    uint8_t m[8];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_MENU);
+    net_w_u8(&b, NGM_RESULTS);
+    net_w_u16(&b, (uint32_t)ev);
+    net_w_u8(&b, (uint32_t)button);
+    net_w_u8(&b, (uint32_t)pad);
+    if (!b.err)
+        net_send_msg(1, m, b.len);
+    net_log("flow: results press %d (pad %d) sent", ev, pad);
+}
+
 static void ngr_menu_message(Viewer *v, NetBuf *b)
 {
     int sub = (int)net_r_u8(b);
+    if (sub == NGM_RESULTS && net_role() == NET_GUEST) {
+        int ev = (int)net_r_u16(b), button = (int)net_r_u8(b), pad = (int)net_r_u8(b);
+        if (!b->err && ngm_in_host_game && v->hud && hud_results_showing(v->hud)) {
+            net_log("flow: the host's results press %d (pad %d) taken", ev, pad);
+            hud_input_pad(v->hud, ev, button, pad);
+        }
+        return;
+    }
     if (sub == NGM_INPUT && net_role() == NET_HOST) {
         int n = (int)net_r_u8(b);
         for (int i = 0; i < n && !b->err; i++) {
@@ -251,9 +278,8 @@ static void ngr_menu_frame(Viewer *v)
     if (ngm_guest_on() && v->shell)
         shell_hold_idle(v->shell);
     int auto_on = ngm_guest_on() && ngm_in_host_game && v->hud;
-    if (auto_on)                                     /* the guest's results answer by themselves */
-        hud_results_auto(v->hud, 0.5f);
-    else if (ngm_auto && v->hud)
+    if (auto_on && !ngm_auto)                        /* the guest's results screens answer nothing by themselves:
+                                                      * the host's presses move them (NGM_RESULTS) */
         hud_results_auto(v->hud, 0);
     ngm_auto = auto_on;
     if (ngm_in_host_game && !v->shell && !v->exit_game &&

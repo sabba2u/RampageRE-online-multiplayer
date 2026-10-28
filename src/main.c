@@ -2419,6 +2419,9 @@ static void clip_event(Mon *mo, const MoveEvent *e)
             mo->scale = mo->scale_to;
         return;
     }
+    else if (net_guest_world() && (!strcmp(n, "Monsters::startRespawn") || !strcmp(n, "Monsters::becomeHuman")))
+        return;                                      /* NET: the host's monster respawns and turns human (its streaker
+                                                      * a person of the host's), the snapshot shows it here */
     else if (!strcmp(n, "Monsters::startRespawn")) { /* 0x2D3930: a life, back to full health where the streaker is
                                                         or dropping in from the view */
         mo->hp = mon_hp_max(mo);
@@ -4063,7 +4066,8 @@ static void game_step(Viewer *v, float dt)
                 mo->scale = mo->scale_to = 1;
                 if (mon_in(mo))
                     mon_in(mo)->hidden = 0;
-                if (mo->streaker >= 0 && v->scene.folk)
+                if (mo->streaker >= 0 && v->scene.folk && !net_guest_world())   /* NET: (the guest's people are
+                                                      * the host's) */
                     people_remove(v->scene.folk, mo->streaker);
                 mo->streaker = -1;
                 if (e->a == 1)                       /* the continue: setEnergy(0) (0x325288 -> 0x2E5730) [R];
