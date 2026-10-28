@@ -2843,6 +2843,8 @@ static void triggers_update(Boss *b)
 
 void boss_trigger_touch(Boss *b, int trigger, int monster, const float normal[3])
 {
+    if (boss_net_gate && boss_net_gate())            /* NET: the guest's bosses are the host's */
+        return;
     if (!b || trigger < 0 || trigger >= b->ntrig || b->ntouch >= MAX_TRIG * 4)
         return;
     TriggerTouch *k = &b->touch[b->ntouch++];
@@ -3804,6 +3806,8 @@ int boss_load_waiting(Boss *b, Group block_def, float y, int slot)
 
 int boss_spawn(Boss *b, const char *tmpl_name, Group inst, const float pos[3])
 {
+    if (boss_net_gate && boss_net_gate())            /* NET: the guest's bosses are the host's */
+        return -1;
     Group t = find_tmpl(b, tmpl_name);
     if (!t.at)
         return -1;
@@ -3858,6 +3862,8 @@ int boss_events(Boss *b, BossEvent *out, int max)
     if (n < b->nev)
         memmove(b->ev, b->ev + n, (size_t)(b->nev - n) * sizeof *b->ev);
     b->nev -= n;
+    if (boss_net_events)                             /* NET: the host's are sent, the guest's are the host's */
+        n = boss_net_events(b, out, n, max);
     return n;
 }
 
@@ -3865,6 +3871,8 @@ int boss_events(Boss *b, BossEvent *out, int max)
  * (OnlyHitWithEffNodes: the Tank, Heli, Jumper, Saucer, Blimp, Generator) goes on the attack's hit list, once */
 int boss_hit(Boss *b, int monster, const float centre[3], float radius, float amount, unsigned record)
 {
+    if (boss_net_gate && boss_net_gate())            /* NET: the guest's bosses are the host's */
+        return 0;
     if (monster < 0 || monster >= b->nm)
         return 0;
     int n = 0;
@@ -3880,4 +3888,48 @@ int boss_hit(Boss *b, int monster, const float centre[3], float radius, float am
             obj_remove(b, o);
     }
     return n;
+}
+
+/* ---------------------------------------------------------------- NET: online play (src/netrep_army.c, boss.h) */
+
+int (*boss_net_gate)(void);
+int (*boss_net_events)(Boss *b, BossEvent *out, int n, int max);
+
+BossPart *boss_net_slot(Boss *b, int slot) { return b && slot >= 0 && slot < b->n ? &b->o[slot].p : NULL; }
+
+BossPart *boss_net_part(Boss *b, int slot, const char *name, const float pos[3])
+{
+    if (!b || slot < 0 || slot >= MAX_PARTS)
+        return NULL;
+    while (b->n <= slot) {                           /* obj_new takes the first slot not alive: this one */
+        memset(&b->o[b->n], 0, sizeof b->o[b->n]);
+        b->n++;
+    }
+    int was[MAX_PARTS];
+    for (int i = 0; i < slot; i++) {
+        was[i] = b->o[i].p.alive;
+        b->o[i].p.alive = 1;
+    }
+    b->o[slot].p.alive = 0;
+    Group t = find_tmpl(b, name);
+    Obj *o = t.at ? obj_new(b, name, t, (Group){ 0 }, pos) : NULL;
+    for (int i = 0; i < slot; i++)
+        b->o[i].p.alive = was[i];
+    if (!o || idx(b, o) != slot) {
+        b->o[slot].p.alive = 0;
+        return NULL;
+    }
+    b->nev = 0;                                      /* (its BE_SPAWNED: the host's events are the guest's) */
+    return &o->p;
+}
+
+void boss_net_state(Boss *b, int n, int main, int defeated)
+{
+    if (!b || n < 0 || n > MAX_PARTS)
+        return;
+    for (int i = n; i < b->n; i++)
+        b->o[i].p.alive = 0;
+    b->n = n;
+    b->main = main;
+    b->defeated = defeated;
 }

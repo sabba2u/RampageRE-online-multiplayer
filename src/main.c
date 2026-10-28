@@ -3696,7 +3696,8 @@ static void boss_step(Viewer *v, float dt, const ArmyMonster *am, int nm)
     }
     boss_set_view(v->boss, v->view.pos[0] - 45, v->view.pos[0] + 45);   /* the view's x range [G], as the army's */
     boss_set_city_destroyed(v->boss, game_city_destroyed(v->game));   /* gCommon.isCityDestroyed */
-    boss_update(v->boss, dt, m, nm, bl, nb);
+    if (!net_guest_world())                          /* NET: the guest's bosses are the host's (netrep_army.c) */
+        boss_update(v->boss, dt, m, nm, bl, nb);
     BossEvent ev[64];
     int ne;
     while ((ne = boss_events(v->boss, ev, 64)) > 0)
@@ -5187,7 +5188,8 @@ static void army_step(Viewer *v, float dt)
     army_airstrike(v->army, v->force_strike || (v->game && game_time_up(v->game)));   /* the time-up airstrike
                                                       * (gAIMgr 0x3320F0) */
     army_ai_cut(v->army, vehicle_ai_cut(v->veh));     /* (the traffic's release ends gAIMgr's update) */
-    army_update(v->army, dt, m, nm, boxes, nb);
+    if (!net_guest_world())                          /* NET: the guest's army is the host's (netrep_army.c) */
+        army_update(v->army, dt, m, nm, boxes, nb);
     vehicle_step(v, dt, m, nm, boxes, nb);
     parade_step(v, dt, m, nm);
     rail_step(v, dt, m, nm);

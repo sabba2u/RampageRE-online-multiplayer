@@ -419,4 +419,25 @@ float army_score_building(Army *a, int monster, int building, Group building_pro
                           const char *monster_move, int width, int storeys, const int *front_states, int nfront,
                           const float at[3]);
 
+/* ---- NET: online play (src/netrep_army.c). The host's army runs as offline and hears of every event (army_events
+ * hands them to army_net_events first); the guest's runs nothing of its own: its units and shots are the host's,
+ * from its snapshots, and its events the host's */
+/* nonzero (the guest): army_hit, _grab, _throw, _spawn (_window, _drop), _window_place / _remove, _person_weapon /
+ * _moved / _forget, _impact and _add_stats make nothing */
+extern int (*army_net_gate)(void);
+/* army_events' last word: n events taken into out (room for max); returns how many out has now */
+extern int (*army_net_events)(Army *a, ArmyEvent *out, int n, int max);
+/* city.c: a window soldier's window opened (building, storey, column, its LRPos, the Openable, opening across) */
+extern void (*army_net_window_open)(int building, int storey, int column, int lr, const float rect[4], int opens_h);
+/* the guest's: a unit to write (NULL past the count); slot made the host's unit (unit_new's start, no script:
+ * the template by name, its instance book by offset, the host's serial); the count; held from now (its blend into
+ * the hand from where it is); the shots to write; the camera's interest objects (-1 none) */
+ArmyUnit *army_net_slot(Army *a, int slot);
+ArmyUnit *army_net_unit(Army *a, int slot, const char *name, int serial, uint32_t inst_at);
+void army_net_count(Army *a, int n);
+void army_net_hold(Army *a, int unit);
+ArmyShot *army_net_shots(Army *a, int **n, int *cap);
+int army_net_interest(const Army *a, int k);
+void army_net_set_interest(Army *a, int k, int unit);
+
 #endif
