@@ -473,8 +473,19 @@ static void ng_apply_snap(Viewer *v)
             } else if (fabsf(mo->run.time - hi->time) > 0.25f)
                 mo->run.time = hi->time;
         }
+        if (mo->have_graph && mo->run.state >= 0 && mo->run.state < mo->graph.n) {
+            /* the clip on screen is the host's state's: play_state starts a state's clip (scene_monster_play), and
+             * moves_force above or the guest's own step may leave another one playing */
+            const char *want = mo->graph.states[mo->run.state].clip, *now = v->scene.mon[k].clip;
+            if (want && (!now || strcmp(want, now)))
+                scene_monster_play(&v->scene, k, want);
+        }
+        if (mo->mirror != hi->mirror)
+            scene_monster_mirror(&v->scene, k, hi->mirror);
         mo->mode = hi->mode;
         mo->mirror = hi->mirror;
+        mo->mirror_queued = hi->mirror;
+        mo->input.mirrored = hi->mirror;
         mo->defeated = hi->defeated;
         mo->hp = hi->hp;
         mo->power.energy = hi->energy;
