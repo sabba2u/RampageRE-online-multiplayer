@@ -936,9 +936,11 @@ static void draw_held(Renderer *r, double t)
 
 /* NET: (online play, port extra) the monster of a player slot nobody plays now (waiting for a player, or kept for one
  * who dropped out: netgame.c sets Instance.net_grey) looks inactive: each of its opaque parts is drawn a second time
- * over itself, a flat grey at 66 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
+ * over itself, a flat grey at 85 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
  * colour's, the alpha the texture's times it) and the depth equal, so it lies on the part it covers; the frame's
- * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through). Its rage glow
+ * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through); then
+ * a red outline, pulsing once a second: the part's back faces again as thick lines, so only their edges past the
+ * silhouette show (the front faces hide the rest by depth). Its rage glow
  * (an effect) and its hit flashes (effects too) are drawn after the scene's items, over it, as before. Offline nothing
  * sets it, and nothing is drawn differently */
 #define GL_COMBINE 0x8570
@@ -948,14 +950,15 @@ static void draw_held(Renderer *r, double t)
 #define GL_SOURCE0_ALPHA 0x8588
 #define GL_SOURCE1_ALPHA 0x8589
 #define GL_PRIMARY_COLOR 0x8577
-static void draw_grey(const MeshPart *p, GLuint tex, const void *idx)
+static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t)
 {
-    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT);
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
+                 GL_POLYGON_BIT | GL_LINE_BIT);
     glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
     glDisable(GL_LIGHTING);
     glDisable(GL_FOG);
     glDisableClientState(GL_COLOR_ARRAY);
-    glColor4f(0.40f, 0.40f, 0.42f, 0.66f);
+    glColor4f(0.48f, 0.48f, 0.50f, 0.85f);
     if (tex && p->uv) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -966,7 +969,7 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx)
         glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
         glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
         glEnable(GL_ALPHA_TEST);
-        glAlphaFunc(GL_GREATER, 0.35f);              /* (0.66 x the texture's: its cut-outs stay cut) */
+        glAlphaFunc(GL_GREATER, 0.45f);              /* (0.85 x the texture's: its cut-outs stay cut) */
     } else
         glDisable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
@@ -975,8 +978,18 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx)
     glDepthMask(GL_FALSE);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);   /* (the frame's alpha is the part's own: later passes read it) */
     glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glDisable(GL_TEXTURE_2D);                        /* the red outline */
+    glDisable(GL_ALPHA_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+    glPolygonMode(GL_BACK, GL_LINE);
+    glLineWidth(4.0f);
+    glColor4f(1.0f, 0.12f, 0.08f, (float)(0.65 + 0.35 * sin(t * 6.2831853)));
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glLineWidth(1.0f);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glPopClientAttrib();
     glPopAttrib();
 }
@@ -1143,7 +1156,7 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     }
     r->drawn += p->ntris;
     if (r->grey && !blend && !see_through)           /* NET: greyed over */
-        draw_grey(p, id, idx);
+        draw_grey(p, id, idx, t);
     /* the reflection layer, shader 0x1A's second pass [R]: texture slot 1 (the material's +0x3A `cubemap`, or for an
      * RCUBEMAP* material the block's EnvMap, 0x2B96E4) at the sphere-map coordinates (VU1 0x34F1C8, sphere_coords),
      * TFX 1 DECAL, TCC 0, colour mode 0 (the texture's colour, unlit), GS state 10: ALPHA 0x58 = Cs x Ad + Cd (added,
