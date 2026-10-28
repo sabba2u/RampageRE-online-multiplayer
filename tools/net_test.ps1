@@ -12,7 +12,7 @@ keeps their output in build\nettest\host.out / guest.out, and optionally takes d
   .\tools\net_test.ps1 -Menus -Seconds 0         both in the front end (--shell): the host picks 2 Player, the guest
                                                 its monster (tools\net_keys.ps1 presses keys in either window)
 #>
-param([int]$Seconds = 40, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [int]$Shots = 0, [switch]$TestPad, [switch]$Trace,
+param([int]$Seconds = 40, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [int]$Shots = 0, [switch]$TestPad, [switch]$GuestMoves, [switch]$HostMoves, [switch]$Trace, [int]$TraceLevel = 1,
       [switch]$Menus, [string]$GuestArgs = "", [int]$JoinDelay = 6, [string]$HostDo = "",
       [string]$GameArgs = "Chicago 1 --players 2 --monster George --monster2 Lizzie")
 $root = Split-Path $PSScriptRoot -Parent
@@ -24,13 +24,14 @@ New-Item -ItemType Directory -Force $out | Out-Null
 Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force   # (only this folder's)
 $env:RAMPAGE_NET_LAG = "$Lag"
 $env:RAMPAGE_NET_LOSS = "$Loss"
-$env:RAMPAGE_NET_TRACE = if ($Trace) { "1" } else { $null }
+$env:RAMPAGE_NET_TRACE = if ($Trace) { "$TraceLevel" } else { $null }
 $env:RAMPAGE_NET_HOSTDO = if ($HostDo) { $HostDo } else { $null }   # (--do's words for the host's monster)
+$env:RAMPAGE_NET_HOSTMOVES = if ($HostMoves) { "1" } else { $null }   # (the special moves, netgame.c ng_moves_pad)
 $h = Start-Process $exe -ArgumentList "$GameArgs --host $Port" -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\host.out" -RedirectStandardError "$out\host.err"
 Start-Sleep $JoinDelay
 $env:RAMPAGE_NET_HOSTDO = $null
-$env:RAMPAGE_NET_TESTPAD = if ($TestPad) { "1" } else { $null }   # (the guest's alone)
+$env:RAMPAGE_NET_TESTPAD = if ($GuestMoves) { "moves" } elseif ($TestPad) { "1" } else { $null }   # (the guest's alone)
 $g = Start-Process $exe -ArgumentList ("$GuestArgs --join 127.0.0.1:$Port".Trim()) -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\guest.out" -RedirectStandardError "$out\guest.err"
 if ($Seconds -le 0) { "host pid $($h.Id), guest pid $($g.Id)"; return }

@@ -299,9 +299,12 @@ static void on_pad(NetBuf *b)
 static int digest_matches(int s, double t, const NetDSys *guest, int *nearby)
 {
     *nearby = 0;
+    /* the edibles' slots come 4 times a second (NGP_EDIBLES), the guest showing the sample after its time: up to a
+     * quarter of a second newer than the rest (a mass collapse at a block's end empties and fills slots each frame) */
+    double after = s == NDS_EDIBLES ? NET_DIGEST_WINDOW + 0.25 : NET_DIGEST_WINDOW;
     for (int i = 0; i < g.ndigests; i++) {
         double dt = g.digests[i].t - t;
-        if (dt < -NET_DIGEST_WINDOW || dt > NET_DIGEST_WINDOW)
+        if (dt < -NET_DIGEST_WINDOW || dt > after)
             continue;
         *nearby = 1;
         if (net_dsys_same(&g.digests[i].d.s[s], guest, NET_DSYS_TOL[s]))
