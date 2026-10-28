@@ -9272,6 +9272,7 @@ static int viewer_main(int argc, char **argv)
             cam.use_rows = 1;
             lookfx_camera(cam.pos, cam.rows);        /* port extra: pulled back and tilted down, as set */
             cam.fov_deg = v.view.fov * 57.2957795f;
+            netgame_camera(cam.pos, (const float (*)[3])cam.rows, cam.fov_deg);   /* NET: the labels over heads */
         } else {
             if (v.have_scene) {
                 world_build(&v);                     /* the traffic's and the parade's world */

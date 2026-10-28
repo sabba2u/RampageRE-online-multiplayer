@@ -47,6 +47,9 @@ const void *net_host_world_info(int *len);           /* the guest: the host's in
  * buttons and sticks of the newest; held as it was when a packet is late). 0: none yet or not connected */
 void net_send_pad(const NetPad *p);
 int net_remote_pad(NetPad *out);
+uint32_t net_pad_frame(void);                       /* the guest: the frame of the pad it sent last */
+uint32_t net_remote_frame(void);                    /* the host: the guest's frame it took last (0 none) */
+#define NET_PAD_MENU (1u << 31)                      /* in NetPad.held: the guest has a menu up (the panel) */
 
 /* the host's snapshots (netgame.c builds them, the bytes after the header) */
 void net_send_snap(const void *data, int len);

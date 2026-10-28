@@ -24,7 +24,8 @@ enum NetMsg {
     NM_PUPPET,       /* host -> guest, unreliable, each channel's rate: a system's units (netgame.c NGP_*) */
     NM_PEVENT,       /* host -> guest, reliable, in order: a system's effects and sounds, played at their host time */
     NM_MENU,         /* both ways, reliable: the menus' input (netrep_menu.c) */
-    NM_STATE,        /* both ways, reliable: the guest asks for the block's state (a join, a reconnect, a new block);
+    NM_CHAT = 40,    /* both ways, reliable: a chat line (netgame.c): who (0 the host, 1 the guest), the text */
+    NM_STATE = 11,        /* both ways, reliable: the guest asks for the block's state (a join, a reconnect, a new block);
                       * the host sends every building whole, the edibles' slots, the challenge's upgrade (netgame.c) */
 };
 

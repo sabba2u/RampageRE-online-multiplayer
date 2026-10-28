@@ -19,6 +19,19 @@ int netui_wants_mouse(void);                         /* the mouse is over one of
 void netui_toggle(void);
 int netgame_rate(void);                             /* netgame.c: the host's updates a second (20, 30, 60) */
 void netgame_set_rate(int r);
+int netgame_predict(void);                          /* netgame.c: the guest moves its own monster at once */
+void netgame_set_predict(int on);
+/* a label over the picture at screen point x, y (pixels from the top left), this frame only */
+void netui_label(float x, float y, const char *text);
+/* the chat (netchat.cpp): who 0 the host, 1 the guest, -1 a system line, -2 an error or a defeat (red) */
+void netui_chat_add(int who, const char *name, const char *text);
+const char *netui_chat_said(int who, float *age);   /* that player's last line and its age (the bubble), NULL */
+void netui_chat_allow(int on);                      /* Enter may open it (online, in play), each frame */
+int netui_chat_open(void);
+int netui_chat_take(char *out, int cap);            /* 1: a line was sent (Enter), into out */
+int netui_chat_wndproc(unsigned msg, uintptr_t wp, intptr_t lp);
+void netui_chat_draw(void);
+int netui_panel_open(void);                          /* the Insert panel is up */
 /* this frame's notice over the game (netrep_menu.c: what the other player is doing in the menus): big, the screen
  * dimmed and the box in its middle; else a line at the top. Drawn by the next netui_frame, then forgotten */
 void netui_notice(int big, const char *title, const char *text);

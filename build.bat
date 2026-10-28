@@ -33,7 +33,7 @@ set "TOOL=-std=c99 -O2 -Wall %CPU% -DRAMPAGE_TOOL -Isrc"
 rem online play (src\net*.c, docs\superpowers\specs\2026-10-27-online-multiplayer-design.md): ENet and Dear ImGui
 rem (src\net\third_party) built once into build\net\*.a, the panel src\netui.cpp each time; NET joins them to the link
 set "NETINC=-Isrc\net\third_party\enet\include -Isrc\net\third_party\imgui"
-set "NET=build\net\enet.a build\net\imgui.a build\net\netui.o -lc++"
+set "NET=build\net\enet.a build\net\imgui.a build\net\netui.o build\net\netchat.o -lc++"
 call :find_zig || goto :fail
 call :net_libs || goto :fail
 
@@ -90,18 +90,19 @@ set "IMDIR=src\net\third_party\imgui"
 if not exist build\net\enet.a (
     echo Building ENet...
     for %%f in (callbacks compress host list packet peer protocol win32) do (
-        %ZIG% cc -std=gnu99 -O2 -w %CPU% -Isrc\net\third_party\enet\include -c src\net\third_party\enet\%%f.c -o build\net\enet_%%f.o || exit \b 1
+        %ZIG% cc -std=gnu99 -O2 -w %CPU% -Isrc\net\third_party\enet\include -c src\net\third_party\enet\%%f.c -o build\net\enet_%%f.o || exit /b 1
     )
-    %ZIG% ar rcs build\net\enet.a build\net\enet_callbacks.o build\net\enet_compress.o build\net\enet_host.o build\net\enet_list.o build\net\enet_packet.o build\net\enet_peer.o build\net\enet_protocol.o build\net\enet_win32.o || exit \b 1
+    %ZIG% ar rcs build\net\enet.a build\net\enet_callbacks.o build\net\enet_compress.o build\net\enet_host.o build\net\enet_list.o build\net\enet_packet.o build\net\enet_peer.o build\net\enet_protocol.o build\net\enet_win32.o || exit /b 1
 )
 if not exist build\net\imgui.a (
     echo Building Dear ImGui...
     for %%f in (imgui imgui_draw imgui_tables imgui_widgets backends\imgui_impl_win32 backends\imgui_impl_opengl3) do (
-        %ZIG% c++ -std=c++17 -O2 -w %CPU% -I%IMDIR% -c %IMDIR%\%%f.cpp -o build\net\im_%%~nf.o || exit \b 1
+        %ZIG% c++ -std=c++17 -O2 -w %CPU% -I%IMDIR% -c %IMDIR%\%%f.cpp -o build\net\im_%%~nf.o || exit /b 1
     )
-    %ZIG% ar rcs build\net\imgui.a build\net\im_imgui.o build\net\im_imgui_draw.o build\net\im_imgui_tables.o build\net\im_imgui_widgets.o build\net\im_imgui_impl_win32.o build\net\im_imgui_impl_opengl3.o || exit \b 1
+    %ZIG% ar rcs build\net\imgui.a build\net\im_imgui.o build\net\im_imgui_draw.o build\net\im_imgui_tables.o build\net\im_imgui_widgets.o build\net\im_imgui_impl_win32.o build\net\im_imgui_impl_opengl3.o || exit /b 1
 )
-%ZIG% c++ -std=c++17 -O2 -Wall %CPU% -I%IMDIR% -Isrc -c src\netui.cpp -o build\net\netui.o || exit \b 1
+%ZIG% c++ -std=c++17 -O2 -Wall %CPU% -I%IMDIR% -Isrc -c src\netui.cpp -o build\net\netui.o || exit /b 1
+%ZIG% c++ -std=c++17 -O2 -Wall %CPU% -I%IMDIR% -Isrc -c src\netchat.cpp -o build\net\netchat.o || exit /b 1
 exit /b 0
 
 :find_zig

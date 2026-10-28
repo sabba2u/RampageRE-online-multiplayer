@@ -504,6 +504,9 @@ void net_send_pad(const NetPad *p)
     nt_send(0 /* unreliable */, m, b.len);
 }
 
+uint32_t net_pad_frame(void) { return g.pad_frame; }
+uint32_t net_remote_frame(void) { return g.have_remote ? g.remote_frame : 0; }
+
 int net_remote_pad(NetPad *out)
 {
     memset(out, 0, sizeof *out);

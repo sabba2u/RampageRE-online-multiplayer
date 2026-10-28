@@ -20,6 +20,10 @@ host. Each player needs their own copy of the game disc and the same build of th
    player 2's monster on the host's Monster Select, and you both end up in the same city.
 5. The panel shows who is host, the ping, the updates a second (20 / 30 / 60) and whether everything is in sync.
    The window title also says **HOST** or **GUEST**.
+6. **Chat:** press **Enter** in a game to type, **Enter** sends, **Esc** cancels (**P** pauses). Lines show bottom
+   left and fade out; what you say also floats over your monster's head. `/help` lists the commands.
+7. While a player has a menu up (the Insert panel, the chat box or the Pause menu), **IN MENU** floats over their
+   monster on the other player's screen.
 
 Command line, for testing: `rampage.exe Chicago 1 --players 2 --host` on one PC and `rampage.exe --join <ip>` on the
 other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.

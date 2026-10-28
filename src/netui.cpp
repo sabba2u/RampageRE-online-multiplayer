@@ -15,6 +15,30 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 static int g_ready, g_open;
+static struct { float x, y; char text[32]; } g_labels[4];
+static int g_nlabels;
+
+extern "C" void netui_label(float x, float y, const char *text)
+{
+    if (g_nlabels < 4) {
+        g_labels[g_nlabels].x = x;
+        g_labels[g_nlabels].y = y;
+        snprintf(g_labels[g_nlabels].text, sizeof g_labels[0].text, "%s", text);
+        g_nlabels++;
+    }
+}
+
+static void labels(void)                             /* "IN MENU" over a player's head (netgame.c) */
+{
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    for (int i = 0; i < g_nlabels; i++) {
+        ImVec2 sz = ImGui::CalcTextSize(g_labels[i].text), p(g_labels[i].x - sz.x / 2, g_labels[i].y - sz.y);
+        dl->AddRectFilled(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(20, 20, 30, 200), 6);
+        dl->AddRect(ImVec2(p.x - 8, p.y - 4), ImVec2(p.x + sz.x + 8, p.y + sz.y + 4), IM_COL32(140, 240, 150, 230), 6);
+        dl->AddText(p, IM_COL32(140, 240, 150, 255), g_labels[i].text);
+    }
+    g_nlabels = 0;
+}
 static char g_addr[64] = "127.0.0.1";
 
 static const ImVec4 ON = ImVec4(0.55f, 0.95f, 0.6f, 1), OFF = ImVec4(0.7f, 0.7f, 0.72f, 1),
@@ -52,7 +76,8 @@ extern "C" void netui_shutdown(void)
 }
 
 extern "C" void netui_toggle(void) { g_open = !g_open; }
-extern "C" int netui_wants_input(void) { return g_ready && (g_open || ImGui::GetIO().WantCaptureKeyboard); }
+extern "C" int netui_panel_open(void) { return g_ready && g_open; }
+extern "C" int netui_wants_input(void) { return g_ready && (g_open || netui_chat_open() || ImGui::GetIO().WantCaptureKeyboard); }
 extern "C" int netui_wants_mouse(void) { return g_ready && ImGui::GetIO().WantCaptureMouse; }
 
 extern "C" int netui_wndproc(void *hwnd, unsigned msg, uintptr_t wp, intptr_t lp)
@@ -63,6 +88,8 @@ extern "C" int netui_wndproc(void *hwnd, unsigned msg, uintptr_t wp, intptr_t lp
         netui_toggle();
         return 1;
     }
+    if (!g_open && netui_chat_wndproc(msg, wp, lp))   /* the chat's keys (Enter opens it in play) */
+        return 1;
     ImGui_ImplWin32_WndProcHandler((HWND)hwnd, msg, (WPARAM)wp, (LPARAM)lp);
     return 0;
 }
@@ -126,6 +153,11 @@ static void panel(void)
         }
         NetStats s = net_stats();
         ImGui::Text("Ping: %d ms", s.ping_ms);
+        if (role == NET_GUEST) {                     /* the guest's own monster at once, the host's correcting it */
+            bool p = netgame_predict() != 0;
+            if (ImGui::Checkbox("Move my monster at once (no delay)", &p))
+                netgame_set_predict(p);
+        }
         if (role == NET_HOST) {                      /* the updates a second the host sends (netgame.c) */
             int r = netgame_rate();
             ImGui::Text("Updates a second:");
@@ -288,6 +320,8 @@ extern "C" void netui_frame(void)
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    labels();
+    netui_chat_draw();
     notice();
     if (g_open)
         panel();
