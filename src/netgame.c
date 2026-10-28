@@ -156,6 +156,23 @@ static void ng_set_world(Viewer *v)
 static void ngr_menu_follow(Viewer *v);
 static void ng_flow_reset(Viewer *v);
 
+/* the guest cannot load the host's game (its city or a monster is the Wii's, and this PC has no Wii data): said in
+ * its chat and the host's (as its player's line), then it leaves (the host's slot is kept for it as a drop's) */
+static void ng_cannot_follow(const char *what)
+{
+    char why[128];
+    snprintf(why, sizeof why, "Can't load the host's %s: it needs the Wii data on this PC (wii_data= in rampage.cfg)",
+             what);
+    netui_chat_add(-2, NULL, why);
+    uint8_t m[160];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_CHAT);
+    net_w_u8(&b, (uint32_t)ng_me());
+    net_w_bytes(&b, why, (int)strlen(why));
+    net_send_msg(1, m, b.len);
+    net_give_up(why);
+}
+
 /* the guest: the host's world loaded as the viewer's start would (--players, a city and block); from the front end,
  * the front end left first as a game's start leaves it (shell_start_game) */
 static void ng_follow(Viewer *v)
@@ -170,6 +187,11 @@ static void ng_follow(Viewer *v)
         return;
     }
     net_log("loading the host's game: %s block %d, %d players", CITIES[w->city], w->block, w->nmon);
+    for (int k = 0; k < w->nmon; k++)                /* a monster this PC has not (the Wii's) */
+        if (w->monster[k] >= (int)v->nmonsters) {
+            ng_cannot_follow("monsters");
+            return;
+        }
     if (v->shell) {
         movie_stop(v);
         gui3d_free(v);
@@ -196,6 +218,7 @@ static void ng_follow(Viewer *v)
     setup_players(v, w->nmon, w->bots, pick);
     if (open_city(v, w->city, w->block, -1) != 0) {
         net_log("cannot open %s", CITIES[w->city]);
+        ng_cannot_follow(CITIES[w->city]);
         return;
     }
     v->play = have_monster(v);
@@ -713,7 +736,7 @@ static void ng_chat_frame(Viewer *v)
     if (st != was_state && net_role() == NET_GUEST) {
         if (st == NETS_CONNECTED)
             netui_chat_add(-1, NULL, "Joined the host's game");
-        else if (was_state == NETS_CONNECTED)
+        else if (was_state == NETS_CONNECTED && !net_gave_up())   /* (our own leaving: its line said why) */
             netui_chat_add(-2, NULL, "The host left");
     }
     was_state = st;

@@ -35,6 +35,9 @@ int net_is_steam(void);
 int net_port(void);                                  /* the host's ENet port (0 not hosting over ENet) */
 uint32_t net_build_id(void);                         /* this build's id: the hello's, the lobby's (netlobby.c) */
 void net_stop(void);
+void net_give_up(const char *why);                   /* the guest: it cannot play the host's game; it leaves (a moment
+                                                      * later: what it sent last arrives first), why its failure */
+int net_gave_up(void);                               /* the guest left by net_give_up (not the host gone) */
 void net_update(double now);                         /* once a frame: the connection, the messages */
 double net_now(void);                                /* the clock net_update was given */
 

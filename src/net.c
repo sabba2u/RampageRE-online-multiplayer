@@ -57,6 +57,7 @@ static struct {
     uint32_t pad_pending;                            /* presses since then, sent with the next */
     NetSnapBuf snaps;
     int my_slot, wanted_monster;
+    double give_up_at;                               /* net_give_up: the connection closed then (0 none) */
     NetSlots told;                                   /* the host's last NM_SLOTS, and when it came */
     double told_at;
     /* the host */
@@ -439,6 +440,19 @@ void net_set_world(uint32_t id, const void *info, int len)
         send_world();
 }
 
+void net_give_up(const char *why)
+{
+    if (g.role != NET_GUEST)
+        return;
+    net_log("left the host: %s", why);
+    nt_flush();
+    g.give_up_at = g.now + 0.5;                      /* (closed in net_update: the reason, sent last, arrives first) */
+    g.state = NETS_FAILED;
+    snprintf(g.reject, sizeof g.reject, "%s", why);
+}
+
+int net_gave_up(void) { return g.give_up_at != 0; }
+
 void net_start_host(int port)
 {
     net_stop();
@@ -801,6 +815,10 @@ void net_update(double now)
                 ;
         }
         return;
+    }
+    if (g.give_up_at && now >= g.give_up_at && g.state == NETS_FAILED) {
+        nt_close();
+        g.give_up_at = -1;                           /* (closed; still "gave up" for net_gave_up) */
     }
     NtEvent e;
     while (nt_poll(&e, now)) {
