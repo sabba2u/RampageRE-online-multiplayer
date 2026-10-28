@@ -9,23 +9,70 @@ plan and status: [superpowers/plans/2026-10-27-online-multiplayer-phase1.md](sup
 Both players need the same build of RampageRE and their own disc image.
 
 - Host: start a 2-player game, e.g. `rampage.exe Chicago 1 --players 2 --monster George --monster2 Lizzie --host`
-  (or press **Insert** in a game and click **Host a game**). UDP port 27960 must be reachable (port forward it on
-  the router, or use a LAN / VPN such as Tailscale or ZeroTier until Steam is in).
+  (or press **Insert** in a game and click **Host a game**). UDP port 27960 must be reachable: the host asks its
+  router to forward it by itself (UPnP, below "Hosting over the internet"); without a router that does UPnP, forward
+  it by hand, or use Steam, a LAN or a VPN such as Tailscale or ZeroTier.
 - Guest: `rampage.exe --join <host's address>` (or Insert, type the address, **Join**). The guest loads the host's
   city, block, monsters and the world's seeds by itself.
 - The guest plays player 2 with WASD / Space / J K L R or the first controller.
 - **Insert** opens the panel: role, connection, ping, updates a second, the out-of-sync counter (host) and the log.
 - **Through the menus** (`--shell`, or the player build): the host hosts from the panel (Host a game / Host on Steam;
   the main menu says so when 2 players are chosen) and plays the menus as usual; the guest joins (`--shell --join <ip>`
-  or the panel). While the host is in its menus the guest's screen shows a notice of where the host is (main menu,
-  Monster Select with both cards and readies, the city being picked) and the guest's keys and pads are the host's
-  player 2 (pad 1): on Monster Select the guest picks their own monster as a couch player 2 would. When the host's game
-  starts the guest leaves its menus and loads it; when the host goes back to its menus (or leaves) the guest goes back
-  to its main menu. In a game the guest's Start opens the host's Pause menu for player 2, which the guest then works;
-  the guest's results screens are the host's: they open when the host's do, move as the host's do (every press the
-  host's screen takes is sent to the guest's) and close when the host's close; the guest's own presses there are the
-  host's player 2's (Game Over's Retry / Quit, the Results' Continue work from either PC). The guest writes no profile while
-  online and its profile is put back as it was when it leaves the host's game.
+  or the panel). While the host is in its menus **the guest's screen is the host's front end**: its main menu (the
+  play mode, the players' box), Monster Select with both cards (flipped, ready), the card sheet, City Select with the
+  globe turning to the host's city, the Options; drawn by the guest's own shell, which is made the host's each frame
+  (`shell_net_mirror`, src/netshell.c, from the host's `shell_net_view` in each NM_MENU state), with its own fades and
+  sounds. The guest's keys and pads are the host's player 2 (pad 1): on Monster Select the guest picks their own
+  monster as a couch player 2 would. Not mirrored, told in words instead: the host's profile popup, title screen and
+  loading screen. The guest's own profile popup (the boot's, Create New Profile) stays the guest's: its keys answer it,
+  and the host's menus show once it is closed. When the host's game starts the guest leaves its menus and loads it;
+  when the host goes back to its menus (or leaves) the guest goes back to its main menu. In a game the guest's
+  **Pause menu opens and closes with the host's** and moves as it does (each press of the host's list is sent; the
+  host's Options page stays the host's); the guest's Start opens the host's Pause menu for player 2, which the guest
+  then works. The guest's results screens are the host's: they open when the host's do, move as the host's do (every
+  press the host's screen takes is sent to the guest's; one that comes before the guest's screen is up is kept and
+  taken once it is) and close when the host's close; the guest's own presses there are the host's player 2's (Game
+  Over's Retry / Quit, the Results' Continue work from either PC). A guest that comes in while the host's results
+  screen is up asks for it (NGM_RESEND): the host sends the screen's event again and every press it took. The guest
+  keeps its own progress: see "The guest's profile".
+
+## The guest's profile
+
+The host's game runs on the host's profile. The guest's game follows it and would change the guest's own profile in
+ways that mean nothing for the guest (the host's city and checkpoint written over the guest's), so the guest's
+profile is set aside as the online game starts and given back when it ends, **with what the guest earned in it**
+(netrep_menu.c `ngm_keep`):
+
+- **Monsters unlocked** in front of the guest (a cryotube's reveal): unlocked in the guest's profile too.
+- **Upgrades** (Charge Punch, Multi-Spin, Roar Attack, Jump Smash) that **the guest's own monster** took; the host's
+  monster's upgrades stay the host's.
+- **Campaign blocks won** (the host tells each one, NGM_PROGRESS: the city, its stars, the next block, destroyed or
+  not): the city is opened in the guest's profile, its stars are added, its resume point moves on to the next block if
+  that is further than the guest's own; a city destroyed opens the campaign's next city, as the game's own
+  `profile_update` would; Boosy's rule is checked. The guest's own campaign position (the city it plays next) moves
+  only when it was on that same city.
+
+Everything is merged, never copied: flags only grow, a resume point only moves on, and nothing of the host's profile
+itself (its other cities, unlocks the guest did not see, its settings, its name) reaches the guest's. The guest's
+profile is written at each block won and when it leaves the host's game, when it has one loaded or made (its
+autosave, as the game's `allow_save`); a guest playing without a profile keeps the merge for the session. The guest's
+own front end shows the host's unlocks while it mirrors the host's screens (it is the host's Monster Select) and its
+own again once the host is gone. Not kept: King of the City / of the World and Timed Run results (the game keeps none
+of those in a profile either), and the Wii's five-star unlocks.
+
+## Hosting over the internet: the port forward (UPnP)
+
+A host on UDP (not Steam) asks its router to forward the game's port to its PC (UPnP IGD, miniupnpc 2.2.8 vendored in
+`src/net/third_party/miniupnpc`, src/netupnp.c): as hosting starts, on a thread of its own so the game never waits
+(the router's search takes up to 2 s); the forward is taken away again when hosting stops (Leave, Join, or the game
+closing). The panel shows **Port forward (UPnP)**: "203.0.113.7:27960 forwarded to 192.168.1.20; friends join
+203.0.113.7", or why not: no router answered (none, or UPnP is off on it), the router said no, it forwards that port to
+another PC already, or its own address is a private one (a second router or the provider's CGNAT in front: the forward
+then does not reach the internet). The log says the same, and the lobby is told the external address
+(`netlobby_set_external`). Hosting goes on whatever the router said: a LAN, a VPN or a forward by hand work as before.
+A copy that was killed leaves its forward on the router (it is reused by the next host on that PC, or the router drops
+it); `RAMPAGE_NET_UPNP=0` leaves the router alone, `RAMPAGE_NET_UPNP_IF=<address>` searches from that network card
+(127.0.0.1: the no-router case, tests\net_test.c). `tools\net_test.ps1` sets `RAMPAGE_NET_UPNP=0` unless `-Upnp`.
 
 ## What is shared (phase 1)
 
@@ -166,7 +213,7 @@ metadata is the listing.
 
 ```
 build.bat dev
-tests\build_net_test.bat                     unit tests: wire format, snapshot buffer
+tests\build_net_test.bat                     unit tests: wire format, snapshot buffer, lobby, UPnP without a router
 tools\net_test.ps1 -TestPad -Shots 2         host + guest; the guest walks, climbs and punches by itself;
                                              build\nettest\shot_N.png shows both windows side by side
 tools\net_test.ps1 -TestPad -Lag 100 -Loss 5 the internet on one PC
@@ -189,18 +236,19 @@ A defeated monster lies there until its player presses a button (`Faceup_Idle_Wa
 ## Hooks: where online play touches upstream's files
 
 All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `nettransport.*`, `netgame.c`,
-`netui.*`, `netlobby.*`, `src/net/third_party/` for ENet and Dear ImGui). Upstream's files have only these, each marked `NET:`:
+`netui.*`, `netlobby.*`, `netupnp.*`, `netshell.c` (included by shell.c), `src/net/third_party/` for ENet, Dear ImGui
+and miniupnpc). Upstream's files have only these, each marked `NET:`:
 
 | File | Hook |
 |---|---|
-| `build.bat` | the net sources in SRC; `NETINC`, `NET`, `:net_libs` (ENet and ImGui built once into `build\net`); `-lws2_32 -lwinmm -ldwmapi` |
-| `src/main.c` | `netgame_shell_input` in `shell_frame` (the guest's menu presses go to the host); `netgame_game_input` before a game's menus take the pad; `netgame_shell_start` before `shell_enter` from a game; `card_job` writes no profile on the guest; `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
+| `build.bat` | the net sources in SRC; `NETINC`, `NET`, `:net_libs` (ENet, ImGui and miniupnpc built once into `build\net`); `-lws2_32 -lwinmm -ldwmapi -liphlpapi` |
+| `src/main.c` | `netgame_shell_input` in `shell_frame` (the guest's menu presses go to the host); `netgame_game_input` before a game's menus take the pad; `netgame_shell_start` before `shell_enter` from a game; `card_job` writes no profile from the guest's game (its own front end's popup writes); `#include "net.h"`; `--host` / `--join` skipped by the argument loop; `#include "netgame.c"` before `viewer_main`; `netgame_init` after `win_open`; `netgame_frame` after the clock; `netgame_pads` before `play_step`; `netgame_after_step` after it; `netgame_draw` before both `win_swap`s; `net_stop` / `netui_shutdown` at the end; `save_profile` returns on the guest |
 | `build.bat`, `src/main.c` (the lobby) | `src\netlobby.c` in SRC and `-lwinhttp`; `#include "netlobby.h"` and `--lobby <url>` (netlobby_set_url) in the argument loop |
 | `src/render_gl.c` | `netui_wndproc` first in `wnd_proc` (ImGui's input, Insert) |
 | `src/building.c` / `.h` | `building_net_gate` called first by `building_hit`, `building_hit_roof`, `building_set_cell`, `building_destroy` |
-| `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest) |
+| `src/shell.c` / `.h` | `shell_hold_idle` (no attract mode while someone waits online); `ShellAutoView.ms_name` (Monster Select's cards, told to the guest); `#include "netshell.c"` at the end of shell.c and `ShellNetView`, `shell_net_view`, `shell_net_mirror` in shell.h (the guest's front end made the host's) |
 | `src/game.c` / `.h` | `game_net_get` / `game_net_put` at the end (clock and score); `game_net_follow`, `game_net_flow_get` / `_put`, `game_net_push`, `game_net_tap` (the host's flow); the follow gate in `game_update`, the tap in `game_events` |
-| `src/hud.c` / `.h` | `hud_net_tap` in `hud_input_pad` (a results screen's presses), `hud_results_close` |
+| `src/hud.c` / `.h` | `hud_net_tap` in `hud_input_pad` (a results screen's presses and the Pause menu list's), `hud_results_close`, `hud_pause_close` |
 | `src/main.c` (script calls, GE_REVIVE) | the guest's `Monsters::becomeHuman` / `startRespawn` do nothing; its GE_REVIVE removes no person |
 | `src/people.c` / `.h` | `people_net_gate` in `emit`, `people_net_tap` in `people_events`, `people_net_eaten` in `people_eat`; the `people_net_*` section at the end (netrep_people.c) |
 | `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (the guest's slots made the host's, at the host's place where the guest's floor fell first); the guest's `edible_floor_fell` does nothing |
