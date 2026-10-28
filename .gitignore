@@ -48,3 +48,5 @@ steam_appid.txt
 
 # the look as last set in the Insert panel (src/lookfx.c)
 lookfx.cfg
+# agents' worktrees
+.claude/worktrees/
