@@ -936,7 +936,7 @@ static void draw_held(Renderer *r, double t)
 
 /* NET: (online play, port extra) the monster of a player slot nobody plays now (waiting for a player, or kept for one
  * who dropped out: netgame.c sets Instance.net_grey) looks inactive: each of its opaque parts is drawn a second time
- * over itself, black at 90 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
+ * over itself, black at 70 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
  * colour's, the alpha the texture's times it) and the depth equal, so it lies on the part it covers; the frame's
  * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through); then
  * a red outline, pulsing once a second: the part's back faces again as thick lines, so only their edges past the
@@ -958,7 +958,7 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t)
     glDisable(GL_LIGHTING);
     glDisable(GL_FOG);
     glDisableClientState(GL_COLOR_ARRAY);
-    glColor4f(0.0f, 0.0f, 0.0f, 0.90f);
+    glColor4f(0.0f, 0.0f, 0.0f, 0.70f);
     if (tex && p->uv) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, tex);
@@ -969,7 +969,7 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t)
         glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
         glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
         glEnable(GL_ALPHA_TEST);
-        glAlphaFunc(GL_GREATER, 0.45f);              /* (0.9 x the texture's: its cut-outs stay cut) */
+        glAlphaFunc(GL_GREATER, 0.35f);              /* (0.7 x the texture's: its cut-outs stay cut) */
     } else
         glDisable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
