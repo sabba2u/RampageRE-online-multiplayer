@@ -24,6 +24,8 @@ static struct {
     /* the guest */
     uint32_t pad_frame;
     NetPad pads[NET_PAD_REDUNDANCY];                 /* newest first */
+    double pad_at;                                   /* the last sent: at most NET_PAD_RATE a second */
+    uint32_t pad_pending;                            /* presses since then, sent with the next */
     NetSnapBuf snaps;
     /* the host */
     NetPad remote;                                   /* the newest pad, and the presses not yet taken */
@@ -391,8 +393,14 @@ void net_send_pad(const NetPad *p)
 {
     if (g.role != NET_GUEST || g.state != NETS_CONNECTED)
         return;
+    g.pad_pending |= p->pressed;
+    if (g.now - g.pad_at < 1.0 / NET_PAD_RATE)       /* (a fast screen draws more frames than the host needs) */
+        return;
+    g.pad_at = g.now;
     memmove(g.pads + 1, g.pads, sizeof g.pads - sizeof *g.pads);
     g.pads[0] = *p;
+    g.pads[0].pressed = g.pad_pending;
+    g.pad_pending = 0;
     g.pad_frame++;
     int n = g.pad_frame < NET_PAD_REDUNDANCY ? (int)g.pad_frame : NET_PAD_REDUNDANCY;
     uint8_t m[8 + NET_PAD_REDUNDANCY * 24];

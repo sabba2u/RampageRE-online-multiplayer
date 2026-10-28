@@ -134,7 +134,7 @@ static void corner(void)                             /* online, the panel closed
         return;
     ImGuiIO &io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 10, 10), ImGuiCond_Always, ImVec2(1, 0));
-    ImGui::SetNextWindowBgAlpha(0.45f);
+    ImGui::SetNextWindowBgAlpha(0.65f);
     ImGui::Begin("##netcorner", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                  ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
     status_line();

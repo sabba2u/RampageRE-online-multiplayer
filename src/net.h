@@ -18,6 +18,7 @@ enum { NETS_IDLE, NETS_WAITING, NETS_CONNECTING, NETS_HANDSHAKE, NETS_CONNECTED,
 /* a pad on the wire: the sticks, and the buttons MV_UP .. MV_L3 (moves.h) as bits 0 .. 17 */
 typedef struct { float lx, ly, rx, ry; uint32_t pressed, held; } NetPad;
 #define NET_PAD_REDUNDANCY 6                         /* each NM_PAD carries this many frames, newest first */
+#define NET_PAD_RATE 60                              /* NM_PADs a second at most (presses between them kept) */
 
 int net_role(void);
 int net_state(void);                                 /* NETS_* */
