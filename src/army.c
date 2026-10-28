@@ -1497,6 +1497,8 @@ const ArmyStats *army_stats(const Army *a, int monster)
 
 void army_add_stats(Army *a, int monster, Group tmpl, int type)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     ArmyUnit tmp;
     memset(&tmp, 0, sizeof tmp);
     tmp.tmpl = tmpl;
@@ -4095,6 +4097,8 @@ static void unit_take_impact(Army *a, ArmyUnit *u)
 
 void army_impact(Army *a, int unit)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     if (unit >= 0 && unit < a->n)
         unit_take_impact(a, &a->u[unit]);
 }
@@ -4120,6 +4124,8 @@ static void frame_inputs(Army *a, const ArmyMonster *m, int nm, const ArmyBox *b
 
 int army_spawn(Army *a, const char *tmpl_name, const float pos[3], float facing)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return -1;
     Group t = a->host.find ? a->host.find(a->host.ctx, "Objects1_Props", tmpl_name) : (Group){ 0 };
     if (!t.at)
         return -1;
@@ -4143,6 +4149,8 @@ int army_spawn_window(Army *a, const char *tmpl_name, const float pos[3])
 
 void army_window_place(Army *a, int unit, const float pos[3])
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     if (unit < 0 || unit >= a->n || a->u[unit].phase != AU_ALIVE || a->u[unit].kind != AK_WINDOW)
         return;
     memcpy(a->u[unit].pos, pos, sizeof a->u[unit].pos);
@@ -4151,6 +4159,8 @@ void army_window_place(Army *a, int unit, const float pos[3])
 
 void army_window_remove(Army *a, int unit)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     if (unit >= 0 && unit < a->n && a->u[unit].phase == AU_ALIVE && a->u[unit].kind == AK_WINDOW)
         unit_remove(a, &a->u[unit]);
 }
@@ -4188,6 +4198,8 @@ static PersonGun *person_gun(Army *a, int person, int make)
 
 void army_person_forget(Army *a, int person)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     PersonGun *g = person >= 0 ? person_gun(a, person, 0) : NULL;
     if (g)
         memset(g, 0, sizeof *g);
@@ -4195,6 +4207,8 @@ void army_person_forget(Army *a, int person)
 
 void army_person_weapon(Army *a, int person, Group weapon, const float person_world[16], int target_monster)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     const char *name = weapon.at ? group_str(weapon, "WeaponName") : NULL;
     if (person < 0)
         return;
@@ -4222,6 +4236,8 @@ void army_person_weapon(Army *a, int person, Group weapon, const float person_wo
 
 void army_person_moved(Army *a, int person, const float person_world[16], uint32_t tag, float anim_time, float anim_len)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     PersonGun *g = person >= 0 && person_world ? person_gun(a, person, 0) : NULL;
     if (!g)
         return;
@@ -4285,6 +4301,8 @@ int army_events(Army *a, ArmyEvent *out, int max)
     if (out && n > 0)
         memcpy(out, a->ev, (size_t)n * sizeof *out);
     a->nev = 0;
+    if (army_net_events)                             /* NET: the host's are sent, the guest's are the host's */
+        n = army_net_events(a, out, n, max);
     return n;
 }
 
@@ -4297,6 +4315,8 @@ int army_events(Army *a, ArmyEvent *out, int max)
  * OnlyHitWithEffNodes (0x8000, set by its script) and goes on the attack's hit list, one blow an attack */
 int army_hit(Army *a, int monster, const float centre[3], float radius, float amount, unsigned record)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return 0;
     if (monster < 0 || monster >= a->nm)
         return 0;
     int n = 0;
@@ -4429,6 +4449,8 @@ void army_hold_blend(ArmyHoldBlend *b, float rot[9], float pos[3], float dt)
 
 void army_grab(Army *a, int unit, int monster, float blend)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     (void)monster;
     if (unit < 0 || unit >= a->n || a->u[unit].phase != AU_ALIVE)
         return;
@@ -4494,6 +4516,8 @@ void army_hold(Army *a, int unit, const float hand[16], int mirrored, float dt)
  * time in five, 2 s later) and gone, an actor not eaten is smashed; an object gets the clip's velocity */
 void army_throw(Army *a, int unit, int monster, int eat, const float vel[3], float monster_heading)
 {
+    if (army_net_gate && army_net_gate())            /* NET: the guest's army is the host's */
+        return;
     if (unit < 0 || unit >= a->n || a->u[unit].phase != AU_HELD)
         return;
     ArmyUnit *u = &a->u[unit];
@@ -4722,4 +4746,83 @@ int army_mon_weapon_step(ArmyMonWeapon *w, float dt, int weapons_on)
         out |= AMW_BURST;
     }
     return out;
+}
+
+/* ---------------------------------------------------------------- NET: online play (src/netrep_army.c, army.h) */
+
+int (*army_net_gate)(void);
+int (*army_net_events)(Army *a, ArmyEvent *out, int n, int max);
+void (*army_net_window_open)(int building, int storey, int column, int lr, const float rect[4], int opens_h);
+
+ArmyUnit *army_net_slot(Army *a, int slot) { return a && slot >= 0 && slot < a->n ? &a->u[slot] : NULL; }
+
+ArmyUnit *army_net_unit(Army *a, int slot, const char *name, int serial, uint32_t inst_at)
+{
+    if (!a || slot < 0 || slot >= a->cap)
+        return NULL;
+    Group inst = { 0 };                              /* its instance book: the block's spawner's, or the unit's the
+                                                      * block made at its load (the PirateShip), by its offset */
+    for (int i = 0; inst_at && i < a->nsp && !inst.at; i++)
+        if (a->sp[i].g.at == inst_at)
+            inst = a->sp[i].g;
+    for (int i = 0; inst_at && i < a->n && !inst.at; i++)
+        if (a->u[i].inst.at == inst_at)
+            inst = a->u[i].inst;
+    while (a->n <= slot) {                           /* unit_new takes the first gone slot: this one */
+        memset(&a->u[a->n], 0, sizeof a->u[a->n]);
+        a->u[a->n++].phase = AU_GONE;
+    }
+    static int was[MAX_UNITS];
+    for (int i = 0; i < slot; i++) {
+        was[i] = a->u[i].phase;
+        if (was[i] == AU_GONE)
+            a->u[i].phase = AU_ALIVE;
+    }
+    a->u[slot].phase = AU_GONE;
+    Group t = a->host.find && name ? a->host.find(a->host.ctx, "Objects1_Props", name) : (Group){ 0 };
+    int k = unit_new(a, name, t, inst);
+    for (int i = 0; i < slot; i++)
+        a->u[i].phase = was[i];
+    if (k != slot)
+        return NULL;
+    a->u[k].serial = serial;
+    return &a->u[k];
+}
+
+void army_net_count(Army *a, int n)
+{
+    if (!a || n < 0 || n > a->cap)
+        return;
+    for (int i = n; i < a->n; i++)
+        a->u[i].phase = AU_GONE;
+    a->n = n;
+}
+
+void army_net_hold(Army *a, int unit)
+{
+    ArmyUnit *u = army_net_slot(a, unit);
+    if (!u)
+        return;
+    float rot[9];                                    /* (army_grab's, from where it is) */
+    for (int c = 0; c < 3; c++)
+        memcpy(rot + 3 * c, u->world + 4 * c, 3 * sizeof(float));
+    army_hold_blend_start(&u->hold, rot, u->world + 12, 0.1f);
+    u->oflags = (u->oflags | OF_HELD) & ~(uint32_t)(OF_PICKUP | OF_PUSH_OUT);
+}
+
+ArmyShot *army_net_shots(Army *a, int **n, int *cap)
+{
+    *n = &a->nshots;
+    *cap = MAX_SHOTS;
+    return a->shot;
+}
+
+int army_net_interest(const Army *a, int k) { return a && k >= 0 && k < 2 && interest_held(a, k) ? a->interest[k].unit : -1; }
+
+void army_net_set_interest(Army *a, int k, int unit)
+{
+    if (!a || k < 0 || k >= 2)
+        return;
+    a->interest[k].unit = unit >= 0 && unit < a->n ? unit : -1;
+    a->interest[k].serial = unit >= 0 && unit < a->n ? a->u[unit].serial : 0;
 }

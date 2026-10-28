@@ -222,4 +222,13 @@ void boss_collide_add(Boss *b, CollideWorld *w);
  * 0x335BF0 fires its FireFunc at the next boss_update, its MinRefireTime permitting */
 void boss_trigger_touch(Boss *b, int trigger, int monster, const float normal[3]);
 
+/* ---- NET: online play (src/netrep_army.c), as army.h's: nonzero (the guest), boss_hit, boss_trigger_touch and
+ * boss_spawn make nothing; boss_events' last word; the guest's part to write (NULL past the count), slot made the
+ * host's part (obj_new's start, no script), and the count, the boss and whether it is beaten */
+extern int (*boss_net_gate)(void);
+extern int (*boss_net_events)(Boss *b, BossEvent *out, int n, int max);
+BossPart *boss_net_slot(Boss *b, int slot);
+BossPart *boss_net_part(Boss *b, int slot, const char *name, const float pos[3]);
+void boss_net_state(Boss *b, int n, int main, int defeated);
+
 #endif

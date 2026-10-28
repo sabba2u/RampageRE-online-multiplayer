@@ -1823,6 +1823,8 @@ void scene_people_spawn(Scene *s, float dt)
         float at[3] = { b->min[0] + CELL * (float)ws->column + (ol[0] + ol[2]) / 2, b->min[1],
                         b->min[2] + GROUND_FLOOR + STOREY * (float)ls + ol[1] };
         if (ws->military) {
+            if (army_net_gate && army_net_gate())    /* NET: the guest's window soldiers are the host's */
+                return;
             float bottom, height;
             building_storey(b, ls, &bottom, &height);
             ws->unit = army_spawn_window(s->army, s->military[ws->occupant], at);
@@ -1842,6 +1844,8 @@ void scene_people_spawn(Scene *s, float dt)
         }
         /* and its window opens over 0.5 s (0x318B04: openWindow(storey, column, LRPos, 1, 0.5)) */
         building_window_open(&sb->b, ws->storey, ws->column, ws->lr, 1, 0.5f, ol, sb->opens_h[tile][ws->lr]);
+        if (ws->military && army_net_window_open)    /* NET: the guest's opens with it */
+            army_net_window_open(ws->building, ws->storey, ws->column, ws->lr, ol, sb->opens_h[tile][ws->lr]);
         return;
     }
 }
