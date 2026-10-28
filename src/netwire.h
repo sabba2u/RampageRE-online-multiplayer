@@ -21,6 +21,9 @@ enum NetMsg {
     NM_WORLD,        /* host -> guest, reliable, on change: the world id the host now plays (a new block) */
     NM_DIGEST,       /* guest -> host, reliable, every 2 s: the guest's fingerprint of the world */
     NM_EVENT,        /* host -> guest, reliable: one-off things (results, a monster defeated) */
+    NM_PUPPET,       /* host -> guest, unreliable, each channel's rate: a system's units (netgame.c NGP_*) */
+    NM_PEVENT,       /* host -> guest, reliable, in order: a system's effects and sounds, played at their host time */
+    NM_MENU,         /* both ways, reliable: the menus' input (netrep_menu.c) */
 };
 
 #define NET_PROTO 1

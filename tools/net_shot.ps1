@@ -14,7 +14,9 @@ public static class NetShotW {
 }
 "@
 $root = Split-Path $PSScriptRoot -Parent
-$procs = Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object StartTime
+$exe = Join-Path $root "rampage.exe"
+$procs = Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.Path -eq $exe } |
+    Sort-Object StartTime   # this folder's copies only
 if (-not $procs) { throw "no rampage.exe window" }
 $imgs = foreach ($p in $procs) {
     $r = New-Object NetShotW+RECT

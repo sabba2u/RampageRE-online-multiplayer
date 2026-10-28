@@ -28,6 +28,9 @@ const char *net_peer_text(void);                     /* "127.0.0.1:27960" */
 
 void net_start_host(int port);
 void net_start_join(const char *addr);               /* "ip" or "ip:port" */
+void net_start_host_steam(void);                     /* a friends-only Steam lobby; invite from the panel */
+void net_start_join_steam(uint64_t lobby);
+int net_is_steam(void);
 void net_stop(void);
 void net_update(double now);                         /* once a frame: the connection, the messages */
 double net_now(void);                                /* the clock net_update was given */

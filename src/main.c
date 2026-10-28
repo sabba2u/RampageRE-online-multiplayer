@@ -55,6 +55,9 @@
 #include "wrand.h"
 #include "autoplay.h"
 #include "net.h"                                 /* NET: online play (net.h, netgame.c) */
+/* NET: the guest of an online game: its monsters' own grabs, throws and hits on the world are not made (the host's
+ * arrive: netgame.c) */
+static int net_guest_world(void) { return net_role() == NET_GUEST && net_live(); }
 #ifdef __ANDROID__
 #include "touch.h"                               /* the on-screen pad, player 1's pad slot */
 #endif
@@ -2496,6 +2499,10 @@ static void clip_event(Mon *mo, const MoveEvent *e)
         }
         return;
     }
+    else if (net_guest_world() && (!strcmp(n, "Monsters::doGrabPerson") || !strcmp(n, "Monsters::doGrabObject") ||
+             !strcmp(n, "Monsters::grabBoulder") || !strcmp(n, "Monsters::throwObject") ||
+             strstr(n, "::doGrabPowerup") || strstr(n, "::destroyPowerup") || strstr(n, "::checkForHazard")))
+        return;                                      /* NET: the guest's monster holds what the host's holds */
     else if (!strcmp(n, "Monsters::doGrabPerson")) { /* grabBuildingOccupant(loc, 1) (0x2B3350): 0.25 s blend */
         int free = mo->held < 0 && mo->held_unit < 0, who = free ? window_person(mo, e->p + 1) : -1;
         if (who >= 0) {
@@ -3094,6 +3101,8 @@ static void hit_spheres(Mon *mo)
             c[r] = bm[r] * l[0] + bm[4 + r] * l[1] + bm[8 + r] * l[2] + bm[12 + r];
         c[3] = sh->radius;
         scene_adornments_hit(&v->scene, c, c[3]);    /* 0x2D4390: it knocks adornments off */
+        if (net_guest_world())                       /* NET: the host's hits only */
+            continue;
         if (v->army)                                 /* and the army's units: the attack's damage, once an attack */
             army_hit(v->army, mo->slot, c, c[3], atk->damage, atk->seq);
         if (v->veh)                                  /* and the vehicles and rockets */
@@ -3288,6 +3297,8 @@ static void roar_burst(Viewer *v, Mon *mo, const ArmyMonWeapon *w, const float c
         building_script(v, sb, amount);
     }
     unsigned rec = ++mo->atk_seq;                    /* the rest: TakeDamage(monster, amount, type 0, the way) */
+    if (net_guest_world())                           /* NET: the host's hits only */
+        return;
     if (v->army)
         hit += army_hit(v->army, mo->slot, c, r, amount, rec);
     if (v->veh)
@@ -8584,6 +8595,8 @@ static int viewer_main(int argc, char **argv)
         else if (strcmp(argv[i], "--host") == 0) {   /* NET: online play (netgame_init reads them) */
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') i++;
         } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
+        else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
+        else if (strcmp(argv[i], "--steam-host") == 0) { }
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
         else if (strcmp(argv[i], "--ap-log") == 0 && i + 1 < argc) ap_log = argv[++i];
         else if (strcmp(argv[i], "--ap-shots") == 0 && i + 1 < argc) ap_shots = argv[++i];

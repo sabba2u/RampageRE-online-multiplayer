@@ -2,6 +2,7 @@
 #include "netui.h"
 #include "net.h"
 #include "netwire.h"
+#include "nettransport.h"
 #ifdef _WIN32
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -102,9 +103,26 @@ static void panel(void)
             net_start_join(g_addr);
         ImGui::SameLine();
         ImGui::TextColored(OFF, "the host's address");
+        ImGui::Separator();
+        if (nts_available()) {
+            ImGui::Text("Steam: %s", nts_name());
+            if (ImGui::Button("Host on Steam"))
+                net_start_host_steam();
+            ImGui::SameLine();
+            ImGui::TextColored(OFF, "then invite a friend; they join from the invite");
+        } else if (ImGui::Button("Use Steam")) {
+            if (nts_start() != 0)
+                net_log("%s", nts_why());
+        }
     } else {
         if (role == NET_GUEST)
             ImGui::Text("Host: %s", net_peer_text());
+        if (role == NET_HOST && net_is_steam()) {
+            if (nts_lobby() && ImGui::Button("Invite a friend (Steam)"))
+                nts_invite();
+            else if (!nts_lobby())
+                ImGui::TextColored(OFF, "Making the Steam lobby...");
+        }
         NetStats s = net_stats();
         ImGui::Text("Ping: %d ms", s.ping_ms);
         ImGui::Text("Updates: %.0f a second, %d bytes each", s.snaps_per_s, s.snap_bytes);

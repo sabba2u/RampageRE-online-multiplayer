@@ -1,4 +1,4 @@
-/* nettransport.c - one ENet connection, host or guest (nettransport.h) */
+/* nettransport.c - one connection, host or guest (nettransport.h): ENet (IP) here, Steam in netsteam.c */
 #include "nettransport.h"
 #include <enet/enet.h>
 #include <stdlib.h>
@@ -34,9 +34,11 @@ static int lib_init(void)
     return 0;
 }
 
-int nt_host(int port)
+static void nte_close(void);
+
+static int nte_host(int port)
 {
-    nt_close();
+    nte_close();
     if (lib_init())
         return -1;
     ENetAddress a;
@@ -46,9 +48,9 @@ int nt_host(int port)
     return g_host ? 0 : -1;
 }
 
-int nt_join(const char *ip, int port)
+static int nte_join(const char *ip, int port)
 {
-    nt_close();
+    nte_close();
     if (lib_init())
         return -1;
     g_host = enet_host_create(NULL, 1, 2, 0, 0);
@@ -62,7 +64,7 @@ int nt_join(const char *ip, int port)
     return g_peer ? 0 : -1;
 }
 
-void nt_close(void)
+static void nte_close(void)
 {
     if (g_last) {
         enet_packet_destroy(g_last);
@@ -97,7 +99,7 @@ static int send_now(int reliable, const void *data, int len)
     return enet_peer_send(g_peer, reliable ? 0 : 1, p);
 }
 
-int nt_send(int reliable, const void *data, int len)
+static int nte_send(int reliable, const void *data, int len)
 {
     if (g_lag_ms <= 0)
         return send_now(reliable, data, len);
@@ -114,7 +116,7 @@ int nt_send(int reliable, const void *data, int len)
     return 0;
 }
 
-int nt_poll(NtEvent *ev, double now)
+static int nte_poll(NtEvent *ev, double now)
 {
     g_now = now;
     ev->type = NT_NONE;
@@ -166,8 +168,47 @@ int nt_poll(NtEvent *ev, double now)
     return 0;
 }
 
-void nt_flush(void) { if (g_host) enet_host_flush(g_host); }
-int nt_connected(void) { return g_peer && g_peer->state == ENET_PEER_STATE_CONNECTED; }
-int nt_rtt_ms(void) { return g_peer ? (int)g_peer->roundTripTime : 0; }
-unsigned nt_bytes_out(void) { return g_out; }
-unsigned nt_bytes_in(void) { return g_in; }
+static void nte_flush(void) { if (g_host) enet_host_flush(g_host); }
+static int nte_connected(void) { return g_peer && g_peer->state == ENET_PEER_STATE_CONNECTED; }
+static int nte_rtt_ms(void) { return g_peer ? (int)g_peer->roundTripTime : 0; }
+static unsigned nte_bytes_out(void) { return g_out; }
+static unsigned nte_bytes_in(void) { return g_in; }
+
+/* ---- the back end in use: ENet (an address) or Steam (a lobby) */
+static int g_steam;
+
+int nt_host(int port) { nt_close(); g_steam = 0; return nte_host(port); }
+int nt_join(const char *ip, int port) { nt_close(); g_steam = 0; return nte_join(ip, port); }
+int nt_host_steam(void) { nt_close(); g_steam = 1; return nts_host(); }
+int nt_join_steam(uint64_t lobby) { nt_close(); g_steam = 1; return nts_join_lobby(lobby); }
+int nt_is_steam(void) { return g_steam; }
+void nt_close(void) { nte_close(); nts_close(); }
+int nt_send(int reliable, const void *data, int len)
+{
+    if (!g_steam)
+        return nte_send(reliable, data, len);
+    if (g_lag_ms <= 0)
+        return nts_send(reliable, data, len);
+    return nte_send(reliable, data, len);            /* (the lag's queue: held, then sent by nt_poll's) */
+}
+int nt_poll(NtEvent *ev, double now)
+{
+    if (!g_steam)
+        return nte_poll(ev, now);
+    g_now = now;
+    while (g_held && g_held->due <= now) {           /* RAMPAGE_NET_LAG on Steam too */
+        Held *h = g_held;
+        g_held = h->next;
+        if (!g_held)
+            g_held_tail = &g_held;
+        if (h->reliable || g_loss <= 0 || rand() % 100 >= g_loss)
+            nts_send(h->reliable, h->data, h->len);
+        free(h);
+    }
+    return nts_poll(ev, now);
+}
+void nt_flush(void) { if (!g_steam) nte_flush(); }
+int nt_connected(void) { return g_steam ? nts_connected() : nte_connected(); }
+int nt_rtt_ms(void) { return g_steam ? 0 : nte_rtt_ms(); }
+unsigned nt_bytes_out(void) { return g_steam ? nts_bytes_out() : nte_bytes_out(); }
+unsigned nt_bytes_in(void) { return g_steam ? nts_bytes_in() : nte_bytes_in(); }

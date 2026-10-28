@@ -179,6 +179,34 @@ void net_start_host(int port)
     net_log("hosting on port %d", port ? port : NET_PORT);
 }
 
+void net_start_host_steam(void)
+{
+    net_stop();
+    g.role = NET_HOST;
+    if (nt_host_steam() != 0) {
+        g.state = NETS_FAILED;
+        snprintf(g.reject, sizeof g.reject, "%s", nts_why());
+        return;
+    }
+    snprintf(g.peer, sizeof g.peer, "Steam");
+    g.state = NETS_WAITING;
+}
+
+void net_start_join_steam(uint64_t lobby)
+{
+    net_stop();
+    g.role = NET_GUEST;
+    snprintf(g.peer, sizeof g.peer, "Steam lobby %llu", (unsigned long long)lobby);
+    if (nt_join_steam(lobby) != 0) {
+        g.state = NETS_FAILED;
+        snprintf(g.reject, sizeof g.reject, "%s", nts_why());
+        return;
+    }
+    g.state = NETS_CONNECTING;
+}
+
+int net_is_steam(void) { return nt_is_steam(); }
+
 void net_start_join(const char *addr)
 {
     net_stop();
@@ -341,8 +369,17 @@ static void on_data(const uint8_t *data, int len)
 void net_update(double now)
 {
     g.now = now;
-    if (g.role == NET_OFF)
+    uint64_t lobby = nts_take_pending();             /* a Steam invite taken, Join Game, +connect_lobby */
+    if (lobby)
+        net_start_join_steam(lobby);
+    if (g.role == NET_OFF) {
+        if (nts_available()) {                       /* (invites are heard while offline too) */
+            NtEvent e;
+            while (nts_poll(&e, now))
+                ;
+        }
         return;
+    }
     NtEvent e;
     while (nt_poll(&e, now)) {
         if (e.type == NT_CONNECT) {

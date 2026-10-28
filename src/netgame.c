@@ -15,6 +15,7 @@
 #include "net.h"
 #include "netui.h"
 #include "netwire.h"
+#include "nettransport.h"
 
 #define NG_SNAP_EVERY 0.05                           /* 20 snapshots a second */
 #define NG_DIGEST_EVERY 2.0
@@ -89,6 +90,8 @@ static uint32_t ng_world_id(const NgWorld *w)
     return h ? h : 1;
 }
 
+static void ng_puppets_reset(Viewer *v);
+
 static void ng_set_world(Viewer *v)
 {
     NgWorld w;
@@ -98,7 +101,14 @@ static void ng_set_world(Viewer *v)
     }
     if (net_role() == NET_HOST)
         w.bot_seed = v->bot_seed;
-    net_set_world(ng_world_id(&w), &w, (int)sizeof w);
+    uint32_t id = ng_world_id(&w);
+    static uint32_t was_id;
+    static int was_block = -1;
+    if (id != was_id || v->block != was_block)       /* a new world or block: the puppets start again */
+        ng_puppets_reset(v);
+    was_id = id;
+    was_block = v->block;
+    net_set_world(id, &w, (int)sizeof w);
 }
 
 /* the guest: the host's world loaded as the viewer's start would (--players, a city and block) */
@@ -216,7 +226,9 @@ static void ng_on_building(Viewer *v, NetBuf *b)
     ng_replaying = 0;
 }
 
-/* ---- the messages netgame.c reads itself */
+/* ---- the messages netgame.c reads itself (the puppets' and the menus' below) */
+static void ng_on_puppet(NetBuf *b, int type);
+static void ngr_menu_message(Viewer *v, NetBuf *b);
 static void ng_handler(const uint8_t *data, int len)
 {
     if (!g_ngv)
@@ -225,6 +237,10 @@ static void ng_handler(const uint8_t *data, int len)
     int type = (int)net_r_u8(&b);
     if (type == NM_BUILDING && net_role() == NET_GUEST && net_live())
         ng_on_building(g_ngv, &b);
+    else if ((type == NM_PUPPET || type == NM_PEVENT) && net_role() == NET_GUEST && net_live())
+        ng_on_puppet(&b, type);
+    else if (type == NM_MENU)
+        ngr_menu_message(g_ngv, &b);
 }
 
 /* ---- the digest: what both must agree on (buildings, game state, block) */
@@ -255,7 +271,22 @@ typedef struct {
     float pos[3], heading, vel[3], time, hp, energy;
     int16_t state;
     uint8_t mode, mirror, defeated, rage;
+    int16_t held[6];                                 /* person, unit, vehicle, parade, rail, street object (-1 none) */
 } NgMon;
+
+/* what a monster holds, and the puppet channel that must be live on the guest for the index to mean the same */
+static int *ng_held_field(Mon *mo, int i)
+{
+    switch (i) {
+    case 0: return &mo->held;
+    case 1: return &mo->held_unit;
+    case 2: return &mo->held_vehicle;
+    case 3: return &mo->held_parade;
+    case 4: return &mo->held_rail;
+    default: return &mo->held_sobj;
+    }
+}
+enum { NG_HELD_PEOPLE, NG_HELD_ARMY, NG_HELD_VEHICLES, NG_HELD_PARADE, NG_HELD_RAIL, NG_HELD_STREET };
 
 static void ng_send_snap(Viewer *v)
 {
@@ -270,6 +301,8 @@ static void ng_send_snap(Viewer *v)
         net_w_u16(&b, (uint32_t)(mo->have_graph ? mo->run.state : 0));
         net_w_u8(&b, (uint32_t)mo->mode); net_w_u8(&b, (uint32_t)mo->mirror);
         net_w_u8(&b, (uint32_t)mo->defeated); net_w_u8(&b, (uint32_t)mo->power.rage);
+        for (int i = 0; i < 6; i++)
+            net_w_u16(&b, (uint32_t)(uint16_t)*ng_held_field((Mon *)mo, i));
     }
     for (int k = 0; k < 2; k++) {                    /* both players' pads (the guest's monsters animate by them) */
         NetPad p;
@@ -313,6 +346,8 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
         m->state = (int16_t)net_r_u16(&b);
         m->mode = (uint8_t)net_r_u8(&b); m->mirror = (uint8_t)net_r_u8(&b);
         m->defeated = (uint8_t)net_r_u8(&b); m->rage = (uint8_t)net_r_u8(&b);
+        for (int i = 0; i < 6; i++)
+            m->held[i] = (int16_t)net_r_u16(&b);
     }
     for (int k = 0; k < 2; k++) {
         NetPad *p = &o->pad[k];
@@ -339,6 +374,9 @@ static float ng_lerp_angle(float a, float b, float t)   /* degrees, the short wa
     float d = fmodf(b - a + 540.0f, 360.0f) - 180.0f;
     return a + d * t;
 }
+
+/* the guest: is that held kind's system a puppet yet (its indices the host's)? */
+static int ng_held_live(int i);
 
 static NgSnap ng_last;                               /* the newest the guest read (its pads, its flow) */
 static int ng_have_last;
@@ -384,6 +422,9 @@ static void ng_apply_snap(Viewer *v)
         mo->hp = hi->hp;
         mo->power.energy = hi->energy;
         mo->power.rage = hi->rage;
+        for (int i = 0; i < 6; i++)                  /* what it holds, once that system is a puppet here */
+            if (ng_held_live(i))
+                *ng_held_field(mo, i) = hi->held[i];
     }
     const NetSnapSample *n = netsnap_newest(net_snaps());
     ng_have_last = n && ng_read_snap(n, &ng_last);
@@ -401,6 +442,158 @@ static void ng_apply_snap(Viewer *v)
     }
 }
 
+/* ---- puppets: the systems the host runs and the guest only shows (netrep_*.c fill them in). Each channel has its
+ * snapshots (NM_PUPPET, unreliable, at its rate, into its own buffer and so shown NET_SNAP_DELAY behind as the
+ * monsters are) and its events (NM_PEVENT, reliable and in order: effects, sounds, spawns, played on the guest when its
+ * shown time reaches the host time they were sent at). The guest's own system makes no decisions: its step in main.c
+ * asks net_guest_world() and leaves its logic out. */
+enum { NGP_VEHICLES, NGP_STREET, NGP_RAIL, NGP_PARADE, NGP_ARMY, NGP_BOSS, NGP_PEOPLE, NGP_EDIBLES, NGP_N };
+typedef struct {
+    const char *name;
+    float rate;                                      /* snapshots a second (0: events only) */
+    int (*write)(Viewer *v, NetBuf *b);              /* host: the system's state into b; 0 nothing to send */
+    /* guest, every frame after the step: how 2 between a and b by alpha (0 .. 1), how 1 b alone (the newest, alpha
+     * the seconds past it, at most NET_SNAP_EXTRAP) */
+    void (*apply)(Viewer *v, const NetSnapSample *a, const NetSnapSample *b, float alpha, int how);
+    void (*event)(Viewer *v, NetBuf *b);             /* guest: one of the host's events (the bytes after its header) */
+    void (*reset)(Viewer *v);                        /* both: a new world or block began */
+} NgPuppet;
+
+static NgPuppet ng_pup[NGP_N];
+static NetSnapBuf ng_pup_snaps[NGP_N];
+static double ng_pup_at[NGP_N];
+
+static int ng_guest(void) { return net_role() == NET_GUEST && net_live(); }
+static int ng_host(void) { return net_role() == NET_HOST && net_live(); }
+
+/* the host: an event of channel ch, now (reliable, in order with every other channel's) */
+static void ng_event(int ch, const void *data, int len)
+{
+    if (!ng_host() || len < 0 || len > 4000)
+        return;
+    uint8_t m[4096 + 16];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_PEVENT);
+    net_w_u8(&b, (uint32_t)ch);
+    net_w_f64(&b, net_now());
+    net_w_bytes(&b, data, len);
+    if (!b.err)
+        net_send_msg(1, m, b.len);
+}
+
+/* the guest's queue of events not yet due */
+typedef struct NgQueued { struct NgQueued *next; double t; int ch, len; uint8_t data[]; } NgQueued;
+static NgQueued *ng_queue, **ng_queue_tail = &ng_queue;
+
+static void ng_queue_clear(void)
+{
+    while (ng_queue) {
+        NgQueued *q = ng_queue;
+        ng_queue = q->next;
+        free(q);
+    }
+    ng_queue_tail = &ng_queue;
+}
+
+static void ng_queue_push(int ch, double t, const uint8_t *data, int len)
+{
+    NgQueued *q = malloc(sizeof *q + (size_t)len);
+    if (!q)
+        return;
+    q->next = NULL;
+    q->t = t;
+    q->ch = ch;
+    q->len = len;
+    memcpy(q->data, data, (size_t)len);
+    *ng_queue_tail = q;
+    ng_queue_tail = &q->next;
+}
+
+static void ng_queue_run(Viewer *v)                  /* the events whose host time is shown now */
+{
+    const NetSnapBuf *mb = net_snaps();
+    double shown = mb->have_offset ? net_now() - mb->offset - NET_SNAP_DELAY : 1e30;
+    while (ng_queue && ng_queue->t <= shown) {
+        NgQueued *q = ng_queue;
+        ng_queue = q->next;
+        if (!ng_queue)
+            ng_queue_tail = &ng_queue;
+        if (q->ch >= 0 && q->ch < NGP_N && ng_pup[q->ch].event) {
+            NetBuf b = netbuf(q->data, q->len);
+            ng_pup[q->ch].event(v, &b);
+        }
+        free(q);
+    }
+}
+
+static void ng_puppets_reset(Viewer *v)
+{
+    ng_queue_clear();
+    for (int c = 0; c < NGP_N; c++) {
+        netsnap_clear(&ng_pup_snaps[c]);
+        ng_pup_at[c] = 0;
+        if (ng_pup[c].reset)
+            ng_pup[c].reset(v);
+    }
+}
+
+static void ng_puppets_send(Viewer *v)
+{
+    static uint8_t m[NET_SNAP_MAX];
+    for (int c = 0; c < NGP_N; c++) {
+        if (!ng_pup[c].write || ng_pup[c].rate <= 0 || net_now() - ng_pup_at[c] < 1.0 / ng_pup[c].rate)
+            continue;
+        ng_pup_at[c] = net_now();
+        NetBuf b = netbuf(m, sizeof m);
+        net_w_u8(&b, NM_PUPPET);
+        net_w_u8(&b, (uint32_t)c);
+        net_w_f64(&b, net_now());
+        int hdr = b.len;
+        if (ng_pup[c].write(v, &b) && !b.err && b.len > hdr)
+            net_send_msg(0, m, b.len);
+        else if (b.err)
+            net_log("%s: snapshot too big (over %d bytes)", ng_pup[c].name, NET_SNAP_MAX);
+    }
+}
+
+static void ng_puppets_apply(Viewer *v)
+{
+    ng_queue_run(v);
+    for (int c = 0; c < NGP_N; c++) {
+        if (!ng_pup[c].apply)
+            continue;
+        const NetSnapSample *a, *b;
+        float alpha;
+        int how = netsnap_sample(&ng_pup_snaps[c], net_now(), NET_SNAP_DELAY, &a, &b, &alpha);
+        if (how)
+            ng_pup[c].apply(v, a, b, alpha, how);
+    }
+}
+
+static void ng_on_puppet(NetBuf *b, int type)
+{
+    int ch = (int)net_r_u8(b);
+    double t = net_r_f64(b);
+    if (b->err || ch < 0 || ch >= NGP_N)
+        return;
+    if (type == NM_PUPPET)
+        netsnap_push(&ng_pup_snaps[ch], t, net_now(), b->p + b->len, b->cap - b->len);
+    else
+        ng_queue_push(ch, t, b->p + b->len, b->cap - b->len);
+}
+
+static int ng_held_live(int i)
+{
+    static const int CH[6] = { NGP_PEOPLE, NGP_ARMY, NGP_VEHICLES, NGP_PARADE, NGP_RAIL, NGP_STREET };
+    return i >= 0 && i < 6 && (ng_pup[CH[i]].apply || ng_pup[CH[i]].event);
+}
+
+/* each system's side, one file each */
+#include "netrep_traffic.c"                          /* vehicles, street objects, rail, parade */
+#include "netrep_army.c"                             /* the army and the bosses */
+#include "netrep_people.c"                           /* people and edibles */
+#include "netrep_menu.c"                             /* the menus online */
+
 /* ---- the hooks main.c calls */
 
 /* at the start: --host [port], --join ip[:port]; the panel's window */
@@ -408,12 +601,28 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 {
     g_ngv = v;
     net_set_handler(ng_handler);
+    ngr_traffic_init();
+    ngr_army_init();
+    ngr_people_init();
+    ngr_menu_init();
+    nts_command_line(argc, argv);                    /* +connect_lobby <id>: started by a Steam invite */
+    FILE *appid = fopen("steam_appid.txt", "rb");    /* (Steam opted in: steam_appid.txt beside the game, or an
+                                                      * invite; else the panel's Use Steam) */
+    int lobby = 0;
+    for (int i = 1; i < argc; i++)
+        lobby |= !strcmp(argv[i], "+connect_lobby");
+    if (appid || lobby)
+        nts_start();
+    if (appid)
+        fclose(appid);
     building_net_gate = ng_building_gate;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--host"))
             net_start_host(i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9' ? atoi(argv[++i]) : NET_PORT);
         else if (!strcmp(argv[i], "--join") && i + 1 < argc)
             net_start_join(argv[++i]);
+        else if (!strcmp(argv[i], "--steam-host"))
+            net_start_host_steam();
     }
     if (!hidden && netui_init(hwnd) != 0)
         printf("net: the panel (Dear ImGui) did not start\n");
@@ -495,8 +704,11 @@ static void netgame_after_step(Viewer *v)
             ng_send_snap(v);
             net_keep_digest(net_now(), ng_digest(v));
         }
-    } else
+        ng_puppets_send(v);
+    } else {
         ng_apply_snap(v);
+        ng_puppets_apply(v);
+    }
 }
 
 /* just before the swap: the panel */

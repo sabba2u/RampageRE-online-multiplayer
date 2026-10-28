@@ -5,7 +5,7 @@
 #ifndef RAMPAGE_NETSNAP_H
 #define RAMPAGE_NETSNAP_H
 
-#define NET_SNAP_MAX 1024                            /* a sample's bytes */
+#define NET_SNAP_MAX 16384                           /* a sample's bytes */
 #define NET_SNAP_N 32                                /* samples kept */
 #define NET_SNAP_DELAY 0.1                           /* seconds behind the host */
 #define NET_SNAP_EXTRAP 0.15                         /* seconds past the newest sample at most */
