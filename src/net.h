@@ -27,10 +27,13 @@ const char *net_state_text(void);
 const char *net_peer_text(void);                     /* "127.0.0.1:27960" */
 
 void net_start_host(int port);
-void net_start_join(const char *addr);               /* "ip" or "ip:port" */
+void net_start_join(const char *addr);               /* "ip" or "ip:port"; a lobby's join code or rampage://join/
+                                                      * link too (netlobby.h: the code asked of the lobby first) */
 void net_start_host_steam(void);                     /* a friends-only Steam lobby; invite from the panel */
 void net_start_join_steam(uint64_t lobby);
 int net_is_steam(void);
+int net_port(void);                                  /* the host's ENet port (0 not hosting over ENet) */
+uint32_t net_build_id(void);                         /* this build's id: the hello's, the lobby's (netlobby.c) */
 void net_stop(void);
 void net_update(double now);                         /* once a frame: the connection, the messages */
 double net_now(void);                                /* the clock net_update was given */

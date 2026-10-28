@@ -4,6 +4,7 @@
 #include "netwire.h"
 #include "nettransport.h"
 #include "lookfx.h"
+#include "netlobby.h"
 #ifdef _WIN32
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -109,6 +110,113 @@ static void status_line(void)
     ImGui::TextColored(c, "%s", net_state_text());
 }
 
+/* ---- the lobby (netlobby.h): the list of games online, join codes, the host's listing ---- */
+static char g_code[8];
+
+static void lobby_join_code(void)                    /* offline: a join code from the lobby, said or pasted */
+{
+    ImGui::SetNextItemWidth(200);
+    bool go = ImGui::InputTextWithHint("##code", "K7PQ2", g_code, sizeof g_code,
+                                       ImGuiInputTextFlags_CharsUppercase | ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    go |= ImGui::Button("Join code");
+    ImGui::SameLine();
+    ImGui::TextColored(OFF, "a code from the lobby");
+    if (go && g_code[0])
+        net_start_join(g_code);                      /* (net.c hands a code to the lobby, then joins its address) */
+}
+
+static void lobby_section(void)
+{
+    int role = net_role();
+    if (role == NET_HOST && !net_is_steam()) {       /* the host's listing: its code to pass on */
+        ImGui::Separator();
+        const char *code = netlobby_my_code();
+        if (code[0]) {
+            ImGui::TextColored(ON, "Listed in the lobby. Join code:");
+            ImGui::SameLine();
+            if (g_bold)
+                ImGui::PushFont(g_bold);
+            ImGui::TextColored(ON, "%s", code);
+            if (g_bold)
+                ImGui::PopFont();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy"))
+                ImGui::SetClipboardText(code);
+        } else
+            ImGui::TextColored(OFF, "%s", !netlobby_listing() ? "Not listed in the lobby"
+                               : netlobby_host_status()[0] ? netlobby_host_status() : "Listing the game...");
+        bool list = netlobby_listing() != 0;
+        if (ImGui::Checkbox("List my game in the lobby", &list))
+            netlobby_set_listing(list);
+    }
+    if (!ImGui::CollapsingHeader("Games online", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    static char url[256], name[32];
+    static int have;
+    if (!have) {                                     /* (the fields start from the settings, once) */
+        snprintf(url, sizeof url, "%s", netlobby_url());
+        snprintf(name, sizeof name, "%s", netlobby_name());
+        have = 1;
+    }
+    ImGui::SetNextItemWidth(230);
+    ImGui::InputText("Lobby", url, sizeof url);
+    if (ImGui::IsItemDeactivatedAfterEdit())
+        netlobby_set_url(url, 1);
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh"))
+        netlobby_refresh();
+    ImGui::SetNextItemWidth(230);
+    ImGui::InputText("Your name", name, sizeof name);
+    if (ImGui::IsItemDeactivatedAfterEdit())
+        netlobby_set_name(name);
+    if (role != NET_OFF && net_state() != NETS_FAILED)
+        return;                                      /* (online already: the list would only tempt) */
+    netlobby_browse();                               /* shown: kept fresh, every 5 s */
+    const char *st = netlobby_list_status();
+    ImGui::TextColored(strstr(st, "not") || strstr(st, "No ") ? BAD : OFF, "%s", st[0] ? st : "Asking the lobby...");
+    if (!netlobby_count())
+        return;
+    if (ImGui::BeginTable("games", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Host");
+        ImGui::TableSetupColumn("Monster");
+        ImGui::TableSetupColumn("City");
+        ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableHeadersRow();
+        for (int i = 0; i < netlobby_count(); i++) {
+            const NetLobbyGame *g = netlobby_game(i);
+            int same = netlobby_same_build(g), full = g->players >= g->max, none = !strcmp(g->join, "-");
+            const char *why = !same ? "Another build of RampageRE: both players need the same one"
+                              : full ? "Full: it has its two players" : none ? "The lobby has no address for it" : NULL;
+            ImGui::PushID(i);
+            ImGui::TableNextRow();
+            if (why)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(g->name);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Code %s, %s%s%s", g->code, g->join, why ? "\n" : "", why ? why : "");
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(g->monster[0] ? g->monster : "-");
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(g->city[0] ? g->city : "in the menus");
+            ImGui::TableNextColumn();
+            ImGui::Text("%d / %d", g->players, g->max);
+            ImGui::TableNextColumn();
+            if (why) {
+                ImGui::PopStyleColor();
+                ImGui::TextDisabled("%s", !same ? "other build" : full ? "full" : "no address");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", why);
+            } else if (ImGui::SmallButton("Join"))
+                net_start_join(g->join);             /* as typing the address and Join would */
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+}
+
 static void panel(void)
 {
     ImGui::SetNextWindowPos(ImVec2(20, 20), ImGuiCond_FirstUseEver);
@@ -139,6 +247,7 @@ static void panel(void)
             net_start_join(g_addr);
         ImGui::SameLine();
         ImGui::TextColored(OFF, "the host's address");
+        lobby_join_code();
         ImGui::Separator();
         if (nts_available()) {
             ImGui::Text("Steam: %s", nts_name());
@@ -210,6 +319,7 @@ static void panel(void)
         if (ImGui::Button("Leave"))
             net_stop();
     }
+    lobby_section();
     ImGui::Separator();
     if (ImGui::CollapsingHeader("Camera and look")) {   /* lookfx.c: kept in lookfx.cfg as each slider is let go */
         LookFx *fx = lookfx();

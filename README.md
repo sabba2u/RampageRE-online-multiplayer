@@ -28,6 +28,25 @@ host. Each player needs their own copy of the game disc and the same build of th
 Command line, for testing: `rampage.exe Chicago 1 --players 2 --host` on one PC and `rampage.exe --join <ip>` on the
 other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
+### Finding games: the lobby
+
+Instead of passing an IP address around, run the **lobby** (`lobby/`, a small Node server) and the guest picks the game
+from a list. The lobby only lists games and hands out addresses; the game itself still goes straight from guest to host.
+
+- **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `lobby\start.bat`.
+  The host's game lists itself with `http://localhost:19980` by default. Guests set the panel's **Lobby** field to
+  `http://<host's address>:19980` (TCP 19980 must be reachable too, next to UDP 27960).
+- **On a VPS** (always on, for everyone): `lobby/start.sh` there (or as a service), open TCP 19980, and every player
+  sets **Lobby** to `http://<vps>:19980` (or starts the game with `--lobby http://<vps>:19980`, or sets `RAMPAGE_LOBBY`).
+- **Host:** host as usual. With **List my game in the lobby** ticked (the default) the panel shows a short **join code**
+  like `K7PQ2` with a **Copy** button: say it or paste it to your friend.
+- **Guest:** Insert, **Games online** lists the games (refreshing itself while open); click **Join**. Or type the code
+  under **Join code**, or start with `rampage.exe --join K7PQ2`. Games of another build are greyed out.
+- **Browser:** `http://<lobby>:19980/` lists the games live, with their codes and Join links (`rampage://join/<code>`).
+  The page's setup scripts teach Windows or a Linux desktop to open those links with the game, once per PC.
+
+Details, ports and the VPS setup: [docs/NETPLAY.md "The lobby"](docs/NETPLAY.md#the-lobby-finding-games).
+
 ### Camera and look (also new in this fork)
 
 The Insert panel has a **Camera and look** section with picture effects the original game never had. They work online

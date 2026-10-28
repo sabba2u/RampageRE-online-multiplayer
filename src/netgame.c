@@ -120,8 +120,12 @@ static void ng_set_world(Viewer *v)
     NgWorld w;
     if (!ng_world_of(v, &w)) {
         net_set_world(0, NULL, 0);
+        netlobby_set_game("", "");                   /* the lobby's list: in the menus (netlobby.c) */
         return;
     }
+    char where[40];                                  /* the lobby's list: "George", "Chicago 2" */
+    snprintf(where, sizeof where, "%s %d", CITIES[v->city_index], (int)v->block + 1);
+    netlobby_set_game(v->monsters[v->mon[0].monster], where);
     if (net_role() == NET_HOST)
         w.bot_seed = v->bot_seed;
     uint32_t id = ng_world_id(&w);
