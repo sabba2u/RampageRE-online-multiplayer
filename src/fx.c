@@ -947,11 +947,16 @@ typedef struct {
     float rod_speed, rod_len, head, tail;   /* the rod's (unscaled), +0xA0, +0xA4 */
     int counted;               /* started through the budget (fx_spawn): it counts by its priority while it lives */
     int of_block;              /* goes with the block at its end (fx_spawn's; fx_set_of_block): fx_drop_block */
+    uint32_t seed;             /* NET: its own random numbers (fx_net_seed), 0 the world's */
+    float skip;                /* NET: seconds it is to be run on at the next fx_update (a late copy of an old one) */
 } Fx;
 
 struct FxWorld {
     const FxLib *lib;
     uint32_t seed;
+    uint32_t *rs;              /* NET: the random numbers in use: an effect's own (Fx.seed), NULL the world's */
+    uint32_t net_seed;         /* NET: fx_net_seed's, for the next fx_spawn */
+    float net_skip;
     float accum, step;         /* the time not yet stepped; the step (fx_set_step) */
     int free_part, nparts;
     Part p[MAX_PARTS];
@@ -968,10 +973,11 @@ struct FxWorld {
 /* Park-Miller, x 16807 mod 2^31 - 1 [R 0x106BD0]; the float is x * 2^-31 [R 0x213A90] */
 static uint32_t rnd(FxWorld *w)
 {
-    w->seed = (uint32_t)(((uint64_t)w->seed * 16807u) % 2147483647u);
-    if (w->seed == 0)
-        w->seed = 1;
-    return w->seed;
+    uint32_t *s = w->rs ? w->rs : &w->seed;          /* NET: an effect with its own (fx_net_seed) */
+    *s = (uint32_t)(((uint64_t)*s * 16807u) % 2147483647u);
+    if (*s == 0)
+        *s = 1;
+    return *s;
 }
 static float rnd01(FxWorld *w) { return (float)rnd(w) * (1.0f / 2147483648.0f); }
 
@@ -1614,6 +1620,10 @@ int fx_spawn(FxWorld *w, const char *effect_name, const float pos[3], const floa
 {
     if (!w)
         return -1;
+    uint32_t net_seed = w->net_seed;                 /* NET: fx_net_seed's, for this one only */
+    float net_skip = w->net_skip;
+    w->net_seed = 0;
+    w->net_skip = 0;
     int effect = fx_find(w->lib, effect_name);
     if (effect < 0)
         return -1;
@@ -1663,7 +1673,11 @@ int fx_spawn(FxWorld *w, const char *effect_name, const float pos[3], const floa
     memcpy(f->R[0], X, sizeof X);
     memcpy(f->R[1], Y, sizeof Y);
     memcpy(f->R[2], Z, sizeof Z);
+    f->seed = net_seed;                              /* NET */
+    f->skip = net_skip;
+    w->rs = f->seed ? &f->seed : NULL;
     spawn_effect(w, slot, effect, 0);
+    w->rs = NULL;
     if (!f->nemit) {
         f->used = 0;
         return -1;
@@ -1826,6 +1840,24 @@ void fx_update(FxWorld *w, float dt, float ground_z)
     w->accum += dt;
     if (w->accum > 0.25f)
         w->accum = 0.25f;
+    for (int k = 0; k < MAX_FX; k++)                     /* NET: a late copy run on to the original's age */
+        if (w->fx[k].used && w->fx[k].skip > 0) {
+            Fx *f = &w->fx[k];
+            int steps = (int)(f->skip / w->step);
+            f->skip = 0;
+            for (int s = 0; s < steps && f->used; s++)
+                for (int i = 0; i < MAX_EMITS; i++)
+                    if (w->em[i].used && w->em[i].fx == k && f->rod != i) {
+                        w->rs = f->seed ? &f->seed : NULL;
+                        if (emit_step(w, i, w->step, (ground_z - f->origin[2]) / f->scale)) {
+                            emit_sounds_stop(w, &w->em[i]);
+                            w->em[i].used = 0;
+                            if (--f->nemit <= 0)
+                                f->used = 0;
+                        }
+                    }
+            w->rs = NULL;
+        }
     while (w->accum >= w->step) {
         w->accum -= w->step;
         for (int i = 0; i < MAX_EMITS; i++) {
@@ -1833,7 +1865,10 @@ void fx_update(FxWorld *w, float dt, float ground_z)
                 continue;
             Fx *f = &w->fx[w->em[i].fx];
             float ground = (ground_z - f->origin[2]) / f->scale;
-            if (emit_step(w, i, w->step, ground)) {
+            w->rs = f->seed ? &f->seed : NULL;           /* NET: its own random numbers, if it has them */
+            int done = emit_step(w, i, w->step, ground);
+            w->rs = NULL;
+            if (done) {
                 if (f->rod == i) {
                     if (f->tail < f->head)               /* the rod's emitter stays while its tail is short of the
                                                           * head [R 0x1F2CE8] */
@@ -2071,4 +2106,17 @@ int fx_meshes(const FxWorld *w, FxMesh *out, int max)
         }
     }
     return n;
+}
+
+/* ---------------------------------------------------------------- NET: online play (src/netrep_traffic.c) */
+/* the next fx_spawn's effect draws its random numbers from its own Park-Miller, started at seed (not the world's,
+ * whose state is each PC's own history), so the host's and the guest's copies of one effect (a searchlight's
+ * sweep, its start age) are the same; skip > 0 runs it on that many seconds at the next fx_update (a guest that
+ * starts a lasting effect late). seed 0: as offline */
+void fx_net_seed(FxWorld *w, uint32_t seed, float skip)
+{
+    if (!w)
+        return;
+    w->net_seed = seed ? seed % 2147483646u + 1 : 0;
+    w->net_skip = seed && skip > 0 ? skip : 0;
 }

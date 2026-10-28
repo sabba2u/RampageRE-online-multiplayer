@@ -42,11 +42,16 @@ static double ng_delay(void)
 static Viewer *g_ngv;
 static int ng_guest_menu;                            /* the host: the guest's pad says it has a menu up */
 static int ng_replaying;                             /* the guest makes the host's building change: the gate is open */
+/* (the guest replays a roof hit: building_hit_roof ends in a building_hit of the cell under it, which the host's gate
+ * sent as a change of its own, next in the message; made here too, the cell took the blow twice: New York's victory
+ * scene, where both monsters punch the Empire's roof, left the guest's building with more cracks and less HP) */
+static int ng_replaying_roof;
 static double ng_snap_at, ng_digest_at;
 static uint32_t ng_followed;                         /* the host's world the guest last loaded */
 static int ng_hud_shown = -1;                        /* the host: the last GE_HUD's a (-1 none yet) */
 static int ng_guest(void);
 static int ng_host(void);
+static void ngt_street_lasting(Viewer *v);         /* (netrep_traffic.c) */
 
 /* ---- pads: Pad (main.c) <-> NetPad, the buttons MV_UP .. MV_L3 as bits 0 .. 17 */
 static void ng_pad_out(const Pad *p, NetPad *o)
@@ -214,7 +219,7 @@ static void ng_building_flush(void);
 static int ng_building_gate(Building *b, int op, const float *p, float r, int a0, int a1, int a2)
 {
     if (net_role() == NET_GUEST && net_live())
-        return !ng_replaying;                        /* the guest's own: not made */
+        return !ng_replaying || (ng_replaying_roof && op == BNET_HIT);   /* the guest's own: not made */
     if (net_role() != NET_HOST || !net_live() || !g_ngv)
         return 0;
     int i = ng_building_index(g_ngv, b);
@@ -283,7 +288,13 @@ static void ng_on_building(Viewer *v, NetBuf *b)
         Building *bb = &v->scene.buildings[i].b;
         switch (op) {
         case BNET_HIT: building_hit(bb, p, r); break;
-        case BNET_ROOF: { int col; building_hit_roof(bb, p, r, &col); break; }
+        case BNET_ROOF: {                            /* (its cell's hit is the host's next change) */
+            int col;
+            ng_replaying_roof = 1;
+            building_hit_roof(bb, p, r, &col);
+            ng_replaying_roof = 0;
+            break;
+        }
         case BNET_CELL: building_set_cell(bb, a0, a1, a2 & 0xFFFF, a2 >> 16); break;
         case BNET_DESTROY: building_destroy(bb); break;
         }
@@ -428,6 +439,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_u32(&b, c->upgrade);
     net_w_u32(&b, c->up_taken);
     net_send_msg(1, m, b.len);
+    ngt_street_lasting(v);                           /* the street objects' lasting effects (the searchlights) */
     b = netbuf(m, sizeof m);
     net_w_u8(&b, NM_STATE);
     net_w_u8(&b, NST_DONE);
@@ -701,7 +713,14 @@ static void ng_digest(const Viewer *v, NetDigest *d)
                 cells += ci >= 0 ? b->cell[o][ci].state : 0;
             }
         }
-        s->h = ng_h(ng_h(s->h, b->state >= BUILDING_CRACKING ? BUILDING_CRACKING : b->state), b->hp);
+        /* a destroyed one (cracking, shaking, falling or flat) only as destroyed: its storeys go one by one, each
+         * after a random hesitation, as the guest's own frames step it, so its storeys and cells are a frame apart from
+         * the host's for most of the fall; the digest's 2 s caught a mass collapse in the middle (a block's end) */
+        if (b->state >= BUILDING_CRACKING || b->state == BUILDING_GONE) {
+            s->h = ng_h(s->h, BUILDING_CRACKING);
+            continue;
+        }
+        s->h = ng_h(ng_h(s->h, b->state), b->hp);
         s->h = ng_h(ng_h(ng_h(ng_h(s->h, b->n), b->roof), cells), floors);
     }
     s = &d->s[NDS_PEOPLE];                           /* people: how many, where (not those in a hand: the guest's own
@@ -779,8 +798,10 @@ static void ng_digest(const Viewer *v, NetDigest *d)
     for (int i = 0; v->edibles && i < edible_slots(v->edibles); i++) {
         const EdibleSlot *sl = edible_slot(v->edibles, i);
         const Edible *e = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
-        s->h = ng_h(s->h, sl->kind < 0 || (e && e->phase != EP_WINDOW) ? 0 : e ? 2 : 1);
-        s->h = ng_h(s->h, sl->kind);                 /* and which kind: a donut is not a zebra */
+        int gone = sl->kind < 0 || (e && e->phase != EP_WINDOW);
+        s->h = ng_h(s->h, gone ? 0 : e ? 2 : 1);
+        s->h = ng_h(s->h, gone ? -1 : sl->kind);     /* and which kind: a donut is not a zebra (one picked: none, as
+                                                      * the host's snapshot tells the guest, ng_edibles_w) */
     }
     s = &d->s[NDS_CHALLENGE];                        /* the challenge: its counts, met, the upgrade */
     s->h = ng_h(ng_h(ng_h(H0, v->challenge.ngoals), v->challenge.met), v->challenge.up_state);
@@ -806,7 +827,7 @@ static void ng_digest(const Viewer *v, NetDigest *d)
                         cells += ci >= 0 ? b->cell[b->live[ls]][ci].state : 0;
                     }
                 }
-                if (b->state != BUILDING_STANDING || b->hp < 100)
+                if (b->state != BUILDING_STANDING || b->hp < 100 || getenv("RAMPAGE_NET_TRACE")[0] == '2')
                     len += snprintf(line + len, sizeof line - (size_t)len, " %u:%d/%d/%d/%d/%d/%d", i, b->state, b->hp,
                                     b->n, b->roof, cells, floors);
             }
@@ -1285,6 +1306,23 @@ static int ng_predict_fix(Viewer *v, Mon *mo, int k, const NgSnap *nw)
     return 1;
 }
 
+/* the guest: a monster's rage as the host's (its snapshot's), on screen. The host's rage starts in its own hits and
+ * stats (rage_started: the glow, the RAMPAGE banner, the camera); the guest's make none, so its monsters raged with no
+ * glow. A rage the host's snapshots start is started here as offline, one they end ends its glow */
+static void ng_rage_look(Mon *mo, int k)
+{
+    static int was[8];
+    if (k < 0 || k >= 8)
+        return;
+    if (mo->power.rage && !was[k])
+        rage_started(mo);
+    else if (mo->power.rage && !mo->rage_on)
+        mon_rage_fx(mo, 1);                          /* (its own clock ended it here first) */
+    else if (!mo->power.rage && mo->rage_on)
+        mon_rage_fx(mo, 0);
+    was[k] = mo->power.rage != 0;
+}
+
 static void ng_apply_snap(Viewer *v)
 {
     const NetSnapSample *a, *b;
@@ -1305,6 +1343,7 @@ static void ng_apply_snap(Viewer *v)
             mo->hp = nw.m[k].hp;
             mo->power.energy = nw.m[k].energy;
             mo->power.rage = nw.m[k].rage;
+            ng_rage_look(mo, k);
             ng_apply_look(v, mo, &nw.m[k], NULL, 0);
             continue;
         }
@@ -1350,6 +1389,7 @@ static void ng_apply_snap(Viewer *v)
         mo->hp = hi->hp;
         mo->power.energy = hi->energy;
         mo->power.rage = hi->rage;
+        ng_rage_look(mo, k);
         for (int i = 0; i < 6; i++)                  /* what it holds, once that system is a puppet here */
             if (ng_held_live(i))
                 *ng_held_field(mo, i) = hi->held[i];
@@ -1830,6 +1870,42 @@ static void netgame_frame(Viewer *v, Window *w, double now)
     }
 }
 
+/* the guest: its pad (mine) to the host and to its own player 2 */
+static void ng_pad_send(Viewer *v, Pad *mine_in)
+{
+    Pad mine = *mine_in;
+    if (ngm_host_paused())                           /* the host's Pause menu is up: the guest's pad is its (NM_MENU) */
+        memset(&mine, 0, sizeof mine);
+    NetPad np;
+    ng_pad_out(&mine, &np);
+    if (netui_wants_input())                         /* the panel up: "IN MENU" over our monster on the host's */
+        np.held |= NET_PAD_MENU;
+    net_send_pad(&np);
+    v->mon[1].pad = mine;
+    if (ng_have_last)
+        ng_pad_in(&ng_last.pad[0], &v->mon[0].pad, 0);
+    else
+        memset(&v->mon[0].pad, 0, sizeof v->mon[0].pad);
+}
+
+/* the test pads' special moves (tools/net_test.ps1 -GuestMoves for the guest's monster, -HostMoves for the host's),
+ * every 10 s of t: up onto a building's front 2 s, the charge punch (Circle held 2.5 s there), the jump smash (Cross,
+ * then Square in the air), the roar (R2), along the street */
+static void ng_moves_pad(double t, Pad *p, int *was)
+{
+    double c = fmod(t, 10.0);
+    memset(p, 0, sizeof *p);
+    int btn = c < 4.5 ? MV_CIRCLE : c < 5.5 ? MV_CROSS : c < 6.5 ? MV_SQUARE : MV_R2;
+    int on = c < 2.0 ? 0 : c < 4.5 ? 1 : c < 5.0 ? 0 : c < 5.1 ? 1 : c < 5.5 ? 0 : c < 5.6 ? 1 : c < 7.5 ? 0 : c < 7.6;
+    if (c < 2.0)
+        p->ly = -1;
+    else if (c > 8.5)
+        p->lx = fmod(t, 20.0) < 10.0 ? 1.0f : -1.0f;
+    p->held[btn] = (uint8_t)on;
+    p->pressed[btn] = (uint8_t)(on && !*was);
+    *was = on;
+}
+
 /* the players' pads are set (keys_pad / pad_to_pad): the host's player 2 is the guest's pad; the guest sends its own
  * (player 1's keys and pad 0) and plays it on its player 2 at once, player 1 by the host's */
 static void netgame_pads(Viewer *v, const Window *w)
@@ -1875,6 +1951,14 @@ static void netgame_pads(Viewer *v, const Window *w)
         else
             memset(&v->mon[1].pad, 0, sizeof v->mon[1].pad);
         v->mon[1].drive = DRIVE_KEYS2;
+        if (getenv("RAMPAGE_NET_HOSTMOVES")) {       /* tools/net_test.ps1 -HostMoves: the host's monster's special
+                                                      * moves in real time (--do's waits run at once) */
+            static double t0;
+            static int was;
+            if (!t0)
+                t0 = net_now();
+            ng_moves_pad(net_now() - t0 + 5.0, &v->mon[0].pad, &was);   /* (5 s out of step with the guest's) */
+        }
         return;
     }
     Pad mine;
@@ -1899,22 +1983,16 @@ static void netgame_pads(Viewer *v, const Window *w)
             mine.lx = fmod(t, 16.0) < 8.0 ? 1.0f : -1.0f;
             mine.ly = fmod(t, 24.0) < 8.0 ? 1.0f : 0.0f;  /* (down a building now and then: its windows again) */
         }
+        if (!strcmp(getenv("RAMPAGE_NET_TESTPAD"), "moves")) {   /* -GuestMoves */
+            ng_moves_pad(t, &mine, &was);
+            ng_pad_send(v, &mine);
+            return;
+        }
         mine.held[btn] = (uint8_t)on;
         mine.pressed[btn] = (uint8_t)(on && !was);
         was = on;
     }
-    if (ngm_host_paused())                           /* the host's Pause menu is up: the guest's pad is its (NM_MENU) */
-        memset(&mine, 0, sizeof mine);
-    NetPad np;
-    ng_pad_out(&mine, &np);
-    if (netui_wants_input())                         /* the panel up: "IN MENU" over our monster on the host's */
-        np.held |= NET_PAD_MENU;
-    net_send_pad(&np);
-    v->mon[1].pad = mine;
-    if (ng_have_last)
-        ng_pad_in(&ng_last.pad[0], &v->mon[0].pad, 0);
-    else
-        memset(&v->mon[0].pad, 0, sizeof v->mon[0].pad);
+    ng_pad_send(v, &mine);
 }
 
 /* the game's flow as this copy has it, logged as it changes (both sides: build\nettest\host.out / guest.out) */

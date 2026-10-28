@@ -615,8 +615,67 @@ static void ngt_parade_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
 
 static void ngt_street_made(Viewer *v, const NgtSnap *s);
 
+/* the street objects' effects: each has its own random numbers, seeded from the host's id and the block
+ * (fx_net_seed), so the host's and the guest's copies are one (the searchlights' sweeps: their start age and turn are
+ * drawn at the start, which offline come from the world's random numbers, each PC's own). The host keeps its live
+ * ones; a guest that asks for the block's state (joined late, still loading when they started) gets those older than
+ * 2.5 s again as late events with their age, and starts each one it has not got, run on to that age */
+#define NGT_EV_LATE 0x80                             /* (in the type byte) a lasting one sent again: amount its age */
+typedef struct { int id, block; double t; StreetEvent e; } NgtFx;
+static int ngt_fx_live(Viewer *v, int id);
+static NgtFx ngt_hfx[64];
+static int ngt_nhfx;
+static struct { int id, block; float age; } ngt_late[32];
+static int ngt_nlate;
+
+static uint32_t ngt_fx_seed(int block, int id)
+{
+    return ((uint32_t)id * 2654435761u) ^ ((uint32_t)block * 40503u) ^ 0x5EA2C417u;
+}
+
+static void ngt_fx_seed_next(Viewer *v, const StreetEvent *e)   /* both: before main.c starts the event's effect */
+{
+    if (!v || !v->fxw || e->type != SE_EFFECT || e->id <= 0)
+        return;
+    float skip = 0;
+    for (int i = 0; i < ngt_nlate; i++)
+        if (ngt_late[i].id == e->id && ngt_late[i].block == (int)v->block) {
+            skip = ngt_late[i].age;
+            ngt_late[i] = ngt_late[--ngt_nlate];
+            break;
+        }
+    fx_net_seed(v->fxw, ngt_fx_seed((int)v->block, e->id), skip);
+}
+
+static void ngt_fx_keep(Viewer *v, const StreetEvent *e)   /* the host: its live effects, for a late guest */
+{
+    if (e->type == SE_EFFECT_STOP)
+        for (int i = 0; i < ngt_nhfx; i++)
+            if (ngt_hfx[i].id == e->id)
+                ngt_hfx[i--] = ngt_hfx[--ngt_nhfx];
+    if (e->type != SE_EFFECT || e->id <= 0)
+        return;
+    for (int i = 0; i < ngt_nhfx; i++)               /* (another block's, or played out) */
+        if (ngt_hfx[i].block != (int)v->block || !ngt_fx_live(v, ngt_hfx[i].id))
+            ngt_hfx[i--] = ngt_hfx[--ngt_nhfx];
+    if (ngt_nhfx < 64)
+        ngt_hfx[ngt_nhfx++] = (NgtFx){ e->id, (int)v->block, net_now(), *e };   /* (its name: the template's) */
+}
+
+static int ngt_fx_live(Viewer *v, int id)            /* main.c's effect of the street objects' id, still going */
+{
+    for (int j = 0; j < v->nsofx; j++)
+        if (v->sofx[j].id == id)
+            return v->fxw && fx_alive(v->fxw, v->sofx[j].fx);
+    return 0;
+}
+
 static void ngr_street_out(const StreetEvent *e)
 {
+    if (net_role() == NET_HOST || ng_guest())        /* (the host's before its guest is in too) */
+        ngt_fx_seed_next(g_ngv, e);
+    if (net_role() == NET_HOST && g_ngv)
+        ngt_fx_keep(g_ngv, e);
     if (!ng_host() || (e->type != SE_EFFECT && e->type != SE_EFFECT_STOP && e->type != SE_SOUND &&
                        e->type != SE_MONSTER_EFFECT))
         return;
@@ -628,11 +687,45 @@ static void ngr_street_out(const StreetEvent *e)
     ngt_send(NGP_STREET, &n);
 }
 
+/* the host, answering a guest's NM_STATE: its street effects older than 2.5 s, as late events with their age */
+static void ngt_street_lasting(Viewer *v)
+{
+    double now = net_now();
+    int sent = 0;
+    for (int i = 0; i < ngt_nhfx; i++) {
+        if (ngt_hfx[i].block != (int)v->block || now - ngt_hfx[i].t < 2.5 || !ngt_fx_live(v, ngt_hfx[i].id))
+            continue;
+        const StreetEvent *e = &ngt_hfx[i].e;        /* the event again, as it was */
+        NgtEv n = { SE_EFFECT | NGT_EV_LATE, e->id, e->obj, e->monster, e->level, e->node_id, e->name, e->node,
+                    { 0 }, { 0 }, { 0 }, (float)(now - ngt_hfx[i].t) };
+        memcpy(n.pos, e->pos, sizeof n.pos);
+        memcpy(n.dir, e->v, sizeof n.dir);
+        memcpy(n.off, e->off, sizeof n.off);
+        ngt_send(NGP_STREET, &n);
+        sent++;
+    }
+    if (sent)
+        net_log("street objects: %d lasting effects sent again", sent);
+}
+
 static void ngt_street_event(Viewer *v, NetBuf *b)
 {
     NgtEv n;
     if (!v->sobj || !ngt_recv(b, &n))
         return;
+    if (n.type & NGT_EV_LATE) {                      /* a lasting one sent again: started here unless it was */
+        n.type &= ~NGT_EV_LATE;
+        for (int j = 0; j < v->nsofx; j++)
+            if (v->sofx[j].id == n.id)
+                return;
+        if (ngt_nlate == 32)
+            ngt_nlate--;
+        ngt_late[ngt_nlate].id = n.id;
+        ngt_late[ngt_nlate].block = (int)v->block;
+        ngt_late[ngt_nlate++].age = n.amount;
+        net_log("street objects: started the host's lasting effect %d (%s), %.1f s old", n.id, n.name, n.amount);
+        n.amount = 0;
+    }
     StreetEvent e;
     memset(&e, 0, sizeof e);
     e.type = n.type;

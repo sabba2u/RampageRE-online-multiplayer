@@ -66,6 +66,9 @@ void fx_vel(FxWorld *w, int id, const float vel[3]);
  * +RelativeDistanceLimit particles, is t now; it grows on from there by the rod's speed (ParticleSystemFx vtable
  * +0x80, 0x1F2520, called by the beam weapon on a hit, 0x295938) */
 void fx_cut(FxWorld *w, int id, float t);
+/* NET: online play: the next fx_spawn's effect has its own random numbers from seed (the same effect the same on
+ * both PCs) and is run on skip seconds at the next fx_update; seed 0 as offline (fx.c) */
+void fx_net_seed(FxWorld *w, uint32_t seed, float skip);
 void fx_clear(FxWorld *w);
 /* the step fx_update runs in: the game advances an effect by its world's step, once a step, gravity per step: in play
  * the world's 1/30 (0x2852E0 -> 0x282260), in the front end 1 / the display rate, 1/60 (0x309210) [R]. 1/60 unless set */

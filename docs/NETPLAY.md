@@ -87,6 +87,8 @@ it); `RAMPAGE_NET_UPNP=0` leaves the router alone, `RAMPAGE_NET_UPNP_IF=<address
 | People: each one's template, look, play time, place and turn, phase, window; the script objects, the challenge's counts, every open window | host | 20 snapshots a second (netrep_people.c), shown 100 ms behind; their sounds, effects and banners as events. A person in a monster's hand is posed at the guest's own hand |
 | Edibles | host | every grab made again on the guest (edible_net_gate), so it goes and plays there; its stats come by the snapshot; the slots (their cells, kinds, out or not, age and place) by NGP_EDIBLES' snapshot, so a guest whose own deal of a block differed takes the host's |
 | Army, traffic, bosses, street objects | host | puppets (netrep_*.c): snapshots and events; a street object the host's scripts make mid-block (a broken fountain's geyser) is made on the guest from the snapshot |
+| A monster's rage | host | its rage in the snapshot; the guest starts the glow, the RAMPAGE banner and the camera when the host's starts and ends the glow when it ends (`ng_rage_look`) |
+| Street objects' effects (the searchlights, ...) | host | events at their host time; each effect's random numbers its own, seeded from the host's id and the block (`fx_net_seed`), so a searchlight's sweep is the host's; the host sends its lasting ones again (with their age) to a guest that asks for the block's state, which starts each one it lacks, run on to that age |
 | Camera shakes, player 2's rumble | host | events (NGP_FEEL) at their host time: each shake as it started (slot, kind, place, strength, phases), so the guest's camera turns as the host's (its own monster's clip-event shakes are its own); player 2's rumble on the guest's pad |
 | The challenge's upgrade object | host | its state in a small snapshot (NGP_CHALLENGE), its taking and last banner as events; the guest's own touch and tick are off |
 
@@ -104,7 +106,8 @@ drops building changes until then (they are in the state) and makes every later 
 lives, clock), monsters (defeated, rage, places, HP), buildings (state, HP, storeys, roof, cells, floors), people, army,
 bosses, traffic, street objects, edibles, challenge. Counts and states must match exactly, places (means) and HP within a
 tolerance. The host compares each part with its own from within 0.25 s of the time the guest shows (the buildings: the
-newest time it has); a part that differs twice in a row is a `MISMATCH`, logged with the system's name and both sides'
+newest time it has; the edibles up to 0.5 s after it, their snapshots coming 4 a second); a destroyed building counts
+only as destroyed (its storeys fall a frame apart on the two PCs), a picked edible's slot as empty; a part that differs twice in a row is a `MISMATCH`, logged with the system's name and both sides'
 values, and the Insert panel lists "In sync: ..." / "Out of sync: army (3 times)".
 
 ## The lobby: finding games
@@ -217,16 +220,20 @@ tests\build_net_test.bat                     unit tests: wire format, snapshot b
 tools\net_test.ps1 -TestPad -Shots 2         host + guest; the guest walks, climbs and punches by itself;
                                              build\nettest\shot_N.png shows both windows side by side
 tools\net_test.ps1 -TestPad -Lag 100 -Loss 5 the internet on one PC
+tools\net_test.ps1 -GuestMoves -HostMoves -GameArgs "Chicago 1 --players 2 --cheat 011235" -GuestArgs "--cheat 011235"
+                                             both monsters do the special moves every 10 s, in real time: onto a
+                                             front, the charge punch (Circle held), the jump smash, the roar (R2;
+                                             -HostDo "after 1, rage, p2, rage" fills both energies)
 tools\net_test.ps1 -Seconds 0                leave both running to play them yourself
 tools\net_test.ps1 -JoinDelay 30 -HostDo "wait 3, hitcell 3 0 0 10, ..."
                                              the guest joins 30 s late; the host's monster plays --do's words first
-tools
-et_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
+tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
                                              the words 35 s (real time) after the guest came in. --do's waits run
                                              the game's frames at once, with no network: before "after" only
 ```
 
-`RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents.
+`RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents
+(`=2`, `-Trace -TraceLevel 2`: every building's, not only the damaged ones).
 Both copies log the game's flow (`net: flow: ...`: states, defeats, respawns, lives, results screens and their answers,
 the host's events sent and taken). Test hooks, read by the host only: `RAMPAGE_NET_TESTDIE=period[,lives]` fells both
 monsters every `period` seconds of play (lives: each player's from the start), `RAMPAGE_NET_TESTEND=win,secs` brings
@@ -255,6 +262,7 @@ and miniupnpc). Upstream's files have only these, each marked `NET:`:
 | `src/streetobj.c` / `.h` | `streetobj_net_make` (a script-made object of the host's, made on the guest) |
 | `src/main.c` (feel, challenge) | `net_rumble` first in `mon_rumble`, `net_shake` before both `shake_start`s; the guest's upgrade touch loop and `challenge_upgrade_tick` are skipped |
 | `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (a late guest's slots made the host's; a falling cryotube left to fall); `spawn` makes the guest's cryotube (its break and reveal play as the host's) |
+| `src/fx.c` / `.h` | `fx_net_seed`: the next effect's own random numbers and a run-on (`Fx.seed`, `Fx.skip`, `FxWorld.rs`); unused offline |
 | `src/boss.c` / `.h` | `boss_net_triggers` / `boss_net_set_triggers` (New York's barrier volumes: the guest's monster is pushed out of the host's) |
 | `src/main.c` (mon_step) | the guest's monsters are not defeated by their own state change at 0 HP (the host's defeat comes in the snapshot) |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
@@ -269,3 +277,14 @@ With online play off (no `--host` / `--join`, panel unused) nothing in the hooks
 A conflict can only be in a `NET:` line above. A rename upstream of something `netgame.c` reads (a Viewer or Mon field,
 a building or game function) shows up as a compile error in `netgame.c`, never as a silent change; then run
 `tools\net_test.ps1 -TestPad -Shots 2` and look at both screens.
+
+## Checked (two copies on one PC)
+
+- Los Angeles 8 (the Carbonator, the searchlights): the beams sweep the same way on both, a late guest's too.
+- New York 10, the blimp beaten (`-HostDo "after 4, wait 8, bosshit, wait 20, bosshit, wait 12, bosshit"`): the victory
+  scene on the Empire's roof matches, no MISMATCH. (The guest made a roof hit's cell blow twice: building_hit_roof ends
+  in a building_hit the host also sent; now the guest's replay of the roof hit leaves that to the host's next change.)
+- Block changes (`RAMPAGE_NET_TESTEND=win,10` and `menu accept`s), also at 80 ms / 3 %: no MISMATCH.
+- The special moves of both players, at 80 ms / 3 %: charge punch, jump smash, roar, the rage's glow; cracks, people and
+  cars the same.
+- Las Vegas 5's pirate ship (rocking, its cannon); all 30 monsters (Ramsey, Philbert and Eyegore last).
