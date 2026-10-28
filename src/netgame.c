@@ -1339,6 +1339,7 @@ static void netgame_frame(Viewer *v, Window *w, double now)
         return;
     }
     ng_set_world(v);
+    net_world_paused = ngm_host_paused();             /* the host's Pause menu: the guest's world stops too */
     edible_net_no_spawn = ng_guest();                /* the guest's edibles: the host's alone (netrep_people.c) */
     if (net_role() == NET_GUEST && net_state() == NETS_CONNECTED && net_host_world() &&
         net_host_world() != net_world())

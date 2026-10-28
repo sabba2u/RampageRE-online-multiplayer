@@ -59,6 +59,8 @@
 /* NET: the guest of an online game: its monsters' own grabs, throws and hits on the world are not made (the host's
  * arrive: netgame.c) */
 static int net_guest_world(void) { return net_role() == NET_GUEST && net_live(); }
+/* NET: the guest of a game the host has paused (its Pause menu up): the world stands still as the host's does */
+static int net_world_paused;
 #ifdef __ANDROID__
 #include "touch.h"                               /* the on-screen pad, player 1's pad slot */
 #endif
@@ -4326,6 +4328,8 @@ static void edible_step(Viewer *v, float dt)
                     monster_stats(mo, e->v[0], e->v[1]);
                 break;
             case EE_BANNER:
+                if (getenv("RAMPAGE_NET_TRACE") && net_role() != NET_OFF)   /* NET */
+                    net_log("edible float %d", (int)e->amount);
                 if (v->hud)
                     hud_float(v->hud, (int)e->amount, e->pos, 2, 1.0f);
                 break;
@@ -5317,6 +5321,8 @@ static void army_step(Viewer *v, float dt)
             case AE_STATS_HEALTH: mo->hp = mo->hp > 0 ? fmaxf(1, fminf(mon_hp_max(mo), mo->hp + e->amount)) : mo->hp; break;
             case AE_STATS_ENERGY: monster_stats(mo, 0, e->amount); break;
             case AE_FLOAT:                           /* a PointsBanner: 0.8 for the army's awards (0x2BAB2C) */
+                if (getenv("RAMPAGE_NET_TRACE") && net_role() != NET_OFF)   /* NET: which reach the guest */
+                    net_log("float %d at %.0f %.0f", (int)e->amount, e->pos[0], e->pos[2]);
                 if (v->hud)
                     hud_float(v->hud, (int)e->amount, e->pos, e->level, 0.8f);
                 break;
@@ -6357,7 +6363,8 @@ static void people_drop(void *ctx, const char *name, const float pos[3])
 static void play_step(Viewer *v, float dt, float aspect)
 {
     soak_step(v);
-    if (v->hud && hud_paused(v->hud)) {              /* GameOver's pauseGame(1): only the screen runs */
+    if ((v->hud && hud_paused(v->hud)) || net_world_paused) {   /* GameOver's pauseGame(1): only the screen runs
+                                                      * (NET: and the guest's of the host's pause) */
         hud_update(v->hud, dt);
         for (int k = 0; k < v->nmon; k++)            /* and every Hud<n>'s frame event (2048: its full-rage flash)
                                                       * through the pause [R Hud.scr]; the floating numbers are
@@ -6778,7 +6785,7 @@ static int pause_open(Viewer *v, int pad)
 static void sound_follow_pause(const Viewer *v)
 {
     static int held;
-    int now = v->hud && hud_paused(v->hud);
+    int now = (v->hud && hud_paused(v->hud)) || net_world_paused;   /* (NET: the host's pause on the guest) */
     if (now != held)
         sound_pause(now);
     held = now;
@@ -9036,7 +9043,8 @@ static int viewer_main(int argc, char **argv)
             }
             cap_step++;
         }
-        if (!(v.hud && hud_paused(v.hud)))           /* (paused: the Pause menu, GameOver's pauseGame(1)) */
+        if (!(v.hud && hud_paused(v.hud)) && !net_world_paused)   /* (paused: the Pause menu, GameOver's
+                                                      * pauseGame(1); NET: the host's, on the guest) */
             world_t += dt;
         if (v.pads_live) {                           /* this frame's controllers, the vibration on them */
             memcpy(v.pads_prev, v.pads, sizeof v.pads);
