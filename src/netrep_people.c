@@ -740,8 +740,11 @@ static int ngr_edible_write(Viewer *v, NetBuf *b)
         int out = d && d->phase == EP_WINDOW;
         net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
         net_w_u8(b, (uint32_t)out);
-        if (out)
+        if (out) {
             net_w_f32(b, d->age);
+            for (int k = 0; k < 3; k++)
+                net_w_f32(b, d->pos[k]);
+        }
     }
     return ns > 0;
 }
@@ -761,9 +764,11 @@ static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
         return;
     for (int i = 0; i < ns && !b.err; i++) {
         int kind = (int8_t)net_r_u8(&b), out = (int)net_r_u8(&b);
-        float age = out ? net_r_f32(&b) : 0;
+        float age = out ? net_r_f32(&b) : 0, pos[3] = { 0, 0, 0 };
+        for (int k = 0; out && k < 3; k++)
+            pos[k] = net_r_f32(&b);
         if (!b.err && i < have)
-            edible_net_slot(v->edibles, i, kind, out, age);
+            edible_net_slot(v->edibles, i, kind, out, age, out ? pos : NULL);
     }
 }
 
@@ -782,8 +787,105 @@ static void ngr_edible_event(Viewer *v, NetBuf *b)
             r ? "made" : "not made here");
 }
 
+/* ---- the challenge's upgrade (NGP_CHALLENGE): the MonsterUpgrade object is the host's. Its state goes in a small
+ * snapshot (the guest's effect follows it: ng_challenge_put); its taking (the banner, player 1's move) and its last
+ * banner go as events. The guest's own touch and tick are off (main.c, net_guest_world) */
+enum { NGC_TAKEN, NGC_BANNER };
+static double ngr_chal_ev_at = -1e30;                /* the guest: the host time shown when an event last put it (an
+                                                      * older snapshot is not put over it) */
+
+static void ngr_challenge_w(Viewer *v, NetBuf *b)
+{
+    const Challenge *c = &v->challenge;
+    net_w_u8(b, (uint32_t)v->block);
+    net_w_u8(b, (uint32_t)c->up_state);
+    net_w_u8(b, (uint32_t)c->up_made);
+    net_w_f32(b, c->up_delay);
+    net_w_f32(b, c->up_pulse);
+    net_w_u32(b, c->upgrade);
+    net_w_u32(b, c->up_taken);
+}
+
+static int ngr_challenge_r(Viewer *v, NetBuf *b)    /* 1: for this block, put */
+{
+    int block = (int)net_r_u8(b), st = (int)net_r_u8(b), made = (int)net_r_u8(b);
+    float delay = net_r_f32(b), pulse = net_r_f32(b);
+    uint32_t up = net_r_u32(b), taken = net_r_u32(b);
+    if (b->err || block != v->block)
+        return 0;
+    ng_challenge_put(v, st, made, delay, pulse, up, taken);
+    return 1;
+}
+
+static int ngr_challenge_write(Viewer *v, NetBuf *b)
+{
+    ngr_challenge_w(v, b);
+    return 1;
+}
+
+static void ngr_challenge_apply(Viewer *v, const NetSnapSample *a, const NetSnapSample *s, float alpha, int how)
+{
+    (void)alpha;
+    const NetSnapSample *at = how == 2 ? a : s;      /* (the one shown, not the next: its event comes at its time) */
+    static double done;
+    if (at->t == done || at->t <= ngr_chal_ev_at)
+        return;
+    done = at->t;
+    NetBuf b = netbuf((void *)at->data, at->len);
+    ngr_challenge_r(v, &b);
+}
+
+static void ngr_challenge_host(Viewer *v)           /* the host, every frame: the upgrade taken, its last banner */
+{
+    static int was_state = -1, was_block = -1;
+    const Challenge *c = &v->challenge;
+    int ev = -1;
+    if (v->block == was_block && was_state == CU_WAITING && c->up_state == CU_TAKEN)
+        ev = NGC_TAKEN;
+    else if (v->block == was_block && was_state == CU_TAKEN && c->up_state == CU_NONE)
+        ev = NGC_BANNER;
+    was_state = c->up_state;
+    was_block = v->block;
+    if (ev < 0)
+        return;
+    uint8_t m[64];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, (uint32_t)ev);
+    ngr_challenge_w(v, &b);
+    ng_event(NGP_CHALLENGE, m, b.len);
+    net_log("challenge: the upgrade %s (%s)", ev == NGC_TAKEN ? "taken" : "banner", challenge_upgrade_move(c->up_taken));
+}
+
+static void ngr_challenge_event(Viewer *v, NetBuf *b)
+{
+    int ev = (int)net_r_u8(b);
+    if (b->err || !ngr_challenge_r(v, b))
+        return;
+    const NetSnapBuf *mb = net_snaps();
+    ngr_chal_ev_at = mb->have_offset ? net_now() - mb->offset - ng_delay() : 1e30;
+    const Challenge *c = &v->challenge;
+    net_log("challenge: the host's upgrade %s (%s)", ev == NGC_TAKEN ? "taken" : "banner",
+            challenge_upgrade_move(c->up_taken));
+    if (ev == NGC_TAKEN) {                           /* as upgrade_touch: the banner, player 1's move */
+        if (v->hud) {
+            hud_hide_challenge_completion(v->hud);
+            hud_banner_text(v->hud, c->up.text, c->up.colour, 1, "v_upgrade");
+        }
+        Mon *mo = &v->mon[0];
+        if (mo->monster >= 0) {
+            mo->power.abilities |= c->up_taken;
+            v->upgrades[mo->monster & 63] |= c->up_taken;
+        }
+    } else if (ev == NGC_BANNER && v->hud) {         /* as its CUE_BANNER */
+        static const float green[4] = { 0, 1, 0, 1 };
+        hud_banner_text2(v->hud, challenge_upgrade_key(c->up_taken), challenge_upgrade_inst(c->up_taken), green, 1, 3, "");
+    }
+}
+
 static void ngr_people_init(void)
 {
+    ng_pup[NGP_CHALLENGE] = (NgPuppet){ "challenge", 2, ngr_challenge_write, ngr_challenge_apply, ngr_challenge_event,
+                                        NULL };
     ng_pup[NGP_PEOPLE] = (NgPuppet){ "people", 20, ngr_people_write, ngr_people_apply, ngr_people_event, ngr_people_reset };
     ng_pup[NGP_EDIBLES] = (NgPuppet){ "edibles", 4, ngr_edible_write, ngr_edible_apply, ngr_edible_event, NULL };
     people_net_gate = ngr_people_gate;

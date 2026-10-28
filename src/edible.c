@@ -413,6 +413,7 @@ static void remove_edible(Edibles *e, Edible *d)
 /* NET: the guest of an online game makes no edible appear by itself (edible.h): the host's slots arrive */
 int edible_net_no_spawn;
 static int net_spawning;
+static const float *net_pos;                         /* the host's place of the one made (its cell gone here) */
 
 static void spawn(Edibles *e, int s)
 {
@@ -423,8 +424,11 @@ static void spawn(Edibles *e, int s)
         return;
     const EdibleKind *k = &e->kind[sl->kind];
     float pos[3];
-    if (!e->host.cell_place || !e->host.cell_place(e->host.ctx, sl->building, sl->storey, sl->column, pos))
-        return;                                      /* [G] the game places it anyway, where the storey would be */
+    if (!e->host.cell_place || !e->host.cell_place(e->host.ctx, sl->building, sl->storey, sl->column, pos)) {
+        if (!net_pos)
+            return;                                  /* [G] the game places it anyway, where the storey would be */
+        memcpy(pos, net_pos, sizeof pos);            /* NET: the guest's floor fell first: where the host's is */
+    }
     Edible *d = new_edible(e);
     if (!d)
         return;
@@ -608,6 +612,8 @@ void edible_cell_broken(Edibles *e, int building, int storey, int column, int st
 
 void edible_floor_fell(Edibles *e, int building, int storey, int above, int below)
 {
+    if (edible_net_no_spawn)                         /* NET: the guest's slots are the host's (edible_net_slot) */
+        return;
     for (int i = 0; i < e->nslots; i++) {
         EdibleSlot *s = &e->slot[i];
         if (s->building != building)
@@ -1008,7 +1014,7 @@ int edible_power_hit_building(EdiblePower *p, int energy_gain, float amount, int
 int (*edible_net_gate)(Edibles *e, int building, int storey, int column, int monster, const char *as_type, int eat,
                        const char *monster_move);
 
-void edible_net_slot(Edibles *e, int i, int kind, int out, float age)
+void edible_net_slot(Edibles *e, int i, int kind, int out, float age, const float pos[3])
 {
     if (i < 0 || i >= e->nslots || kind < -1 || kind >= e->nkinds)
         return;
@@ -1020,9 +1026,18 @@ void edible_net_slot(Edibles *e, int i, int kind, int out, float age)
     s->kind = kind;
     if (kind >= 0 && out && s->item < 0) {
         net_spawning = 1;                            /* (the host's, on the guest: edible_net_no_spawn) */
+        net_pos = pos;
         spawn(e, i);
+        net_pos = NULL;
         net_spawning = 0;
     }
-    if (kind >= 0 && out && s->item >= 0 && e->ed[s->item].phase == EP_WINDOW)
-        e->ed[s->item].age = age;
+    if (kind >= 0 && out && s->item >= 0 && e->ed[s->item].phase == EP_WINDOW) {
+        Edible *d = &e->ed[s->item];
+        d->age = age;
+        float here[3];                               /* its floor gone here before the host's: the host's place */
+        if (pos && !(e->host.cell_place && e->host.cell_place(e->host.ctx, s->building, s->storey, s->column, here))) {
+            memcpy(d->pos, pos, sizeof d->pos);
+            place_world(d);
+        }
+    }
 }
