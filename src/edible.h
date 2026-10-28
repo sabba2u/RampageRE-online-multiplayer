@@ -239,5 +239,8 @@ float edible_power_hit_gain(const char *call);      /* that energy for the clip'
  * grabs made again. Unset (offline): every grab is made */
 extern int (*edible_net_gate)(Edibles *e, int building, int storey, int column, int monster, const char *as_type, int eat,
                               const char *monster_move);
+/* NET: the guest's slot i made as the host's (a guest that joined late): its kind (-1 none left), its edible out in
+ * its window `age` seconds (out 1) or not (0: one out here goes, its effect with it, EE_REMOVED) */
+void edible_net_slot(Edibles *e, int i, int kind, int out, float age);
 
 #endif

@@ -6,12 +6,14 @@ keeps their output in build\nettest\host.out / guest.out, and optionally takes d
   .\tools\net_test.ps1 -Seconds 0               leave both running (play them yourself; Insert opens the panel)
   .\tools\net_test.ps1 -Lag 100 -Loss 5         the internet on one PC: 100 ms each way, 5 % of the updates lost
   .\tools\net_test.ps1 -GameArgs "NewYork 3 --players 2 --play kingcity"
+  .\tools\net_test.ps1 -JoinDelay 40 -HostDo "up 1.5, square 0.3, wait 0.4, collapse"   the guest joins 40 s late
+                                                (the host's monster plays the --do words first)
   .\tools\net_test.ps1 -Shots 3                 three screenshots of the desktop into build\nettest\shot_N.png
   .\tools\net_test.ps1 -Menus -Seconds 0         both in the front end (--shell): the host picks 2 Player, the guest
                                                 its monster (tools\net_keys.ps1 presses keys in either window)
 #>
 param([int]$Seconds = 40, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [int]$Shots = 0, [switch]$TestPad, [switch]$Trace,
-      [switch]$Menus, [string]$GuestArgs = "",
+      [switch]$Menus, [string]$GuestArgs = "", [int]$JoinDelay = 6, [string]$HostDo = "",
       [string]$GameArgs = "Chicago 1 --players 2 --monster George --monster2 Lizzie")
 $root = Split-Path $PSScriptRoot -Parent
 if ($Menus) { $GameArgs = "--shell"; $GuestArgs = "--shell" }
@@ -23,9 +25,11 @@ Get-Process rampage -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $
 $env:RAMPAGE_NET_LAG = "$Lag"
 $env:RAMPAGE_NET_LOSS = "$Loss"
 $env:RAMPAGE_NET_TRACE = if ($Trace) { "1" } else { $null }
+$env:RAMPAGE_NET_HOSTDO = if ($HostDo) { $HostDo } else { $null }   # (--do's words for the host's monster)
 $h = Start-Process $exe -ArgumentList "$GameArgs --host $Port" -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\host.out" -RedirectStandardError "$out\host.err"
-Start-Sleep 6
+Start-Sleep $JoinDelay
+$env:RAMPAGE_NET_HOSTDO = $null
 $env:RAMPAGE_NET_TESTPAD = if ($TestPad) { "1" } else { $null }   # (the guest's alone)
 $g = Start-Process $exe -ArgumentList ("$GuestArgs --join 127.0.0.1:$Port".Trim()) -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\guest.out" -RedirectStandardError "$out\guest.err"

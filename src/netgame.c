@@ -193,6 +193,11 @@ static int ng_building_index(const Viewer *v, const Building *b)
 static uint8_t ng_ops[16 + NG_BUILDING_OPS * 32];
 static NetBuf ng_opbuf;
 static int ng_nops;
+static uint32_t ng_bseq;                             /* host: the NM_BUILDING messages sent (each carries its number) */
+/* guest: the block whose whole state the host sent (-1 none yet: the host's changes wait for it, they are in it) and
+ * the last NM_BUILDING it reflects */
+static int ng_bs_block = -1;
+static uint32_t ng_bs_seq;
 
 static int ng_building_gate(Building *b, int op, const float *p, float r, int a0, int a1, int a2)
 {
@@ -207,6 +212,7 @@ static int ng_building_gate(Building *b, int op, const float *p, float r, int a0
         ng_opbuf = netbuf(ng_ops, sizeof ng_ops);
         net_w_u8(&ng_opbuf, NM_BUILDING);
         net_w_u8(&ng_opbuf, (uint32_t)g_ngv->block);
+        net_w_u32(&ng_opbuf, ng_bseq + 1);           /* (its number: ng_building_flush counts it) */
     }
     net_w_u16(&ng_opbuf, (uint32_t)i);
     net_w_u8(&ng_opbuf, (uint32_t)op);
@@ -222,8 +228,10 @@ static int ng_building_gate(Building *b, int op, const float *p, float r, int a0
 
 static void ng_building_flush(void)
 {
-    if (ng_nops && !ng_opbuf.err)
+    if (ng_nops && !ng_opbuf.err) {
         net_send_msg(1, ng_ops, ng_opbuf.len);
+        ng_bseq++;
+    }
     ng_nops = 0;
 }
 
@@ -234,6 +242,14 @@ static void ng_on_building(Viewer *v, NetBuf *b)
         net_log("building changes for block %d, we are in %d: not made", block, v->block);
         return;
     }
+    uint32_t seq = net_r_u32(b);
+    if (ng_bs_block != block)
+        return;                                      /* (the block's state is on its way, with these in it) */
+    if (seq <= ng_bs_seq) {
+        net_log("building changes %u came after the block's state (%u): not made", seq, ng_bs_seq);
+        return;
+    }
+    ng_bs_seq = seq;
     ng_replaying = 1;
     while (b->len < b->cap && !b->err) {
         uint32_t i = net_r_u16(b);
@@ -256,6 +272,218 @@ static void ng_on_building(Viewer *v, NetBuf *b)
     ng_replaying = 0;
 }
 
+/* ---- the block's state, whole: for a guest that joins (or comes back, or starts a block) after the host's game made
+ * changes it would never see. The guest asks (NST_ASK, its block) until it has it; the host sends, after that frame's
+ * building changes: every building as it is (Building is plain data, the same build on both: packed), the edibles'
+ * slots, the challenge's upgrade, then NST_DONE with the number of the last NM_BUILDING in it. All reliable and in
+ * order, so the guest drops the building changes until NST_DONE (they are in the state) and makes every one after. */
+enum { NST_ASK, NST_BUILDING, NST_EDIBLES, NST_CHALLENGE, NST_DONE };
+static int ng_state_due = -1;                        /* host: the block the guest asked for */
+static double ng_state_asked;                        /* guest: when it last asked */
+
+static void ng_state_ask(Viewer *v)                  /* guest, every frame */
+{
+    static int was_live, was_block = -1;
+    static uint32_t was_world;
+    if (!(net_role() == NET_GUEST && net_live())) {
+        was_live = 0;
+        ng_bs_block = -1;
+        return;
+    }
+    if (!was_live || was_world != net_host_world() || was_block != v->block) {
+        ng_bs_block = -1;                            /* joined, back, or a new block: ask again */
+        ng_state_asked = -100;
+    }
+    was_live = 1;
+    was_world = net_host_world();
+    was_block = v->block;
+    if (ng_bs_block == v->block || net_now() - ng_state_asked < 1.0)
+        return;
+    ng_state_asked = net_now();
+    uint8_t m[8];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_ASK);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_send_msg(1, m, b.len);
+}
+
+static void ng_state_send(Viewer *v)                 /* host, after the frame's building changes went */
+{
+    if (ng_state_due < 0 || !(net_role() == NET_HOST && net_live()))
+        return;
+    if (ng_state_due != v->block) {
+        net_log("the guest asked for block %d's state, we are in %d", ng_state_due, v->block);
+        ng_state_due = -1;
+        return;
+    }
+    ng_state_due = -1;
+    static uint8_t m[sizeof(Building) + sizeof(Building) / 32 + 64];
+    int total = 0, biggest = 0;
+    for (uint32_t i = 0; i < v->scene.nbuildings; i++) {
+        NetBuf b = netbuf(m, sizeof m);
+        net_w_u8(&b, NM_STATE);
+        net_w_u8(&b, NST_BUILDING);
+        net_w_u8(&b, (uint32_t)v->block);
+        net_w_u16(&b, i);
+        net_w_u16(&b, v->scene.nbuildings);
+        net_w_u32(&b, (uint32_t)sizeof(Building));
+        net_pack(&b, &v->scene.buildings[i].b, (int)sizeof(Building));
+        if (b.err) {
+            net_log("building %u's state does not fit", i);
+            continue;
+        }
+        net_send_msg(1, m, b.len);
+        total += b.len;
+        biggest = b.len > biggest ? b.len : biggest;
+    }
+    int ns = v->edibles ? edible_slots(v->edibles) : 0;
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_EDIBLES);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_w_u16(&b, (uint32_t)ns);
+    for (int i = 0; i < ns; i++) {
+        const EdibleSlot *sl = edible_slot(v->edibles, i);
+        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+        int out = d && d->phase == EP_WINDOW;
+        net_w_u8(&b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
+        net_w_u8(&b, (uint32_t)out);
+        if (out)
+            net_w_f32(&b, d->age);
+    }
+    if (!b.err) {
+        net_send_msg(1, m, b.len);
+        total += b.len;
+    }
+    const Challenge *c = &v->challenge;
+    b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_CHALLENGE);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_w_u8(&b, (uint32_t)c->up_state);
+    net_w_u8(&b, (uint32_t)c->up_made);
+    net_w_f32(&b, c->up_delay);
+    net_w_f32(&b, c->up_pulse);
+    net_w_u32(&b, c->upgrade);
+    net_w_u32(&b, c->up_taken);
+    net_send_msg(1, m, b.len);
+    b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_STATE);
+    net_w_u8(&b, NST_DONE);
+    net_w_u8(&b, (uint32_t)v->block);
+    net_w_u32(&b, ng_bseq);
+    net_send_msg(1, m, b.len);
+    char line[400];                                  /* each building's state, HP and storeys standing, for the log */
+    int len = 0;
+    for (uint32_t i = 0; i < v->scene.nbuildings && len < (int)sizeof line - 32; i++) {
+        const Building *bb = &v->scene.buildings[i].b;
+        len += snprintf(line + len, sizeof line - (size_t)len, " %u:%d/%d/%d", i, bb->state, bb->hp, bb->n);
+    }
+    net_log("buildings (state/HP/storeys):%s", line);
+    net_log("sent block %d's state: %u buildings (%d bytes each unpacked, %d packed at most), %d edible slots, %d bytes",
+            v->block, v->scene.nbuildings, (int)sizeof(Building), biggest, ns, total);
+}
+
+/* guest: building i as the host's. Its drawing follows (dirty: the facade, the interiors, the light; building_place
+ * places a fallen or falling one); what its cells' breaking would have told here already happened on the host (the
+ * edibles come next, the people and the army are the host's), so the scene is told it has seen them */
+static void ng_state_building(Viewer *v, NetBuf *b)
+{
+    static Building nb;
+    uint32_t i = net_r_u16(b), n = net_r_u16(b), size = net_r_u32(b);
+    if (b->err || size != sizeof(Building) || i >= v->scene.nbuildings) {
+        net_log("the host's building %u of %u (%u bytes): not ours (%u buildings, %d bytes)", i, n, size,
+                v->scene.nbuildings, (int)sizeof(Building));
+        return;
+    }
+    if (net_unpack(b, &nb, (int)sizeof nb) != 0) {
+        net_log("the host's building %u: broken", i);
+        return;
+    }
+    SceneBuilding *sb = &v->scene.buildings[i];
+    if (memcmp(sb->b.min, nb.min, sizeof nb.min) || sb->b.storeys != nb.storeys || sb->b.width != nb.width) {
+        net_log("the host's building %u is another building", i);
+        return;
+    }
+    sb->b = nb;
+    Building *bb = &sb->b;
+    bb->ndebris = bb->nhit_debris = bb->nscore = 0;  /* (the host played and paid those) */
+    bb->pre_collapse = bb->drop_dust = 0;
+    bb->dirty = 1;
+    bb->ground_due = 1;
+    sb->seen_falls = bb->falls;
+    sb->seen_state = bb->state;
+    for (int o = 0; o < BUILDING_STOREYS; o++)
+        for (int col = 0; col < bb->width; col++) {
+            int ci = building_cell_index(bb, FACE_FRONT, col);
+            if (ci >= 0 && bb->cell[o][ci].state >= 2 && sb->broke[o][ci] < bb->cell[o][ci].state)
+                sb->broke[o][ci] = bb->cell[o][ci].state;
+        }
+}
+
+static void ng_state_edibles(Viewer *v, NetBuf *b)
+{
+    int ns = (int)net_r_u16(b), have = v->edibles ? edible_slots(v->edibles) : 0;
+    if (ns != have)
+        net_log("the host has %d edible slots, we have %d", ns, have);
+    for (int i = 0; i < ns && !b->err; i++) {
+        int kind = (int8_t)net_r_u8(b), out = (int)net_r_u8(b);
+        float age = out ? net_r_f32(b) : 0;
+        if (!b->err && i < have)
+            edible_net_slot(v->edibles, i, kind, out, age);
+    }
+}
+
+static void ng_state_challenge(Viewer *v, NetBuf *b)
+{
+    Challenge *c = &v->challenge;
+    int st = (int)net_r_u8(b), made = (int)net_r_u8(b);
+    float delay = net_r_f32(b), pulse = net_r_f32(b);
+    uint32_t up = net_r_u32(b), taken = net_r_u32(b);
+    if (b->err)
+        return;
+    if (st == CU_WAITING && c->up_state != CU_WAITING && v->fxw && c->up.effect && v->upgrade_fx < 0)
+        v->upgrade_fx = fx_spawn(v->fxw, c->up.effect, c->up.pos, NULL, 1);   /* (as its CUE_SPAWN) */
+    else if (st != CU_WAITING && v->upgrade_fx >= 0) {
+        if (v->fxw)
+            fx_stop(v->fxw, v->upgrade_fx);
+        v->upgrade_fx = -1;
+    }
+    c->up_state = st;
+    c->up_made = made;
+    c->up_delay = delay;
+    c->up_pulse = pulse;
+    c->upgrade = up;
+    c->up_taken = taken;
+}
+
+static void ng_on_state(Viewer *v, NetBuf *b)
+{
+    int kind = (int)net_r_u8(b), block = (int)net_r_u8(b);
+    if (b->err)
+        return;
+    if (net_role() == NET_HOST) {
+        if (kind == NST_ASK)
+            ng_state_due = block;
+        return;
+    }
+    if (block != v->block) {
+        net_log("the host's state of block %d, we are in %d: not taken", block, v->block);
+        return;
+    }
+    switch (kind) {
+    case NST_BUILDING: ng_state_building(v, b); break;
+    case NST_EDIBLES: ng_state_edibles(v, b); break;
+    case NST_CHALLENGE: ng_state_challenge(v, b); break;
+    case NST_DONE:
+        ng_bs_block = block;
+        ng_bs_seq = net_r_u32(b);
+        net_log("took the host's block %d state (its building changes from %u on)", block, ng_bs_seq + 1);
+        break;
+    }
+}
+
 /* ---- the messages netgame.c reads itself (the puppets' and the menus' below) */
 static void ng_on_puppet(NetBuf *b, int type);
 static void ngr_menu_message(Viewer *v, NetBuf *b);
@@ -271,29 +499,158 @@ static void ng_handler(const uint8_t *data, int len)
         ng_on_puppet(&b, type);
     else if (type == NM_MENU)
         ngr_menu_message(g_ngv, &b);
+    else if (type == NM_STATE && (net_role() == NET_HOST || net_live()))
+        ng_on_state(g_ngv, &b);
 }
 
-/* ---- the digest: what both must agree on (buildings, game state, block) */
-static uint32_t ng_digest(const Viewer *v)
+/* ---- the digest: what both must agree on, a part a system (netwire.h NetDigest; net.c compares each). The host's
+ * as its game is, the guest's as it shows it (after the snapshots and the puppets are applied); the counts and states
+ * exactly, the places as a mean (within the system's tolerance: the guest's blending and its hands move them a bit) */
+static uint32_t ng_h(uint32_t h, int x) { return net_hash(&x, 4, h); }
+
+/* the mean place of n points summed in sum (0 0 0 none) into v[0 .. 2] */
+static void ng_mean(float *v, const double sum[3], int n)
 {
-    uint32_t h = 2166136261u;
-    int gs = v->game ? game_state(v->game) : 0, blk = v->block;
-    if (getenv("RAMPAGE_NET_TRACE")) {               /* what went into it, for a MISMATCH */
-        int hp = 0, down = 0;
-        for (uint32_t i = 0; i < v->scene.nbuildings; i++) {
-            hp += v->scene.buildings[i].b.hp;
-            down += v->scene.buildings[i].b.state != BUILDING_STANDING;
-        }
-        net_log("digest: state %d block %d, %u buildings, hp %d, %d not standing", gs, blk, v->scene.nbuildings, hp, down);
+    for (int k = 0; k < 3; k++)
+        v[k] = n ? (float)(sum[k] / n) : 0;
+}
+
+static void ng_digest(const Viewer *v, NetDigest *d)
+{
+    memset(d, 0, sizeof *d);
+    const uint32_t H0 = 2166136261u;
+    NetDSys *s = &d->s[NDS_GAME];                    /* the game: state, block, the score and lives, the clock */
+    GameNetSync gs;
+    memset(&gs, 0, sizeof gs);
+    if (v->game)
+        game_net_get(v->game, &gs);
+    s->h = ng_h(ng_h(H0, v->game ? game_state(v->game) : 0), v->block);
+    for (int k = 0; k < 2; k++) {
+        s->h = ng_h(s->h, gs.lives[k]);
+        for (int c = 0; c < 7; c++)
+            s->h = ng_h(ng_h(s->h, gs.points[k][c]), gs.kills[k][c]);
     }
-    h = net_hash(&gs, 4, h);
-    h = net_hash(&blk, 4, h);
+    s->v[0] = v->game ? game_clock(v->game, NULL) : 0;
+    s = &d->s[NDS_MONSTERS];                         /* the monsters: defeated, raging; places and HP */
+    s->h = ng_h(H0, v->nmon);
+    for (int k = 0; k < v->nmon; k++) {
+        const Mon *mo = &v->mon[k];
+        s->h = ng_h(ng_h(s->h, mo->defeated), mo->power.rage);
+        if (k < 2) {
+            s->v[3 * k] = mo->mx;
+            s->v[3 * k + 1] = mo->my;
+            s->v[3 * k + 2] = mo->mz;
+            s->v[6 + k] = mo->hp;
+        }
+    }
+    s = &d->s[NDS_BUILDINGS];                        /* the buildings: state, HP, storeys, roof, cells, floors */
+    s->h = ng_h(H0, (int)v->scene.nbuildings);
     for (uint32_t i = 0; i < v->scene.nbuildings; i++) {
         const Building *b = &v->scene.buildings[i].b;
-        int st[2] = { b->state >= BUILDING_CRACKING ? BUILDING_CRACKING : b->state, b->hp };
-        h = net_hash(st, 8, h);
+        int cells = 0, floors = 0;
+        for (int ls = 0; ls < b->n; ls++) {
+            int o = b->live[ls];
+            floors += b->floor_hp[o];
+            for (int col = 0; col < b->width; col++) {
+                int ci = building_cell_index(b, FACE_FRONT, col);
+                cells += ci >= 0 ? b->cell[o][ci].state : 0;
+            }
+        }
+        s->h = ng_h(ng_h(s->h, b->state >= BUILDING_CRACKING ? BUILDING_CRACKING : b->state), b->hp);
+        s->h = ng_h(ng_h(ng_h(ng_h(s->h, b->n), b->roof), cells), floors);
     }
-    return h;
+    s = &d->s[NDS_PEOPLE];                           /* people: how many, where (not those in a hand: the guest's own
+                                                      * hand holds them) */
+    double sum[3] = { 0, 0, 0 };
+    int n = 0, live = 0;
+    for (int who = 0; v->scene.folk && who < people_count(v->scene.folk); who++) {
+        const Person *q = people_get(v->scene.folk, who);
+        if (q->phase == PP_GONE)
+            continue;
+        live++;
+        if (q->phase == PP_HELD)
+            continue;
+        for (int k = 0; k < 3; k++)
+            sum[k] += q->pos[k];
+        n++;
+    }
+    s->h = ng_h(H0, live);
+    ng_mean(s->v, sum, n);
+    s = &d->s[NDS_ARMY];                             /* the army: units, where, shots */
+    memset(sum, 0, sizeof sum);
+    n = live = 0;
+    for (int i = 0; v->army && i < army_count(v->army); i++) {
+        const ArmyUnit *u = army_unit(v->army, i);
+        if (u->phase == AU_GONE)
+            continue;
+        live++;
+        if (u->phase == AU_HELD)
+            continue;
+        for (int k = 0; k < 3; k++)
+            sum[k] += u->world[12 + k];
+        n++;
+    }
+    s->h = ng_h(H0, live);
+    ng_mean(s->v, sum, n);
+    for (int i = 0; v->army && i < army_shots(v->army); i++)
+        s->v[3] += army_shot(v->army, i)->alive != 0;
+    s = &d->s[NDS_BOSS];                             /* the bosses: parts, defeated, the main one's HP */
+    live = 0;
+    for (int i = 0; v->boss && i < boss_count(v->boss); i++)
+        live += boss_part(v->boss, i)->alive != 0;
+    s->h = ng_h(ng_h(H0, live), v->boss ? boss_defeated(v->boss) : 0);
+    if (v->boss && boss_main(v->boss) >= 0 && boss_main(v->boss) < boss_count(v->boss))
+        s->v[0] = boss_part(v->boss, boss_main(v->boss))->hp_frac;
+    s = &d->s[NDS_TRAFFIC];                          /* vehicles (where), rail, parade */
+    memset(sum, 0, sizeof sum);
+    n = live = 0;
+    for (int i = 0; v->veh && i < vehicle_count(v->veh); i++) {
+        const VehObj *o = vehicle_obj(v->veh, i);
+        if (o->phase == VP_GONE)
+            continue;
+        live++;
+        if (o->phase == VP_HELD)
+            continue;
+        for (int k = 0; k < 3; k++)
+            sum[k] += o->world[12 + k];
+        n++;
+    }
+    s->h = ng_h(H0, live);
+    ng_mean(s->v, sum, n);
+    live = 0;
+    for (int i = 0; v->rail && i < rail_count(v->rail); i++)
+        live += rail_obj(v->rail, i)->phase != RP_GONE;
+    s->h = ng_h(s->h, live);
+    live = 0;
+    for (int i = 0; v->parade && i < parade_count(v->parade); i++)
+        live += parade_obj(v->parade, i)->phase != PAP_GONE;
+    s->h = ng_h(s->h, live);
+    s = &d->s[NDS_STREET];                           /* the street objects: which are still there */
+    s->h = H0;
+    for (int i = 0; v->sobj && i < streetobj_count(v->sobj); i++)
+        s->h = ng_h(s->h, streetobj_get(v->sobj, i)->alive != 0);
+    s = &d->s[NDS_EDIBLES];                          /* the edibles' slots: none left, hidden, out in their window */
+    s->h = H0;
+    for (int i = 0; v->edibles && i < edible_slots(v->edibles); i++) {
+        const EdibleSlot *sl = edible_slot(v->edibles, i);
+        const Edible *e = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+        s->h = ng_h(s->h, sl->kind < 0 || (e && e->phase != EP_WINDOW) ? 0 : e ? 2 : 1);
+    }
+    s = &d->s[NDS_CHALLENGE];                        /* the challenge: its counts, met, the upgrade */
+    s->h = ng_h(ng_h(ng_h(H0, v->challenge.ngoals), v->challenge.met), v->challenge.up_state);
+    for (int g = 0; g < v->challenge.ngoals && g < CHALLENGE_GOALS; g++)
+        s->h = ng_h(s->h, v->challenge.goal[g].collected);
+    if (getenv("RAMPAGE_NET_TRACE")) {               /* what went into it, for a MISMATCH */
+        static double said;
+        if (net_now() - said >= 2) {
+            said = net_now();
+            char line[512];
+            int len = 0;
+            for (int k = 0; k < NET_DSYS && len < (int)sizeof line - 40; k++)
+                len += snprintf(line + len, sizeof line - (size_t)len, " %s %08X", NET_DSYS_NAME[k], d->s[k].h);
+            net_log("digest:%s", line);
+        }
+    }
 }
 
 /* ---- snapshots */
@@ -521,10 +878,20 @@ static void ng_apply_snap(Viewer *v)
             net_log("the host is in block %d, we are in %d", ng_last.block, v->block);
         warned = ng_last.block;
     }
-    if (net_now() - ng_digest_at >= NG_DIGEST_EVERY && n) {
-        ng_digest_at = net_now();
-        net_send_digest(n->t, ng_digest(v));
-    }
+}
+
+/* the guest, every NG_DIGEST_EVERY: its digest as shown now, with the host time it shows (the snapshots' delay
+ * behind) and the newest it has (the buildings') */
+static void ng_digest_send(Viewer *v)
+{
+    const NetSnapBuf *mb = net_snaps();
+    const NetSnapSample *n = netsnap_newest(mb);
+    if (!n || !mb->have_offset || net_now() - ng_digest_at < NG_DIGEST_EVERY)
+        return;
+    ng_digest_at = net_now();
+    NetDigest d;
+    ng_digest(v, &d);
+    net_send_digest(net_now() - mb->offset - ng_delay(), n->t, &d);
 }
 
 /* ---- puppets: the systems the host runs and the guest only shows (netrep_*.c fill them in). Each channel has its
@@ -746,6 +1113,17 @@ static void netgame_frame(Viewer *v, Window *w, double now)
  * (player 1's keys and pad 0) and plays it on its player 2 at once, player 1 by the host's */
 static void netgame_pads(Viewer *v, const Window *w)
 {
+    if (net_role() == NET_HOST && v->play && have_monster(v) && v->have_scene && mon_in(&v->mon[0])) {
+        static const char *hostdo;                   /* RAMPAGE_NET_HOSTDO (tools/net_test.ps1 -HostDo): --do's words
+                                                      * played by the host's monster, guest or not (a late join's test) */
+        static int hostdo_read;
+        if (!hostdo_read) {
+            hostdo_read = 1;
+            hostdo = getenv("RAMPAGE_NET_HOSTDO");
+        }
+        if (hostdo && *hostdo)
+            hostdo = play_script(v, hostdo, 0.75f);
+    }
     if (!net_live() || v->nmon < 2)
         return;
     if (net_role() == NET_HOST) {
@@ -802,15 +1180,20 @@ static void netgame_after_step(Viewer *v)
         return;
     if (net_role() == NET_HOST) {
         ng_building_flush();
+        ng_state_send(v);                            /* (after the frame's building changes: they are in it) */
         if (net_now() - ng_snap_at >= 1.0 / ng_rate - 0.002) {   /* (2 ms early: a 60 Hz frame's jitter) */
             ng_snap_at = net_now();
             ng_send_snap(v);
-            net_keep_digest(net_now(), ng_digest(v));
+            NetDigest d;
+            ng_digest(v, &d);
+            net_keep_digest(net_now(), &d);
         }
         ng_puppets_send(v);
     } else {
+        ng_state_ask(v);
         ng_apply_snap(v);
         ng_puppets_apply(v);
+        ng_digest_send(v);
     }
 }
 
