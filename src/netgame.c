@@ -42,6 +42,7 @@ static double ng_delay(void)
 static Viewer *g_ngv;
 static int ng_guest_menu;                            /* the host: the guests whose pads say they have a menu up (bit k:
                                                       * slot k's) */
+static int ng_guest_typing;                          /* the host: the guests whose chat box is open (bit k: slot k's) */
 static int ng_replaying;                             /* the guest makes the host's building change: the gate is open */
 /* (the guest replays a roof hit: building_hit_roof ends in a building_hit of the cell under it, which the host's gate
  * sent as a change of its own, next in the message; made here too, the cell took the blow twice: New York's victory
@@ -1040,8 +1041,9 @@ static void ng_send_snap(Viewer *v)
     net_w_u8(&b, NET_SLOTS);                         /* each slot's pad frame the host took last (its prediction) */
     for (int k = 0; k < NET_SLOTS; k++)
         net_w_u32(&b, net_remote_frame(k));
-    net_w_u8(&b, (uint32_t)((netui_wants_input() || (v->hud && hud_pause_showing(v->hud)) ? 1 : 0) |
-                            (ng_guest_menu & ~1)));
+    net_w_u8(&b, (uint32_t)(((netui_wants_input() && !netui_chat_open()) || (v->hud && hud_pause_showing(v->hud)) ?
+                             1 : 0) | (ng_guest_menu & ~1) |
+                            ((netui_chat_open() ? 1 : 0) | (ng_guest_typing & ~1)) << 4));   /* (bits 4-7: typing) */
     if (!b.err)
         net_send_snap(m, b.len);
 }
@@ -2101,7 +2103,9 @@ static void ng_pad_send(Viewer *v, Pad *mine_in)
         memset(&mine, 0, sizeof mine);
     NetPad np;
     ng_pad_out(&mine, &np);
-    if (netui_wants_input())                         /* the panel up: "IN MENU" over our monster on the host's */
+    if (netui_chat_open())                           /* the chat open: "TYPING" over our monster on the others' */
+        np.held |= NET_PAD_TYPING;
+    else if (netui_wants_input())                    /* the panel up: "IN MENU" */
         np.held |= NET_PAD_MENU;
     net_send_pad(&np);
     int me = ng_me();
@@ -2173,6 +2177,7 @@ static void ng_slots_pads(Viewer *v)
         if (k == v->nmon && net_slot_state(k, NULL) == NSL_ONLINE)
             ng_dropin(v, k);
     ng_guest_menu = 0;
+    ng_guest_typing = 0;
     for (int k = 1; k < v->nmon && k < net_slots(); k++) {
         Mon *mo = &v->mon[k];
         if (mo->bot)
@@ -2183,6 +2188,8 @@ static void ng_slots_pads(Viewer *v)
             int got = net_remote_pad(k, &np);
             if (got && (np.held & NET_PAD_MENU))
                 ng_guest_menu |= 1 << k;
+            if (got && (np.held & NET_PAD_TYPING))
+                ng_guest_typing |= 1 << k;
             if (got)
                 ng_pad_in(&np, &mo->pad, 1);
             else
@@ -2610,13 +2617,17 @@ static void ng_slot_labels(const Viewer *v, const Window *w)
     }
 }
 
-/* "IN MENU" over the head of a player who has a menu up (the other player's, as the snapshots and pads say) */
+/* "IN MENU" over the head of a player who has a menu up, "TYPING" over one whose chat box is open (the other
+ * players', as the snapshots and pads say) */
 static void ng_menu_labels(const Viewer *v, const Window *w)
 {
     ng_slot_labels(v, w);
     if (!net_live() || !ng_cam.set || !v->play || !w->width || !w->height)
         return;
-    int menu = net_role() == NET_HOST ? ng_guest_menu : ng_have_last ? (ng_last.menu & ~(1 << ng_me())) : 0;
+    int bits = net_role() == NET_HOST ? ng_guest_menu | ng_guest_typing << 4 : ng_have_last ? ng_last.menu : 0;
+    if (net_role() == NET_GUEST)
+        bits &= ~(1 << ng_me() | 1 << (ng_me() + 4));   /* (never over our own) */
+    int menu = bits & 15, typing = bits >> 4 & 15;
     if (getenv("RAMPAGE_NET_TRACE")) {
         static int was = -1;
         if (menu != was) { net_log("menu bits %d", menu); was = menu; }
@@ -2624,7 +2635,8 @@ static void ng_menu_labels(const Viewer *v, const Window *w)
     for (int k = 0; k < MONSTERS && k < v->nmon; k++) {
         float said_age = 0;
         const char *said = netui_chat_said(k, &said_age);
-        if (!(menu >> k & 1) && !(said && said_age < 5))   /* a menu up, or a line said in the last 5 s */
+        if (!(menu >> k & 1) && !(typing >> k & 1) && !(said && said_age < 5))   /* a menu, typing, or a line said in
+                                                      * the last 5 s */
             continue;
         if (ng_idle(v, k))
             continue;                                /* (its big label instead) */
@@ -2632,8 +2644,9 @@ static void ng_menu_labels(const Viewer *v, const Window *w)
         if (!ng_head_screen(v, w, k, &sx, &sy))
             continue;
         char bubble[48];
-        snprintf(bubble, sizeof bubble, "%.40s%s", said && said_age < 5 && !(menu >> k & 1) ? said : "IN MENU",
-                 said && said_age < 5 && !(menu >> k & 1) && strlen(said) > 40 ? "..." : "");
+        int quiet = !(menu >> k & 1) && !(typing >> k & 1);   /* (neither: its last line) */
+        snprintf(bubble, sizeof bubble, "%.40s%s", quiet ? said : menu >> k & 1 ? "IN MENU" : "TYPING...",
+                 quiet && strlen(said) > 40 ? "..." : "");
         netui_label(sx, sy, bubble);
         if (getenv("RAMPAGE_NET_TRACE")) {
             static double said;

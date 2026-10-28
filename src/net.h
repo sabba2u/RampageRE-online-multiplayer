@@ -71,6 +71,7 @@ int net_remote_pad(int k, NetPad *out);
 uint32_t net_pad_frame(void);                       /* the guest: the frame of the pad it sent last */
 uint32_t net_remote_frame(int k);                   /* the host: slot k's guest's frame it took last (0 none) */
 #define NET_PAD_MENU (1u << 31)                      /* in NetPad.held: the guest has a menu up (the panel) */
+#define NET_PAD_TYPING (1u << 30)                    /* in NetPad.held: the guest's chat box is open */
 
 /* the host's snapshots (netgame.c builds them, the bytes after the header) */
 void net_send_snap(const void *data, int len);
