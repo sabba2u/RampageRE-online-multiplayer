@@ -733,6 +733,12 @@ static int ngr_edible_write(Viewer *v, NetBuf *b)
 {
     net_w_u8(b, (uint32_t)v->block);
     ng_edibles_w(v, b);
+    /* the cryotube's reveal (reveal.c): the monster it unlocks, its tubes placed, the reveals so far. The guest's own
+     * profile picked its own at the block's load; the host's is the one its tube shows */
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.monster);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.placed);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.revealed);
+    net_w_u8(b, (uint32_t)(uint8_t)(int8_t)v->reveal.count);
     return v->edibles && edible_slots(v->edibles) > 0;
 }
 
@@ -747,8 +753,26 @@ static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSam
     done = s->t;
     NetBuf b = netbuf((void *)s->data, s->len);
     int block = (int)net_r_u8(&b);
-    if (!b.err && block == v->block)
-        ng_edibles_r(v, &b);
+    if (b.err || block != v->block)
+        return;
+    ng_edibles_r(v, &b);
+    int monster = (int8_t)net_r_u8(&b), placed = (int8_t)net_r_u8(&b), revealed = (int8_t)net_r_u8(&b);
+    int count = (int8_t)net_r_u8(&b);
+    /* the host's reveal, while this side is at the same point of it (a tube broken here first, from the host's
+     * building change, is not put back by an older snapshot; none here, the guest's monster unlocked already: the
+     * host's) */
+    static int said = -2;                            /* (the log: a reveal here, by this side's tube) */
+    if (v->reveal.revealed != said && said != -2 && v->reveal.monster >= 0 && v->reveal.monster < v->roster.n)
+        net_log("edibles: the cryotube revealed %s", v->roster.name[v->reveal.monster]);
+    said = v->reveal.revealed;
+    if (!b.err && v->reveal.revealed < 0 && revealed >= 0)
+        v->reveal.revealed = revealed;
+    if (!b.err && revealed == v->reveal.revealed && monster < v->roster.n &&
+        (v->reveal.monster != monster || v->reveal.placed != placed || v->reveal.count != count)) {
+        v->reveal.monster = monster;
+        v->reveal.placed = placed;
+        v->reveal.count = count;
+    }
 }
 static void ngr_edible_event(Viewer *v, NetBuf *b)
 {

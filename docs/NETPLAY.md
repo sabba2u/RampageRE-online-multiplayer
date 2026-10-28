@@ -71,6 +71,10 @@ tools\net_test.ps1 -TestPad -Lag 100 -Loss 5 the internet on one PC
 tools\net_test.ps1 -Seconds 0                leave both running to play them yourself
 tools\net_test.ps1 -JoinDelay 30 -HostDo "wait 3, hitcell 3 0 0 10, ..."
                                              the guest joins 30 s late; the host's monster plays --do's words first
+tools
+et_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
+                                             the words 35 s (real time) after the guest came in. --do's waits run
+                                             the game's frames at once, with no network: before "after" only
 ```
 
 `RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents.
@@ -99,6 +103,9 @@ All of online play is in its own files (`src/net.c`, `netwire.*`, `netsnap.*`, `
 | `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (the guest's slots made the host's, at the host's place where the guest's floor fell first); the guest's `edible_floor_fell` does nothing |
 | `src/streetobj.c` / `.h` | `streetobj_net_make` (a script-made object of the host's, made on the guest) |
 | `src/main.c` (feel, challenge) | `net_rumble` first in `mon_rumble`, `net_shake` before both `shake_start`s; the guest's upgrade touch loop and `challenge_upgrade_tick` are skipped |
+| `src/edible.c` / `.h` | `edible_net_gate` in `edible_grab`, once it has an edible to take; `edible_net_slot` (a late guest's slots made the host's; a falling cryotube left to fall); `spawn` makes the guest's cryotube (its break and reveal play as the host's) |
+| `src/boss.c` / `.h` | `boss_net_triggers` / `boss_net_set_triggers` (New York's barrier volumes: the guest's monster is pushed out of the host's) |
+| `src/main.c` (mon_step) | the guest's monsters are not defeated by their own state change at 0 HP (the host's defeat comes in the snapshot) |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
 | `src/main.c` (play_step, edible_step) | the guest runs no `scene_people_spawn` / `people_update`; a held index not here yet is let go; the guest's edible events pay no stats or reactions |
 

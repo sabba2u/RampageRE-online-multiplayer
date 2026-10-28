@@ -1830,7 +1830,22 @@ static void netgame_pads(Viewer *v, const Window *w)
             hostdo_read = 1;
             hostdo = getenv("RAMPAGE_NET_HOSTDO");
         }
-        if (hostdo && *hostdo)
+        /* "after 40, ...": the words 40 s (real time) after a guest came in. play_script's waits run the game's
+         * frames at once with no network (no join meanwhile, nothing sent): a test of the guest's side is "after" with
+         * no waits */
+        static double joined_at = -1;
+        if (net_live() && joined_at < 0)
+            joined_at = net_now();
+        if (hostdo && !_strnicmp(hostdo, "after ", 6)) {
+            char *end;
+            double secs = strtod(hostdo + 6, &end);
+            if (joined_at >= 0 && net_now() - joined_at >= secs) {
+                hostdo = end;
+                while (*hostdo == ',' || *hostdo == ' ')
+                    hostdo++;
+            }
+        }
+        if (hostdo && *hostdo && _strnicmp(hostdo, "after ", 6))
             hostdo = play_script(v, hostdo, 0.75f);
     }
     if (!net_live() || v->nmon < 2)

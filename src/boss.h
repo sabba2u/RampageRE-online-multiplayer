@@ -230,5 +230,9 @@ extern int (*boss_net_events)(Boss *b, BossEvent *out, int n, int max);
 BossPart *boss_net_slot(Boss *b, int slot);
 BossPart *boss_net_part(Boss *b, int slot, const char *name, const float pos[3]);
 void boss_net_state(Boss *b, int n, int main, int defeated);
+/* the VolumeTriggers (New York's barriers): each one's Center and Extents (ce: c[3], e[3]) and flags (1 alive,
+ * 2 DoPushout); the host's read, the guest's made the host's (no FireFunc: its touches are the host's). How many */
+int boss_net_triggers(const Boss *b, float ce[][6], int *flags, int max);
+void boss_net_set_triggers(Boss *b, int n, const float ce[][6], const int *flags);
 
 #endif

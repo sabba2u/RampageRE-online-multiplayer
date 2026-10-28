@@ -6249,7 +6249,8 @@ static void mon_step(Mon *mo, float dt)
              * event and fires, in order, every one at or before the start, so a state entered part-way (phase
              * kept) still gets its set-up (mode, column) */
             clip_events(mo, to, -1, mo->run.time);
-            if (ev != 0 && !mo->defeated && mo->hp <= 0 && mo->pending_slot < 0 && mo->mode != MODE_AIRBORNE) {
+            if (ev != 0 && !mo->defeated && mo->hp <= 0 && mo->pending_slot < 0 && mo->mode != MODE_AIRBORNE &&
+                !net_guest_world()) {               /* NET: the guest's defeats are the host's (the snapshot) */
                 /* [R 0x2E68A0 .. 0x2E6A4C] the state command's own test, as a state starts that is not a reaction
                  * (the command's +0xC; a forced start, ev 0 here) with none asked (+0x110): at 0 HP, not in the air
                  * (+0xAD8 1) and not yet defeated (+0xA59), the defeat as TakeDamage's (0x2D9500 .. 0x2D95F4): the
