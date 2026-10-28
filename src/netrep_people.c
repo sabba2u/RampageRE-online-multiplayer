@@ -726,6 +726,47 @@ static int ngr_edible_gate(Edibles *e, int building, int storey, int column, int
     return 0;
 }
 
+/* the slots, a few times a second (4 at 20 updates a second, 12 at 60): each one's kind and whether its edible is out
+ * in the window (and its age there). The guest makes none appear by itself (edible_net_no_spawn): what the host's
+ * cells and floors showed, its own deal of a new block differing (the world's random draws are not the same there) */
+static int ngr_edible_write(Viewer *v, NetBuf *b)
+{
+    int ns = v->edibles ? edible_slots(v->edibles) : 0;
+    net_w_u8(b, (uint32_t)v->block);
+    net_w_u16(b, (uint32_t)ns);
+    for (int i = 0; i < ns; i++) {
+        const EdibleSlot *sl = edible_slot(v->edibles, i);
+        const Edible *d = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
+        int out = d && d->phase == EP_WINDOW;
+        net_w_u8(b, (uint32_t)(uint8_t)(int8_t)(d && !out ? -1 : sl->kind));   /* (one picked or falling: gone) */
+        net_w_u8(b, (uint32_t)out);
+        if (out)
+            net_w_f32(b, d->age);
+    }
+    return ns > 0;
+}
+
+static void ngr_edible_apply(Viewer *v, const NetSnapSample *a, const NetSnapSample *s, float alpha, int how)
+{
+    (void)a;
+    (void)alpha;
+    (void)how;
+    static double done;                              /* the sample last made (each one once) */
+    if (!v->edibles || s->t == done)
+        return;
+    done = s->t;
+    NetBuf b = netbuf((void *)s->data, s->len);
+    int block = (int)net_r_u8(&b), ns = (int)net_r_u16(&b), have = edible_slots(v->edibles);
+    if (b.err || block != v->block)
+        return;
+    for (int i = 0; i < ns && !b.err; i++) {
+        int kind = (int8_t)net_r_u8(&b), out = (int)net_r_u8(&b);
+        float age = out ? net_r_f32(&b) : 0;
+        if (!b.err && i < have)
+            edible_net_slot(v->edibles, i, kind, out, age);
+    }
+}
+
 static void ngr_edible_event(Viewer *v, NetBuf *b)
 {
     char as[256], move[256];
@@ -744,7 +785,7 @@ static void ngr_edible_event(Viewer *v, NetBuf *b)
 static void ngr_people_init(void)
 {
     ng_pup[NGP_PEOPLE] = (NgPuppet){ "people", 20, ngr_people_write, ngr_people_apply, ngr_people_event, ngr_people_reset };
-    ng_pup[NGP_EDIBLES] = (NgPuppet){ "edibles", 0, NULL, NULL, ngr_edible_event, NULL };
+    ng_pup[NGP_EDIBLES] = (NgPuppet){ "edibles", 4, ngr_edible_write, ngr_edible_apply, ngr_edible_event, NULL };
     people_net_gate = ngr_people_gate;
     people_net_tap = ngr_people_tap;
     people_net_eaten = ngr_people_eaten;

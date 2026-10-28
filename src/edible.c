@@ -410,8 +410,14 @@ static void remove_edible(Edibles *e, Edible *d)
 
 /* [R] 0x317BC0: the kind's template made an Actor (0x283DA0, init 0x30D280), placed in its cell, given its slot
  * (0x30C3C0), +0xF4 = 1.5; then its script's Construct */
+/* NET: the guest of an online game makes no edible appear by itself (edible.h): the host's slots arrive */
+int edible_net_no_spawn;
+static int net_spawning;
+
 static void spawn(Edibles *e, int s)
 {
+    if (edible_net_no_spawn && !net_spawning)        /* NET */
+        return;
     EdibleSlot *sl = &e->slot[s];
     if (sl->kind < 0 || sl->item >= 0)
         return;
@@ -1007,12 +1013,16 @@ void edible_net_slot(Edibles *e, int i, int kind, int out, float age)
     if (i < 0 || i >= e->nslots || kind < -1 || kind >= e->nkinds)
         return;
     EdibleSlot *s = &e->slot[i];
-    if ((kind < 0 || !out) && s->item >= 0 && s->item < e->n)
-        remove_edible(e, &e->ed[s->item]);           /* (its effect stopped, EE_REMOVED) */
+    if ((kind < 0 || !out || kind != s->kind) && s->item >= 0 && s->item < e->n)
+        remove_edible(e, &e->ed[s->item]);           /* (its effect stopped, EE_REMOVED); another kind in the window
+                                                      * than the host's (the guest's own deal of a new block) too */
     s->item = s->item >= 0 && s->item < e->n && e->ed[s->item].phase != EP_GONE ? s->item : -1;
     s->kind = kind;
-    if (kind >= 0 && out && s->item < 0)
+    if (kind >= 0 && out && s->item < 0) {
+        net_spawning = 1;                            /* (the host's, on the guest: edible_net_no_spawn) */
         spawn(e, i);
+        net_spawning = 0;
+    }
     if (kind >= 0 && out && s->item >= 0 && e->ed[s->item].phase == EP_WINDOW)
         e->ed[s->item].age = age;
 }

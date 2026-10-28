@@ -643,6 +643,7 @@ static void ng_digest(const Viewer *v, NetDigest *d)
         const EdibleSlot *sl = edible_slot(v->edibles, i);
         const Edible *e = sl->item >= 0 ? edible_get(v->edibles, sl->item) : NULL;
         s->h = ng_h(s->h, sl->kind < 0 || (e && e->phase != EP_WINDOW) ? 0 : e ? 2 : 1);
+        s->h = ng_h(s->h, sl->kind);                 /* and which kind: a donut is not a zebra */
     }
     s = &d->s[NDS_CHALLENGE];                        /* the challenge: its counts, met, the upgrade */
     s->h = ng_h(ng_h(ng_h(H0, v->challenge.ngoals), v->challenge.met), v->challenge.up_state);
@@ -1338,6 +1339,7 @@ static void netgame_frame(Viewer *v, Window *w, double now)
         return;
     }
     ng_set_world(v);
+    edible_net_no_spawn = ng_guest();                /* the guest's edibles: the host's alone (netrep_people.c) */
     if (net_role() == NET_GUEST && net_state() == NETS_CONNECTED && net_host_world() &&
         net_host_world() != net_world())
         ng_follow(v);
