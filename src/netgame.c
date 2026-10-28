@@ -125,8 +125,12 @@ static void ng_set_world(Viewer *v)
     NgWorld w;
     if (!ng_world_of(v, &w)) {
         net_set_world(0, NULL, 0);
+        netlobby_set_game("", "");                   /* the lobby's list: in the menus (netlobby.c) */
         return;
     }
+    char where[40];                                  /* the lobby's list: "George", "Chicago 2" */
+    snprintf(where, sizeof where, "%s %d", CITIES[v->city_index], (int)v->block + 1);
+    netlobby_set_game(v->monsters[v->mon[0].monster], where);
     if (net_role() == NET_HOST)
         w.bot_seed = v->bot_seed;
     uint32_t id = ng_world_id(&w);
@@ -1052,11 +1056,16 @@ static int ng_flow_logged(int type)
            type == GE_EXIT;
 }
 
+static void ngm_results_sent(const uint8_t *m, int len);   /* netrep_menu.c: a late guest's results screen */
+static void ngm_progress_send(Viewer *v);                    /* netrep_menu.c: a block won, for the guest's profile */
+static void ngm_results_missing(Viewer *v, double t);
+
 static void ng_flow_tap(const GameEvent *e)
 {
     if (e->type == GE_HUD)
         ng_hud_shown = e->a;
-    if (!ng_host() || !g_ngv || !g_ngv->game)
+    int live = ng_host();                            /* (a results event is kept with no guest too: one may come) */
+    if ((!live && !(net_role() == NET_HOST && e->type == GE_RESULTS)) || !g_ngv || !g_ngv->game)
         return;
     uint8_t m[64 + sizeof(GameNetFlow) + 64];
     NetBuf b = netbuf(m, sizeof m);
@@ -1079,9 +1088,14 @@ static void ng_flow_tap(const GameEvent *e)
     for (int i = 0; i < 3; i++)
         net_w_f32(&b, e->v[i]);
     net_w_f32(&b, e->f);
-    if (!b.err)
+    if (!b.err && live)
         net_send_msg(1, m, b.len);
-    if (ng_flow_logged(e->type))
+    if (!b.err && e->type == GE_RESULTS) {
+        ngm_results_sent(m, b.len);                  /* (kept while the screen is up: a guest that comes in late) */
+        if (e->a == GR_SCREEN_RESULTS)
+            ngm_progress_send(g_ngv);
+    }
+    if (live && ng_flow_logged(e->type))
         net_log("flow: sent event %d a %d b %d slot %d %s", e->type, e->a, e->b, e->slot, e->name ? e->name : "");
 }
 
@@ -1184,6 +1198,8 @@ static void ng_flow_from_snap(Viewer *v, const NgSnap *s, double t)
                 hud_show(v->mon[k].hud, (float)s->hud);
     }
     ng_results_follow(v, s->results_up, t);
+    if (s->results_up)
+        ngm_results_missing(v, t);                   /* (up on the host's, not here: a guest that came in late) */
 }
 
 /* the guest: a monster's look as the host's (after scene_monster_place, which set its model's matrix afresh) */

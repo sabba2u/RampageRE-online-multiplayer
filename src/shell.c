@@ -6287,3 +6287,5 @@ int shell_quads(const Shell *s, HudQuad *out, int max)
     }
     return n;
 }
+
+#include "netshell.c"                              /* NET: online play, the guest shows the host's front end */

@@ -55,6 +55,7 @@
 #include "wrand.h"
 #include "autoplay.h"
 #include "net.h"                                 /* NET: online play (net.h, netgame.c) */
+#include "netlobby.h"                            /* NET: the game list (--lobby) */
 #include "lookfx.h"                              /* port extra: depth of field, tilt-shift, the camera */
 /* NET: the guest of an online game: its monsters' own grabs, throws and hits on the world are not made (the host's
  * arrive: netgame.c) */
@@ -7690,7 +7691,7 @@ static int card_job(Viewer *v, Shell *sh, const ShellEvent *e)
     ShellProfile sp;
     int st = SHELL_CARD_OK;
     uint64_t now = (uint64_t)time(NULL) * 1000;
-    int write = v->prof_write && net_role() != NET_GUEST;   /* NET: the guest of an online game writes no profile */
+    int write = v->prof_write && (net_role() != NET_GUEST || sh == v->shell);   /* NET: none from the host's game */
     if (e->kind == SHELL_EVT_PROFILE_LOAD) {         /* the one profile file */
         Profile p = v->prof;
         int r = v->prof_write ? profile_read(&p, v->prof_path) : -1;
@@ -8652,6 +8653,7 @@ static int viewer_main(int argc, char **argv)
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
         else if (strcmp(argv[i], "--steam-host") == 0) { }
         else if (strcmp(argv[i], "--net-rate") == 0 && i + 1 < argc) i++;
+        else if (strcmp(argv[i], "--lobby") == 0 && i + 1 < argc) netlobby_set_url(argv[++i], 0);   /* NET: netlobby.h */
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
         else if (strcmp(argv[i], "--ap-log") == 0 && i + 1 < argc) ap_log = argv[++i];
         else if (strcmp(argv[i], "--ap-shots") == 0 && i + 1 < argc) ap_shots = argv[++i];

@@ -1,6 +1,10 @@
 /* net_test.c - online play's unit tests: the wire format and the snapshot buffer (tests/build_net_test.bat) */
 #include "../src/netwire.h"
 #include "../src/netsnap.h"
+#include "../src/netlobby.h"
+#include "../src/netupnp.h"
+#include <stdarg.h>
+#include <windows.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -177,6 +181,106 @@ static void test_message_types_distinct(void)
     CHECK(same == 0);
 }
 
+/* the lobby's parts without a network (src/netlobby.c, built with -DNETLOBBY_TEST) */
+static void test_lobby_url(void)
+{
+    char host[64], path[64];
+    int port, https;
+    CHECK(!netlobby_parse_url("http://localhost:19980", host, sizeof host, &port, path, sizeof path, &https));
+    CHECK(!strcmp(host, "localhost") && port == 19980 && !path[0] && !https);
+    CHECK(!netlobby_parse_url("https://lobby.example.org/rampage/", host, sizeof host, &port, path, sizeof path, &https));
+    CHECK(!strcmp(host, "lobby.example.org") && port == 443 && !strcmp(path, "/rampage") && https);
+    CHECK(!netlobby_parse_url("192.168.1.5:19980", host, sizeof host, &port, path, sizeof path, &https));
+    CHECK(!strcmp(host, "192.168.1.5") && port == 19980 && !https);
+    CHECK(netlobby_parse_url("ftp://x", host, sizeof host, &port, path, sizeof path, &https) < 0);
+    CHECK(netlobby_parse_url("http://x:99999", host, sizeof host, &port, path, sizeof path, &https) < 0);
+    CHECK(netlobby_parse_url("http://a b", host, sizeof host, &port, path, sizeof path, &https) < 0);
+    CHECK(netlobby_parse_url("http://", host, sizeof host, &port, path, sizeof path, &https) < 0);
+}
+
+static void test_lobby_join_kind(void)
+{
+    char out[64];
+    CHECK(netlobby_join_kind("k7pq2", out, sizeof out) == NLJ_CODE && !strcmp(out, "K7PQ2"));
+    CHECK(netlobby_join_kind("rampage://join/K7PQ2/", out, sizeof out) == NLJ_CODE && !strcmp(out, "K7PQ2"));
+    CHECK(netlobby_join_kind("rampage://join/203.0.113.5:27960", out, sizeof out) == NLJ_ADDR &&
+          !strcmp(out, "203.0.113.5:27960"));
+    CHECK(netlobby_join_kind("127.0.0.1", out, sizeof out) == NLJ_ADDR && !strcmp(out, "127.0.0.1"));
+    CHECK(netlobby_join_kind("K0PQ2", out, sizeof out) == NLJ_ADDR);     /* 0 is no code letter: a host name */
+    CHECK(netlobby_join_kind("rampage://host/K7PQ2", out, sizeof out) == NLJ_NONE && !out[0]);
+    CHECK(netlobby_join_kind("rampage://join/a;b", out, sizeof out) == NLJ_NONE);
+    CHECK(netlobby_join_kind("1.2.3.4:", out, sizeof out) == NLJ_NONE);
+    CHECK(netlobby_join_kind("1.2.3.4:70000", out, sizeof out) == NLJ_NONE);
+    CHECK(netlobby_join_kind("", out, sizeof out) == NLJ_NONE);
+    CHECK(netlobby_is_code("ABCDE") && !netlobby_is_code("ABCD") && !netlobby_is_code("ABCDEF") &&
+          !netlobby_is_code("ABCD1"));
+}
+
+/* netupnp.c's stand-ins for net.c and netlobby.c's network half (not in this test) */
+static char upnp_logged[512];
+void net_log(const char *fmt, ...)
+{
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(upnp_logged, sizeof upnp_logged, fmt, a);
+    va_end(a);
+}
+static char upnp_external[64] = "unset";
+void netlobby_set_external(const char *addr) { snprintf(upnp_external, sizeof upnp_external, "%s", addr); }
+
+/* the port forward with no router to ask: RAMPAGE_NET_UPNP=0 leaves it alone at once; a search from 127.0.0.1
+ * (RAMPAGE_NET_UPNP_IF), where no router can answer, ends in NUP_FAILED within its 2 s, said in the log, and the
+ * lobby is never told an address */
+static void test_upnp_no_router(void)
+{
+    const char *t = NULL;
+    _putenv("RAMPAGE_NET_UPNP=0");
+    net_upnp_open(27999);
+    CHECK(net_upnp_state(&t) == NUP_OFF && t && strstr(t, "off"));
+    _putenv("RAMPAGE_NET_UPNP=");
+    _putenv("RAMPAGE_NET_UPNP_IF=127.0.0.1");
+    net_upnp_open(27999);
+    CHECK(net_upnp_state(NULL) == NUP_WORKING);
+    int s = NUP_WORKING;
+    for (int i = 0; i < 100 && s == NUP_WORKING; i++) {
+        Sleep(100);
+        net_upnp_poll();
+        s = net_upnp_state(&t);
+    }
+    CHECK(s == NUP_FAILED);
+    CHECK(strstr(upnp_logged, "UPnP:") != NULL);
+    CHECK(!strcmp(upnp_external, "unset"));
+    net_upnp_close();
+    CHECK(net_upnp_state(NULL) == NUP_OFF);
+    _putenv("RAMPAGE_NET_UPNP_IF=");
+}
+
+static void test_lobby_games_txt(void)
+{
+    NetLobbyGame g[4];
+    const char *txt = "rampage-lobby 1\r\n"
+                      "K7PQ2\t127.0.0.1:27980\t1\t2\tCAFE1234\tsabba\tGeorge\tChicago 1\r\n"
+                      "\n"
+                      "short\tline\n"
+                      "M4TR9\t-\t2\t2\t0BADF00D\tsomeone with a very long name indeed\t\t\n";
+    int n = netlobby_parse_games(txt, g, 4);
+    CHECK(n == 2);
+    CHECK(!strcmp(g[0].code, "K7PQ2") && !strcmp(g[0].join, "127.0.0.1:27980") && g[0].players == 1 && g[0].max == 2);
+    CHECK(!strcmp(g[0].build, "CAFE1234") && !strcmp(g[0].name, "sabba") && !strcmp(g[0].monster, "George") &&
+          !strcmp(g[0].city, "Chicago 1"));
+    CHECK(!strcmp(g[1].join, "-") && !g[1].monster[0] && !g[1].city[0] && strlen(g[1].name) == sizeof g[1].name - 1);
+    CHECK(netlobby_parse_games(txt, g, 1) == 1);
+    CHECK(netlobby_parse_games("rampage-lobby 1\n", g, 4) == 0);
+    CHECK(netlobby_parse_games("rampage-lobby 1", g, 4) == 0);
+    CHECK(netlobby_parse_games("<html>", g, 4) == -1);
+    CHECK(netlobby_parse_games("rampage-lobby 12\n", g, 4) == -1);
+    char code[8], token[80];
+    int hb;
+    CHECK(!netlobby_parse_registered("ok K7PQ2 0123abcd 10\n", code, sizeof code, token, sizeof token, &hb) &&
+          !strcmp(code, "K7PQ2") && !strcmp(token, "0123abcd") && hb == 10);
+    CHECK(netlobby_parse_registered("error too many games\n", code, sizeof code, token, sizeof token, &hb) < 0);
+}
+
 int main(void)
 {
     test_message_types_distinct();
@@ -189,6 +293,10 @@ int main(void)
     test_snap_wraps();
     test_pack_round_trip();
     test_digest();
+    test_lobby_url();
+    test_lobby_join_kind();
+    test_lobby_games_txt();
+    test_upnp_no_router();
     printf("%d checks, %d failed\n", checks, fails);
     return fails != 0;
 }
