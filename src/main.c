@@ -8625,6 +8625,7 @@ static int viewer_main(int argc, char **argv)
         } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
         else if (strcmp(argv[i], "--steam-host") == 0) { }
+        else if (strcmp(argv[i], "--net-rate") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
         else if (strcmp(argv[i], "--ap-log") == 0 && i + 1 < argc) ap_log = argv[++i];
         else if (strcmp(argv[i], "--ap-shots") == 0 && i + 1 < argc) ap_shots = argv[++i];

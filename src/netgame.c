@@ -17,7 +17,25 @@
 #include "netwire.h"
 #include "nettransport.h"
 
-#define NG_SNAP_EVERY 0.05                           /* 20 snapshots a second */
+/* the host's updates a second (the monsters' snapshot and every puppet channel's): 20, 30 or 60; --net-rate N,
+ * RAMPAGE_NET_RATE or the panel. A channel's own rate is its share at 20 (street objects 15: 3/4 of the rate) */
+static int ng_rate = 60;
+
+int netgame_rate(void) { return ng_rate; }
+void netgame_set_rate(int r) { ng_rate = r <= 20 ? 20 : r <= 30 ? 30 : 60; }
+
+/* the guest's delay behind the host: two of the host's update gaps (measured from the snapshots' host times), so 100 ms
+ * at 20 a second and about 35 ms at 60; at least 30 ms, at most 200 */
+static double ng_delay(void)
+{
+    const NetSnapBuf *b = net_snaps();
+    int n = b->n < 8 ? b->n : 8;
+    if (n < 2)
+        return NET_SNAP_DELAY;
+    const NetSnapSample *hi = &b->s[b->head], *lo = &b->s[(b->head - (n - 1) + NET_SNAP_N) % NET_SNAP_N];
+    double gap = (hi->t - lo->t) / (n - 1), d = 2 * gap;
+    return d < 0.03 ? 0.03 : d > 0.2 ? 0.2 : d;
+}
 #define NG_DIGEST_EVERY 2.0
 #define NG_BUILDING_OPS 256                          /* a frame's building changes at most (more go next frame) */
 
@@ -284,7 +302,19 @@ typedef struct {
     int16_t state;
     uint8_t mode, mirror, defeated, rage;
     int16_t held[6];                                 /* person, unit, vehicle, parade, rail, street object (-1 none) */
+    uint8_t climbing;                                /* mount and hands below are the host's (else at rest) */
+    Mount mount;                                     /* the wall it is on (climb.h): plain data, the same build */
+    Hand hand[2];                                    /* its hands on the wall */
+    int16_t column;
+    uint8_t no_gravity;
 } NgMon;
+
+/* on a wall, getting on or off one, or a hand still on it: then the mount and the hands go in the snapshot */
+static int ng_climbing(const Mon *mo)
+{
+    return mo->mount.mounted || mo->mount.move_left > 0 || mo->hand[0].valid || mo->hand[1].valid ||
+           mo->hand[0].attaching || mo->hand[1].attaching || mo->hand[0].remaining > 0 || mo->hand[1].remaining > 0;
+}
 
 /* what a monster holds, and the puppet channel that must be live on the guest for the index to mean the same */
 static int *ng_held_field(Mon *mo, int i)
@@ -315,6 +345,14 @@ static void ng_send_snap(Viewer *v)
         net_w_u8(&b, (uint32_t)mo->defeated); net_w_u8(&b, (uint32_t)mo->power.rage);
         for (int i = 0; i < 6; i++)
             net_w_u16(&b, (uint32_t)(uint16_t)*ng_held_field((Mon *)mo, i));
+        int climbing = ng_climbing(mo);              /* the climb: the guest's own would let go at other times */
+        net_w_u8(&b, (uint32_t)climbing);
+        net_w_u16(&b, (uint32_t)(uint16_t)mo->column);
+        net_w_u8(&b, (uint32_t)mo->no_gravity);
+        if (climbing) {
+            net_w_bytes(&b, &mo->mount, (int)sizeof mo->mount);
+            net_w_bytes(&b, mo->hand, (int)sizeof mo->hand);
+        }
     }
     for (int k = 0; k < 2; k++) {                    /* both players' pads (the guest's monsters animate by them) */
         NetPad p;
@@ -360,6 +398,13 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
         m->defeated = (uint8_t)net_r_u8(&b); m->rage = (uint8_t)net_r_u8(&b);
         for (int i = 0; i < 6; i++)
             m->held[i] = (int16_t)net_r_u16(&b);
+        m->climbing = (uint8_t)net_r_u8(&b);
+        m->column = (int16_t)net_r_u16(&b);
+        m->no_gravity = (uint8_t)net_r_u8(&b);
+        if (m->climbing) {
+            net_r_bytes(&b, &m->mount, (int)sizeof m->mount);
+            net_r_bytes(&b, m->hand, (int)sizeof m->hand);
+        }
     }
     for (int k = 0; k < 2; k++) {
         NetPad *p = &o->pad[k];
@@ -398,7 +443,7 @@ static void ng_apply_snap(Viewer *v)
 {
     const NetSnapSample *a, *b;
     float alpha;
-    int r = netsnap_sample(net_snaps(), net_now(), NET_SNAP_DELAY, &a, &b, &alpha);
+    int r = netsnap_sample(net_snaps(), net_now(), ng_delay(), &a, &b, &alpha);
     if (!r)
         return;
     static NgSnap sa, sb;
@@ -437,6 +482,20 @@ static void ng_apply_snap(Viewer *v)
         for (int i = 0; i < 6; i++)                  /* what it holds, once that system is a puppet here */
             if (ng_held_live(i))
                 *ng_held_field(mo, i) = hi->held[i];
+        mo->column = hi->column;                     /* the climb as the host's: the wall, the spot, the hands */
+        mo->no_gravity = hi->no_gravity;
+        if (hi->climbing) {
+            mo->mount = hi->mount;
+            memcpy(mo->hand, hi->hand, sizeof mo->hand);
+        } else if (ng_climbing(mo)) {                /* off the wall on the host: let go here too */
+            mo->mount.mounted = 0;
+            mo->mount.move_left = 0;
+            mo->mount.at.building = -1;
+            for (int h = 0; h < 2; h++) {
+                mo->hand[h].valid = mo->hand[h].attaching = mo->hand[h].planted = 0;
+                mo->hand[h].remaining = mo->hand[h].target = 0;
+            }
+        }
     }
     const NetSnapSample *n = netsnap_newest(net_snaps());
     ng_have_last = n && ng_read_snap(n, &ng_last);
@@ -524,7 +583,7 @@ static void ng_queue_push(int ch, double t, const uint8_t *data, int len)
 static void ng_queue_run(Viewer *v)                  /* the events whose host time is shown now */
 {
     const NetSnapBuf *mb = net_snaps();
-    double shown = mb->have_offset ? net_now() - mb->offset - NET_SNAP_DELAY : 1e30;
+    double shown = mb->have_offset ? net_now() - mb->offset - ng_delay() : 1e30;
     while (ng_queue && ng_queue->t <= shown) {
         NgQueued *q = ng_queue;
         ng_queue = q->next;
@@ -553,7 +612,8 @@ static void ng_puppets_send(Viewer *v)
 {
     static uint8_t m[NET_SNAP_MAX];
     for (int c = 0; c < NGP_N; c++) {
-        if (!ng_pup[c].write || ng_pup[c].rate <= 0 || net_now() - ng_pup_at[c] < 1.0 / ng_pup[c].rate)
+        float rate = ng_pup[c].rate * ng_rate / 20.0f;   /* (its share at 20 a second) */
+        if (!ng_pup[c].write || rate <= 0 || net_now() - ng_pup_at[c] < 1.0 / rate - 0.002)
             continue;
         ng_pup_at[c] = net_now();
         NetBuf b = netbuf(m, sizeof m);
@@ -576,7 +636,7 @@ static void ng_puppets_apply(Viewer *v)
             continue;
         const NetSnapSample *a, *b;
         float alpha;
-        int how = netsnap_sample(&ng_pup_snaps[c], net_now(), NET_SNAP_DELAY, &a, &b, &alpha);
+        int how = netsnap_sample(&ng_pup_snaps[c], net_now(), ng_delay(), &a, &b, &alpha);
         if (how)
             ng_pup[c].apply(v, a, b, alpha, how);
     }
@@ -628,8 +688,13 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     if (appid)
         fclose(appid);
     building_net_gate = ng_building_gate;
+    const char *rate = getenv("RAMPAGE_NET_RATE");
+    if (rate)
+        netgame_set_rate(atoi(rate));
     for (int i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "--host"))
+        if (!strcmp(argv[i], "--net-rate") && i + 1 < argc)
+            netgame_set_rate(atoi(argv[++i]));
+        else if (!strcmp(argv[i], "--host"))
             net_start_host(i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9' ? atoi(argv[++i]) : NET_PORT);
         else if (!strcmp(argv[i], "--join") && i + 1 < argc)
             net_start_join(argv[++i]);
@@ -719,7 +784,7 @@ static void netgame_after_step(Viewer *v)
         return;
     if (net_role() == NET_HOST) {
         ng_building_flush();
-        if (net_now() - ng_snap_at >= NG_SNAP_EVERY) {
+        if (net_now() - ng_snap_at >= 1.0 / ng_rate - 0.002) {   /* (2 ms early: a 60 Hz frame's jitter) */
             ng_snap_at = net_now();
             ng_send_snap(v);
             net_keep_digest(net_now(), ng_digest(v));

@@ -125,6 +125,18 @@ static void panel(void)
         }
         NetStats s = net_stats();
         ImGui::Text("Ping: %d ms", s.ping_ms);
+        if (role == NET_HOST) {                      /* the updates a second the host sends (netgame.c) */
+            int r = netgame_rate();
+            ImGui::Text("Updates a second:");
+            for (int k = 0; k < 3; k++) {
+                static const int R[3] = { 20, 30, 60 };
+                ImGui::SameLine();
+                char l[8];
+                snprintf(l, sizeof l, "%d", R[k]);
+                if (ImGui::RadioButton(l, r == R[k]))
+                    netgame_set_rate(R[k]);
+            }
+        }
         ImGui::Text("Updates: %.0f a second, %d bytes each", s.snaps_per_s, s.snap_bytes);
         ImGui::Text("Sent %.1f KB/s, got %.1f KB/s", s.kb_out_per_s, s.kb_in_per_s);
         if (role == NET_HOST) {
