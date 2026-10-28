@@ -6160,7 +6160,8 @@ static void mon_step(Mon *mo, float dt)
             const Instance *ik = mon_in(&v->mon[k]);
             nai += v->mon[k].is_ai && !(ik && ik->hidden);
         }
-        int switched = ev == 0 || (mo->is_ai && mo->have_ag ?   /* the AI picks the transitions (0x2E1AA0) */
+        int switched = ev == 0 || (mo->is_ai && mo->have_ag && !net_guest_world() ?   /* the AI picks the transitions
+                                                      * (0x2E1AA0); NET: on the guest the host's AI (its snapshot) */
                                    dir_ai_step(&mo->ai, &mo->ag, &mo->run, root, cdt, dt, nai, answer, mo) :
                                    moves_step(&mo->run, in, cdt, answer, mo));
         for (; mo->is_ai && mo->ai.done > 0; mo->ai.done--)   /* Levels::moveComplete */

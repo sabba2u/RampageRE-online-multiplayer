@@ -973,6 +973,7 @@ typedef struct {
     uint8_t no_gravity;
     uint8_t human, dropping, hidden;                 /* its look: turned human (its streaker the host's person
                                                       * `streaker`), dropping in, not drawn */
+    uint8_t ai;                                      /* the game drives it (is_ai: an intro's, a results' move) */
     int16_t streaker;
     float scale, look_yaw, look_pitch;               /* the dynamic scale now, the head's angles */
     char face[32];                                   /* the face's expression playing (Expression_*), "" none */
@@ -1023,7 +1024,8 @@ static void ng_send_snap(Viewer *v)
             net_w_bytes(&b, &mo->mount, (int)sizeof mo->mount);
             net_w_bytes(&b, mo->hand, (int)sizeof mo->hand);
         }
-        net_w_u8(&b, (uint32_t)((mo->human ? 1 : 0) | (mo->dropping ? 2 : 0) | (mon_in(mo) && mon_in(mo)->hidden ? 4 : 0)));
+        net_w_u8(&b, (uint32_t)((mo->human ? 1 : 0) | (mo->dropping ? 2 : 0) | (mon_in(mo) && mon_in(mo)->hidden ? 4 : 0) |
+                            (mo->is_ai ? 8 : 0)));
         net_w_u16(&b, (uint32_t)(uint16_t)mo->streaker);
         net_w_f32(&b, mo->scale);
         net_w_f32(&b, mo->look_yaw);
@@ -1108,6 +1110,7 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
         m->human = look & 1;
         m->dropping = look >> 1 & 1;
         m->hidden = look >> 2 & 1;
+        m->ai = look >> 3 & 1;
         m->streaker = (int16_t)net_r_u16(&b);
         m->scale = net_r_f32(&b);
         m->look_yaw = net_r_f32(&b);
@@ -1334,6 +1337,15 @@ static void ng_apply_look(Viewer *v, Mon *mo, const NgMon *hi, const NgMon *lo, 
     Instance *in = mon_in(mo);
     mo->human = hi->human;
     mo->dropping = hi->dropping;
+    /* driven by the game or not as the host's (its setIsAI), and the guest's AI picks nothing (mon_step): a guest's
+     * own game ran its intro (BeginLevelNI: setIsAI(1), playMove React_Intro) before it followed the host's, and one
+     * that joined after the host's BeginBlockNI (setIsAI(0)) kept that AI on, its goal forcing React_Intro every frame
+     * against the snapshot's state: the monster held its pose and slid, or drew two clips blended (and its own
+     * monster took no pad) */
+    mo->is_ai = hi->ai;
+    if (!hi->ai && mo->ai.n)
+        dir_ai_clear(&mo->ai);
+    mo->ai.stick[0] = mo->ai.stick[1] = 0;
     mo->streaker = hi->streaker;
     if (in)
         in->hidden = hi->hidden;
@@ -1393,7 +1405,8 @@ static void ng_predict_keep(const Mon *mo)           /* after the step: where th
 /* 1: corrected here (the caller leaves the place, the state and the climb alone); 0: take the host's whole */
 static int ng_predict_fix(Viewer *v, Mon *mo, int k, const NgSnap *nw)
 {
-    if (!ng_predict_on || !nw->ack || nw->m[k].defeated || mo->defeated)
+    if (!ng_predict_on || !nw->ack || nw->m[k].defeated || mo->defeated || nw->m[k].ai)   /* (the game drives it there:
+                                                      * the host's, not our pad's) */
         return 0;
     for (int i = 0; i < 6; i++)                      /* holding something: the host's (the guest grabs nothing itself) */
         if (nw->m[k].held[i] >= 0)
