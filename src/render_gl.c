@@ -939,7 +939,7 @@ static void draw_held(Renderer *r, double t)
  * over itself, black at 85 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
  * colour's, the alpha the texture's times it) and the depth equal, so it lies on the part it covers; the frame's
  * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through); then
- * a red outline, pulsing once a second: the part's back faces again as thick lines, so only their edges past the
+ * a red outline (teal while a player joins: net_grey 2), pulsing once a second: the part's back faces again as thick lines, so only their edges past the
  * silhouette show (the front faces hide the rest by depth). Its rage glow
  * (an effect) and its hit flashes (effects too) are drawn after the scene's items, over it, as before. Offline nothing
  * sets it, and nothing is drawn differently */
@@ -950,7 +950,7 @@ static void draw_held(Renderer *r, double t)
 #define GL_SOURCE0_ALPHA 0x8588
 #define GL_SOURCE1_ALPHA 0x8589
 #define GL_PRIMARY_COLOR 0x8577
-static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t)
+static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, int teal)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
                  GL_POLYGON_BIT | GL_LINE_BIT);
@@ -985,7 +985,11 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t)
     glCullFace(GL_FRONT);
     glPolygonMode(GL_BACK, GL_LINE);
     glLineWidth(4.0f);
-    glColor4f(1.0f, 0.12f, 0.08f, (float)(0.65 + 0.35 * sin(t * 6.2831853)));
+    float a = (float)(0.65 + 0.35 * sin(t * 6.2831853));
+    if (teal)                                        /* (a player joining: teal, not the red of nobody) */
+        glColor4f(0.15f, 0.85f, 0.80f, a);
+    else
+        glColor4f(1.0f, 0.12f, 0.08f, a);
     glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glLineWidth(1.0f);
@@ -1156,7 +1160,7 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     }
     r->drawn += p->ntris;
     if (r->grey && !blend && !see_through)           /* NET: greyed over */
-        draw_grey(p, id, idx, t);
+        draw_grey(p, id, idx, t, r->grey == 2);
     /* the reflection layer, shader 0x1A's second pass [R]: texture slot 1 (the material's +0x3A `cubemap`, or for an
      * RCUBEMAP* material the block's EnvMap, 0x2B96E4) at the sphere-map coordinates (VU1 0x34F1C8, sphere_coords),
      * TFX 1 DECAL, TCC 0, colour mode 0 (the texture's colour, unlit), GS state 10: ALPHA 0x58 = Cs x Ad + Cd (added,

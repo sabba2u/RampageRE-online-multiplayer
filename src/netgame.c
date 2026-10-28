@@ -2145,7 +2145,8 @@ static int ng_idle(const Viewer *v, int k)           /* nobody plays slot k's mo
     if (net_role() == NET_OFF || k < 1 || k >= v->nmon || k >= net_slots() || v->mon[k].bot)
         return 0;
     int st = net_slot_state(k, NULL);
-    return st == NSL_OPEN || st == NSL_RESERVED;
+    return st == NSL_OPEN || st == NSL_RESERVED ||
+           (net_slot_joining(k) && !(net_role() == NET_GUEST && k == ng_me()));   /* (connected, still loading) */
 }
 
 static int netgame_shielded(const Mon *mo)
@@ -2554,7 +2555,8 @@ static void netgame_camera(const float pos[3], const float rows[3][3], float fov
         Instance *in = mon_in(&v->mon[k]);
         if (in)                                      /* (RAMPAGE_NET_TESTGREY: player 2 on, offline too: a --shot of
                                                       * the look) */
-            in->net_grey = ng_idle(v, k) || (k == 1 && getenv("RAMPAGE_NET_TESTGREY"));
+            in->net_grey = !ng_idle(v, k) && !(k == 1 && getenv("RAMPAGE_NET_TESTGREY")) ? 0 :
+                           net_slot_joining(k) || (k == 1 && getenv("RAMPAGE_NET_TESTJOIN")) ? 2 : 1;   /* (2: teal) */
     }
 }
 
@@ -2578,7 +2580,8 @@ static int ng_head_screen(const Viewer *v, const Window *w, int k, float *sx, fl
 }
 
 /* the player slots nobody plays, over their monsters' heads on every screen, big for a stream to read: DISCONNECTED
- * (red) with the minute its player has to come back, WAITING FOR PLAYER (yellow) once the slot is open to anyone. A
+ * (red) with the minute its player has to come back, WAITING FOR PLAYER (yellow) once the slot is open to anyone,
+ * PLAYER JOINING (teal) while a guest that took it is still loading the host's world. A
  * guest's own monster never has one */
 static void ng_slot_labels(const Viewer *v, const Window *w)
 {
@@ -2595,7 +2598,9 @@ static void ng_slot_labels(const Viewer *v, const Window *w)
         if ((in && in->hidden) || !ng_head_screen(v, w, k, &sx, &sy))
             continue;
         double left = 0;
-        if (net_slot_state(k, &left) == NSL_RESERVED) {
+        if (net_slot_joining(k))
+            netui_label_big(sx, sy - 30, "PLAYER JOINING", "Loading...", 0x30D8C8);
+        else if (net_slot_state(k, &left) == NSL_RESERVED) {
             char sub[32];
             int s = (int)(left + 0.99);
             snprintf(sub, sizeof sub, "Rejoin %d:%02d", s / 60, s % 60);

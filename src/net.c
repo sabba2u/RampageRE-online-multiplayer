@@ -263,15 +263,24 @@ int net_slot_state(int k, double *left)
     if (g.role == NET_GUEST) {
         if (k >= g.told.n)
             return k == 0 ? NSL_HOST : k == g.my_slot ? NSL_ONLINE : NSL_OPEN;
-        if (left && g.told.state[k] == NSL_RESERVED) {
+        if (left && (g.told.state[k] & ~NSL_JOINING) == NSL_RESERVED) {
             double l = g.told.left[k] - (g.now - g.told_at);
             *left = l < 0 ? 0 : l;
         }
-        return g.told.state[k];
+        return g.told.state[k] & ~NSL_JOINING;
     }
     if (left && g.slot[k].state == NSL_RESERVED)
         *left = g.slot[k].until - g.now < 0 ? 0 : g.slot[k].until - g.now;
     return g.slot[k].state;
+}
+
+int net_slot_joining(int k)
+{
+    if (k < 1 || k >= NET_SLOTS || g.role == NET_OFF)
+        return 0;
+    if (g.role == NET_GUEST)
+        return k < g.told.n && (g.told.state[k] & NSL_JOINING);
+    return g.slot[k].state == NSL_ONLINE && !g.slot[k].have_remote;
 }
 
 int net_slot_count(int state)
@@ -343,7 +352,7 @@ static void slots_frame(void)
     memset(&s, 0, sizeof s);
     s.n = g.nslots;
     for (int k = 0; k < s.n; k++) {
-        s.state[k] = (uint8_t)g.slot[k].state;
+        s.state[k] = (uint8_t)(g.slot[k].state | (net_slot_joining(k) ? NSL_JOINING : 0));
         s.left[k] = g.slot[k].state == NSL_RESERVED ? (float)(g.slot[k].until - g.now) : 0;
     }
     uint8_t m[8 + NET_SLOTS * 5];
@@ -605,6 +614,8 @@ static void on_pad(Slot *sl, NetBuf *b)
             sl->remote_pressed |= p[i].pressed;
     sl->remote = p[0];
     sl->remote_frame = frame;
+    if (!sl->have_remote)
+        g.slots_dirty = 1;                           /* (its first: no longer joining, the guests told) */
     sl->have_remote = 1;
 }
 

@@ -49,6 +49,8 @@ enum {
                       * Open for online */
     NSL_HOST,        /* slot 0 */
 };
+#define NSL_JOINING 0x80                             /* NM_SLOTS: or'd onto an NSL_ONLINE slot whose guest has not played
+                                                      * yet (connected, loading the host's world: no pad came) */
 typedef struct { uint8_t state; uint64_t token; double until; } NetSlotPick;
 /* the slot a guest that says `token` (0 none) gets, of slots 1 .. n - 1: its own kept or open one (the same token), else
  * the first open one; NET_PICK_RESERVED when only kept ones are left (*wait: the soonest one's seconds left),

@@ -54,6 +54,7 @@ const void *net_host_world_info(int *len);           /* the guest: the host's in
 int net_slots(void);
 int net_slot_state(int k, double *left);             /* NSL_*; *left a kept one's seconds (host and guests) */
 int net_slot_monster(int k);                         /* host: the monster k's guest asked for in its hello (-1 any) */
+int net_slot_joining(int k);                         /* slot k's guest is connected but plays nothing yet (loading) */
 int net_slot_count(int state);                       /* slots 0 .. net_slots() - 1 in that state */
 void net_slot_local(int k, int on);                  /* host: a player on this PC took slot k (on) / the panel opened it
                                                       * for online play again (off) */
