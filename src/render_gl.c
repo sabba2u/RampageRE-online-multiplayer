@@ -11,6 +11,7 @@
 #include "render_gl.h"
 #include "texpack.h"
 #include "postfx.h"
+#include "lookfx.h"                             /* port extra: depth of field, tilt-shift */
 #include "gtao.h"
 
 #ifndef GL_CLAMP_TO_EDGE
@@ -1695,6 +1696,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
         glEnable(GL_DEPTH_TEST);
         glColor3f(1, 1, 1);
     }
+    lookfx_frame(w->width, w->height, 0.5f, 3000);         /* port extra: depth of field, tilt-shift (lookfx.c) */
     postfx_end();                                          /* the HUD (and the shell's 3D layers in it) stay sharp */
     if (s->nhud)
         draw_hud(r, s, w->width, w->height, t);

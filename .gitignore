@@ -45,3 +45,6 @@ tests/*.exe
 # Steam for development: Valve's redistributable and the Spacewar app id (docs/NETPLAY.md)
 steam_api64.dll
 steam_appid.txt
+
+# the look as last set in the Insert panel (src/lookfx.c)
+lookfx.cfg

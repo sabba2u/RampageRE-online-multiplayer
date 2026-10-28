@@ -3,6 +3,7 @@
 #include "net.h"
 #include "netwire.h"
 #include "nettransport.h"
+#include "lookfx.h"
 #ifdef _WIN32
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -146,6 +147,45 @@ static void panel(void)
         ImGui::Text("Game: ours %08X, host's %08X", net_world(), net_host_world());
         if (ImGui::Button("Leave"))
             net_stop();
+    }
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Camera and look")) {   /* lookfx.c: kept in lookfx.cfg as each slider is let go */
+        LookFx *fx = lookfx();
+        int changed = 0;
+        ImGui::SliderFloat("Background blur", &fx->dof, 0, 1, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Sharp distance", &fx->dof_range, 0, 1, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Tilt-shift", &fx->tilt, 0, 1, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Sharp band height", &fx->tilt_band, 0.05f, 0.9f, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Sharp band place", &fx->tilt_center, 0.2f, 0.8f, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Toy colours", &fx->tilt_color, 0, 1, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Zoom out", &fx->zoom, 0, 1, "%.2f");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Tilt camera down", &fx->pitch, 0, 35, "%.0f degrees");
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        if (ImGui::Button("Miniature city")) {        /* a ready-made look: zoomed out, from above, tilt-shift */
+            fx->tilt = 0.85f; fx->tilt_band = 0.3f; fx->tilt_center = 0.55f; fx->tilt_color = 0.6f;
+            fx->zoom = 0.6f; fx->pitch = 20; fx->dof = 0;
+            changed = 1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Soft background")) {
+            fx->dof = 0.8f; fx->dof_range = 0.35f; fx->tilt = 0;
+            changed = 1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("The game's look")) {
+            LookFx off = { 0, 0.5f, 0, 0.55f, 0.3f, 0.5f, 0, 0 };
+            *fx = off;
+            changed = 1;
+        }
+        if (changed)
+            lookfx_save();
     }
     ImGui::Separator();
     ImGui::Text("Log");

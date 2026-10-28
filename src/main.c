@@ -55,6 +55,7 @@
 #include "wrand.h"
 #include "autoplay.h"
 #include "net.h"                                 /* NET: online play (net.h, netgame.c) */
+#include "lookfx.h"                              /* port extra: depth of field, tilt-shift, the camera */
 /* NET: the guest of an online game: its monsters' own grabs, throws and hits on the world are not made (the host's
  * arrive: netgame.c) */
 static int net_guest_world(void) { return net_role() == NET_GUEST && net_live(); }
@@ -8756,6 +8757,8 @@ static int viewer_main(int argc, char **argv)
     }
     settings_apply(&gfx, &w);
     netgame_init(&v, argc, argv, w.hwnd, shot != NULL);   /* NET: --host, --join, the panel */
+    if (!shot)
+        lookfx_load();                               /* the look as last set (lookfx.cfg; never for a --shot) */
     v.gfx = &gfx;
     v.win = &w;
     v.gfx_write = !shot;
@@ -9224,6 +9227,7 @@ static int viewer_main(int argc, char **argv)
         if (cam.pitch > 1.5f) cam.pitch = 1.5f;
         if (cam.pitch < -1.5f) cam.pitch = -1.5f;
         int playing = v.play && have_monster(&v) && v.have_scene && mon_in(&v.mon[0]);
+        lookfx_active(playing);                      /* port extra: the look's blurs in play only (lookfx.c) */
         if (playing) {
             float aspect = w.width ? (float)w.height / w.width : 0.75f;
             if (shot && !settled) {                     /* a shot: the camera settles, then the script */
@@ -9254,6 +9258,7 @@ static int viewer_main(int argc, char **argv)
             cam_shaken(v.view.pos, (const float (*)[3])v.view.rows, v.shakes, 8 + MONSTERS - 1, cam.rows);   /* after the
                                                       * smoothing */
             cam.use_rows = 1;
+            lookfx_camera(cam.pos, cam.rows);        /* port extra: pulled back and tilted down, as set */
             cam.fov_deg = v.view.fov * 57.2957795f;
         } else {
             if (v.have_scene) {
