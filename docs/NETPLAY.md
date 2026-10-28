@@ -153,7 +153,7 @@ it); `RAMPAGE_NET_UPNP=0` leaves the router alone, `RAMPAGE_NET_UPNP_IF=<address
 | | Who decides | How it gets there |
 |---|---|---|
 | Player 2's pad | guest | every frame, unreliable, the last 6 frames in each packet |
-| Monsters: place, turn, move state and clip time, HP, energy, rage; defeated, turned human (the streaker the host's person), dropping in, hidden, the dynamic scale, the head's look, the face | host | 20 snapshots a second, shown 100 ms behind, interpolated; the guest makes no streaker or respawn of its own |
+| Monsters: place, turn, move state and clip time, HP, energy, rage; defeated, turned human (the streaker the host's person), dropping in, hidden, driven by the game (`is_ai`: the intro's and results' moves), the dynamic scale, the head's look, the face | host | 20 snapshots a second, shown 100 ms behind, interpolated; the guest makes no streaker or respawn of its own |
 | The game's flow: states (intro, play, block won, Game Over, the walk to the next block, the city's end), the block, the respawns' lives, the results screens, time up, the cameras and the HUD of the intros | host | every event the host's game gives (GE_*) with its state, reliable, at its host time; the guest's game makes no decisions (game_net_follow) and hands them out as its own. The snapshots carry the state too |
 | Buildings: every hit, roof hit, cell change, collapse | host | reliable, in order; the guest's game makes the same calls (building_net_gate), so cracks, debris and falls play as usual |
 | Clock, points, kills, lives | host | in each snapshot (game_net_put) |
@@ -347,6 +347,7 @@ and miniupnpc). Upstream's files have only these, each marked `NET:`:
 | `src/fx.c` / `.h` | `fx_net_seed`: the next effect's own random numbers and a run-on (`Fx.seed`, `Fx.skip`, `FxWorld.rs`); unused offline |
 | `src/boss.c` / `.h` | `boss_net_triggers` / `boss_net_set_triggers` (New York's barrier volumes: the guest's monster is pushed out of the host's) |
 | `src/main.c` (mon_step) | the guest's monsters are not defeated by their own state change at 0 HP (the host's defeat comes in the snapshot) |
+| `src/main.c` (mon_step) | the guest's AI picks no transition (`!net_guest_world()`): whether the game drives a monster (`is_ai`) is the host's, in the snapshot |
 | `src/city.c` / `.h` | `scene_person_forget` (a person made over online: its looks dropped) |
 | `src/main.c` (play_step, edible_step) | the guest runs no `scene_people_spawn` / `people_update`; a held index not here yet is let go; the guest's edible events pay no stats or reactions |
 
@@ -370,3 +371,14 @@ a building or game function) shows up as a compile error in `netgame.c`, never a
 - The special moves of both players, at 80 ms / 3 %: charge punch, jump smash, roar, the rage's glow; cracks, people and
   cars the same.
 - Las Vegas 5's pirate ship (rocking, its cannon); all 30 monsters (Ramsey, Philbert and Eyegore last).
+- The game's AI on the guest: a guest's own game runs its intro (BeginLevelNI: setIsAI(1), playMove React_Intro)
+  before it follows the host's, and a guest that came in after the host's BeginBlockNI (setIsAI(0)) kept that AI on.
+  Its goal forced React_Intro every frame on both monsters against the snapshot's state (the guest's log: `Ground_Walk
+  -> React_Intro (FiFi_Intro) by -1` some 5000 times in 30 s, `Ground_Walk -> Ground_Idle` 1800 times on its own one):
+  each forced start began a new blend from the pose held, so the host's monster slid in a held pose or drew two clips
+  at once ("phasing"), its face flipped between FiFi_Intro and the idle one, and the guest's own monster took no pad
+  (the AI's stick) and was corrected all the time. Every monster had it (George 400 a run); the Wii's showed it most.
+  Now the snapshot carries `is_ai`, the guest takes it (dropping the goals when it is off), its AI picks nothing and a
+  monster the host's AI drives is not predicted. Checked in Dallas 2 at 80 ms / 3 % with each of the Wii's ten on
+  either side (Boris/Ruby, Plucky/Squirmy, Flea/Sarah, Brian/Vern, Cyril/Fifi and swapped) and George/Lizzie: the
+  guest's transitions as many as the host's (60-115 a run, from thousands), both screens the same.
