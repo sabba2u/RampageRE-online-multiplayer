@@ -161,6 +161,52 @@ static void corner(void)                             /* online, the panel closed
     ImGui::End();
 }
 
+static int g_notice_big, g_have_notice;
+static char g_notice_title[128], g_notice_text[1024];
+
+extern "C" void netui_notice(int big, const char *title, const char *text)
+{
+    g_have_notice = 1;
+    g_notice_big = big;
+    snprintf(g_notice_title, sizeof g_notice_title, "%s", title ? title : "");
+    snprintf(g_notice_text, sizeof g_notice_text, "%s", text ? text : "");
+}
+
+static void notice(void)
+{
+    if (!g_have_notice)
+        return;
+    g_have_notice = 0;
+    ImGuiIO &io = ImGui::GetIO();
+    const ImGuiWindowFlags fl = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                ImGuiWindowFlags_NoSavedSettings;
+    if (g_notice_big) {
+        ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 150));
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
+                                ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowBgAlpha(0.88f);
+    } else {
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, 12), ImGuiCond_Always, ImVec2(0.5f, 0));
+        ImGui::SetNextWindowBgAlpha(0.7f);
+    }
+    float wrap = io.DisplaySize.x * (g_notice_big ? 0.55f : 0.7f);
+    ImGui::Begin("##netnotice", NULL, fl);
+    if (g_notice_title[0]) {
+        ImGui::SetWindowFontScale(g_notice_big ? 1.5f : 1.1f);
+        ImGui::TextColored(ON, "%s", g_notice_title);
+        ImGui::SetWindowFontScale(1.0f);
+    }
+    if (g_notice_text[0]) {
+        if (g_notice_big)
+            ImGui::Spacing();
+        ImGui::PushTextWrapPos(wrap);
+        ImGui::TextUnformatted(g_notice_text);
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::End();
+}
+
 extern "C" void netui_frame(void)
 {
     if (!g_ready)
@@ -168,6 +214,7 @@ extern "C" void netui_frame(void)
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    notice();
     if (g_open)
         panel();
     else
@@ -184,4 +231,5 @@ extern "C" void netui_frame(void) {}
 extern "C" int netui_wants_input(void) { return 0; }
 extern "C" int netui_wants_mouse(void) { return 0; }
 extern "C" void netui_toggle(void) {}
+extern "C" void netui_notice(int big, const char *title, const char *text) { (void)big; (void)title; (void)text; }
 #endif

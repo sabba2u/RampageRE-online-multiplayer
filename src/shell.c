@@ -5849,6 +5849,7 @@ void shell_input_pad(Shell *s, int ev, int button, int pad)
         s->movie_pressed = 1;
 }
 void shell_input(Shell *s, int ev, int button) { shell_input_pad(s, ev, button, 0); }
+void shell_hold_idle(Shell *s) { if (s && s->idle > 0) s->idle = IDLE_SECONDS; }   /* NET: online play */
 
 void shell_pad_held(Shell *s, float stick_x, int buttons)
 {
@@ -6086,6 +6087,8 @@ void shell_auto_view(const Shell *s, ShellAutoView *out)
     out->mc_mode = s->mc.mode == MC_LIST ? 1 : s->mc.mode == MC_KEYBOARD ? 2 : s->mc.mode == MC_MESSAGE ? 3 : 0;
     out->mc_msg = s->mc.msg;
     out->attract_state = s->am.state;
+    for (int i = 0; i < 4; i++)                          /* NET: online play's guest is told the cards */
+        out->ms_name[i] = monster_name(s, ms_monster(&s->ms, i));
 }
 
 /* the interfaces back to front: the ControlRoom's six in its layout's order, the profile popup over them (its own

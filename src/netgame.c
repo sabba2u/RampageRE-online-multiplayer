@@ -57,11 +57,12 @@ typedef struct {
 static int ng_world_of(const Viewer *v, NgWorld *w)
 {
     memset(w, 0, sizeof *w);
-    int why = !v->play ? 1 : !v->have_scene ? 2 : !have_monster(v) ? 3 : !v->game ? 4 : v->shell ? 5 : v->nmon < 2 ? 6 : 0;
+    int why = !v->play ? 1 : !v->have_scene ? 2 : !have_monster(v) ? 3 : !v->game ? 4 : v->shell ? 5 : v->nmon < 2 ? 6 :
+              v->attract ? 7 : 0;
     static int said = -1;
     if (why != said && net_role() != NET_OFF) {
         static const char *const WHY[] = { "in a game", "not playing", "no city", "no monster", "no game", "in the menus",
-                                           "fewer than 2 players" };
+                                           "fewer than 2 players", "the attract mode's demo" };
         net_log("this copy: %s", WHY[why]);
         said = why;
     }
@@ -111,7 +112,10 @@ static void ng_set_world(Viewer *v)
     net_set_world(id, &w, (int)sizeof w);
 }
 
-/* the guest: the host's world loaded as the viewer's start would (--players, a city and block) */
+static void ngr_menu_follow(Viewer *v);
+
+/* the guest: the host's world loaded as the viewer's start would (--players, a city and block); from the front end,
+ * the front end left first as a game's start leaves it (shell_start_game) */
 static void ng_follow(Viewer *v)
 {
     int len;
@@ -125,9 +129,17 @@ static void ng_follow(Viewer *v)
     }
     net_log("loading the host's game: %s block %d, %d players", CITIES[w->city], w->block, w->nmon);
     if (v->shell) {
-        net_log("leave the menus first (phase 1 joins from a city)");
-        return;
+        movie_stop(v);
+        gui3d_free(v);
+        v->prof.profile_shown = shell_profile_shown(v->shell);
+        shell_close(v->shell);
+        v->shell = NULL;
+        v->shell_go = 0;
     }
+    ngr_menu_follow(v);                              /* (the guest's profile kept for after) */
+    v->attract = v->attract_button = 0;
+    v->exit_game = 0;
+    v->clip = -1;
     int pick[MONSTERS];
     for (int k = 0; k < MONSTERS; k++)
         pick[k] = w->monster[k];
@@ -632,12 +644,15 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 static void netgame_frame(Viewer *v, Window *w, double now)
 {
     net_update(now);
-    if (net_role() == NET_OFF)
+    if (net_role() == NET_OFF) {
+        ngr_menu_frame(v);                           /* (a guest that left the host's game: its menus again) */
         return;
+    }
     ng_set_world(v);
     if (net_role() == NET_GUEST && net_state() == NETS_CONNECTED && net_host_world() &&
         net_host_world() != net_world())
         ng_follow(v);
+    ngr_menu_frame(v);                               /* the menus: the host's state told, the guest back to its own */
     if (netui_wants_input()) {                       /* the panel has the keys */
         memset(w->keys, 0, sizeof w->keys);
         memset(w->pressed, 0, sizeof w->pressed);
@@ -682,6 +697,8 @@ static void netgame_pads(Viewer *v, const Window *w)
         mine.pressed[btn] = (uint8_t)(on && !was);
         was = on;
     }
+    if (ngm_host_paused())                           /* the host's Pause menu is up: the guest's pad is its (NM_MENU) */
+        memset(&mine, 0, sizeof mine);
     NetPad np;
     ng_pad_out(&mine, &np);
     net_send_pad(&np);
@@ -712,5 +729,9 @@ static void netgame_after_step(Viewer *v)
 }
 
 /* just before the swap: the panel */
-static void netgame_draw(void) { netui_frame(); }
+static void netgame_draw(void)
+{
+    ngr_menu_draw(g_ngv);                            /* the other player's menus, told */
+    netui_frame();
+}
 
