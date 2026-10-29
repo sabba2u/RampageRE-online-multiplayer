@@ -328,7 +328,7 @@ static void lobby_section(void)
                 if (ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", why);
             } else if (ImGui::SmallButton("Join"))
-                net_start_join(g->join);             /* as typing the address and Join would */
+                net_start_join(g->code);             /* by its code: looked up, joined, knocked (netlobby.c) */
             ImGui::PopID();
         }
         ImGui::EndTable();

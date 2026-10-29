@@ -2,6 +2,7 @@
  * ENet host takes NT_PEERS peers; each keeps its index (g_peers[i]) for as long as it is connected, and the session
  * (net.c) says which player slot each one plays */
 #include "nettransport.h"
+#include "netstun.h"
 #include <enet/enet.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,18 @@ static int lib_init(void)
 
 static void nte_close(void);
 
+/* what arrives on ENet's socket that is not ENet's: a STUN server's answer, a host's punches (netstun.c) */
+static int ENET_CALLBACK nte_intercept(ENetHost *h, ENetEvent *e)
+{
+    (void)e;
+    if (netstun_is_punch(h->receivedData, (int)h->receivedDataLength))
+        return 1;
+    if (!netstun_is_stun(h->receivedData, (int)h->receivedDataLength))
+        return 0;
+    netstun_received(h->receivedData, (int)h->receivedDataLength);
+    return 1;
+}
+
 static int nte_host(int port)
 {
     nte_close();
@@ -48,6 +61,8 @@ static int nte_host(int port)
     a.host = ENET_HOST_ANY;
     a.port = (enet_uint16)port;
     g_host = enet_host_create(&a, NT_PEERS, 2, 0, 0);
+    if (g_host)
+        g_host->intercept = nte_intercept;
     return g_host ? 0 : -1;
 }
 
@@ -56,10 +71,14 @@ static int nte_join(const char *ip, int port)
     nte_close();
     if (lib_init())
         return -1;
-    g_host = enet_host_create(NULL, 1, 2, 0, 0);
+    ENetAddress a;
+    a.host = ENET_HOST_ANY;
+    a.port = 0;                                      /* (bound now, any port: STUN's answer and the lobby's knock name
+                                                      * it before the first ENet packet goes) */
+    g_host = enet_host_create(&a, 1, 2, 0, 0);
     if (!g_host)
         return -1;
-    ENetAddress a;
+    g_host->intercept = nte_intercept;
     if (enet_address_set_host(&a, ip) != 0)
         return -1;
     a.port = (enet_uint16)port;
@@ -245,10 +264,28 @@ static void nte_drop(int peer)
     g_peers[peer] = NULL;
 }
 static unsigned nte_bytes_out(void) { return g_out; }
+
+static int g_steam_on(void);
+
+int nt_raw_send(uint32_t ip, int port, const void *data, int len)
+{
+    if (!g_host || g_steam_on())
+        return -1;
+    ENetAddress a;
+    a.host = ENET_HOST_TO_NET_32(ip);
+    a.port = (enet_uint16)port;
+    ENetBuffer b;
+    b.data = (void *)data;
+    b.dataLength = (size_t)len;
+    return enet_socket_send(g_host->socket, &a, &b, 1) == len ? 0 : -1;
+}
+
+int nt_local_port(void) { return g_host ? g_host->address.port : 0; }
 static unsigned nte_bytes_in(void) { return g_in; }
 
 /* ---- the back end in use: ENet (an address) or Steam (a lobby) */
 static int g_steam;
+static int g_steam_on(void) { return g_steam; }
 
 int nt_host(int port) { nt_close(); g_steam = 0; return nte_host(port); }
 int nt_join(const char *ip, int port) { nt_close(); g_steam = 0; return nte_join(ip, port); }

@@ -3,6 +3,7 @@
 #include "../src/netsnap.h"
 #include "../src/netlobby.h"
 #include "../src/netupnp.h"
+#include "../src/netstun.h"
 #include <stdarg.h>
 #include <windows.h>
 #include <math.h>
@@ -350,6 +351,38 @@ static void test_lobby_games_txt(void)
     CHECK(netlobby_parse_registered("error too many games\n", code, sizeof code, token, sizeof token, &hb) < 0);
 }
 
+/* STUN (netstun.c): a request's bytes, an answer's XOR-MAPPED-ADDRESS (203.0.113.7:54321, after a plain
+ * MAPPED-ADDRESS a router rewrote), another request's answer refused, the punch, the lobby's knocks */
+static void test_stun(void)
+{
+    uint8_t tx[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }, req[20];
+    CHECK(netstun_request(req, tx) == 20 && req[0] == 0 && req[1] == 1 && req[4] == 0x21 && req[7] == 0x42 &&
+          !memcmp(req + 8, tx, 12));
+    CHECK(netstun_is_stun(req, 20) && !netstun_is_stun(req, 19));
+    uint8_t r[44] = { 0x01, 0x01, 0, 24, 0x21, 0x12, 0xA4, 0x42 };
+    memcpy(r + 8, tx, 12);
+    uint8_t mapped[12] = { 0, 0x01, 0, 8, 0, 0x01, 0x12, 0x34, 192, 168, 1, 2 };   /* (rewritten: 192.168.1.2:4660) */
+    memcpy(r + 20, mapped, 12);
+    uint32_t ip = 203u << 24 | 0u << 16 | 113u << 8 | 7u;
+    uint16_t port = 54321;
+    uint8_t xor_[12] = { 0, 0x20, 0, 8, 0, 0x01, (uint8_t)((port ^ 0x2112) >> 8), (uint8_t)(port ^ 0x2112),
+                         (uint8_t)((ip ^ 0x2112A442u) >> 24), (uint8_t)((ip ^ 0x2112A442u) >> 16),
+                         (uint8_t)((ip ^ 0x2112A442u) >> 8), (uint8_t)(ip ^ 0x2112A442u) };
+    memcpy(r + 32, xor_, 12);
+    uint32_t gi = 0;
+    uint16_t gp = 0;
+    CHECK(netstun_parse(r, 44, tx, &gi, &gp) == 0 && gi == ip && gp == port);
+    uint8_t other[12] = { 9 };
+    CHECK(netstun_parse(r, 44, other, &gi, &gp) < 0);
+    CHECK(netstun_parse(r, 40, tx, &gi, &gp) < 0);   /* (cut short) */
+    CHECK(netstun_parse(req, 20, tx, &gi, &gp) < 0); /* (a request, no answer) */
+    CHECK(netstun_is_punch((const uint8_t *)NETSTUN_PUNCH, 8) && !netstun_is_punch((const uint8_t *)"RAMPUNCHX", 9));
+    char k[8][24];
+    CHECK(netstun_parse_knocks("ok\nknock 203.0.113.7:54321\nknock 999.1.1.1:5\nknock 10.0.0.2:27960\n", k, 8) == 2 &&
+          !strcmp(k[0], "203.0.113.7:54321") && !strcmp(k[1], "10.0.0.2:27960"));
+    CHECK(netstun_parse_knocks("", k, 8) == 0);
+}
+
 int main(void)
 {
     test_message_types_distinct();
@@ -368,6 +401,7 @@ int main(void)
     test_lobby_join_kind();
     test_lobby_games_txt();
     test_upnp_no_router();
+    test_stun();
     printf("%d checks, %d failed\n", checks, fails);
     return fails != 0;
 }

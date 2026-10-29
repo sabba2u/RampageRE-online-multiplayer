@@ -9,6 +9,10 @@ export const isCode = (s: string) => new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENG
 /** How often a host's game says it is still there, and how long the lobby waits before it drops a silent one. */
 export const HEARTBEAT_S = 10;
 export const EXPIRE_S = 30;
+/** A guest's knock (POST /games/<code>/knock) waits this long for its host to collect it, and a game keeps this
+ *  many at most. */
+export const KNOCK_S = 15;
+export const KNOCKS_KEPT = 8;
 /** Per source address: registrations a minute, and games listed at once. */
 export const REGISTER_PER_MINUTE = 6;
 export const GAMES_PER_ADDRESS = 4;
@@ -26,11 +30,14 @@ export type GameFields = {
 };
 
 /** One listed game. `source` is where its registration came from; `external` what UPnP (or the player) said the
- *  host's public address is; `lan` the host's own address on its network, for guests on that same network. */
+ *  host's public address is; `stun` what a STUN server saw of the host's game socket ("ip:port": the port its router
+ *  really uses, src/netstun.c); `lan` the host's own address on its network, for guests on that same network.
+ *  `knocks`: guests about to join, the addresses the host punches toward (hole punching, docs/NETPLAY.md). */
 export type Game = GameFields & {
   code: string; token: string;
-  source: string; external: string; lan: string;
+  source: string; external: string; stun: string; lan: string;
   since: number; seen: number;
+  knocks: { addr: string; at: number }[];
 };
 
 /** What everyone sees of a game: no token, no source. `address` is the public one ("" when the lobby can't tell:
@@ -48,8 +55,15 @@ function int(v: unknown, lo: number, hi: number, dflt?: number): number {
 }
 
 /** A registration or a heartbeat's body, checked. `partial`: a heartbeat may leave anything out. */
-export function parseFields(b: Record<string, unknown>, partial = false): Partial<GameFields> & { external?: string; lan?: string } {
-  const out: Partial<GameFields> & { external?: string; lan?: string } = {};
+/** "a.b.c.d:port" on the internet (a STUN answer), else undefined. */
+export function publicEndpoint(v: unknown): string | undefined {
+  const m = String(v ?? "").trim().match(/^([\d.]+):(\d{1,5})$/);
+  if (!m || !isIPv4(m[1]) || isLocal(m[1]) || Number(m[2]) < 1 || Number(m[2]) > 65535) return undefined;
+  return `${m[1]}:${Number(m[2])}`;
+}
+
+export function parseFields(b: Record<string, unknown>, partial = false): Partial<GameFields> & { external?: string; stun?: string; lan?: string } {
+  const out: Partial<GameFields> & { external?: string; stun?: string; lan?: string } = {};
   const has = (k: string) => b[k] !== undefined && b[k] !== null;
   const field = (k: string, f: () => void) => {
     try { f(); } catch (e: any) { throw new Error(`${k}: ${e.message}`); }
@@ -70,6 +84,11 @@ export function parseFields(b: Record<string, unknown>, partial = false): Partia
     const hp = splitHostPort(String(b.external));
     if (!hp) throw new Error("not a host or host:port");
     out.external = hp.port ? `${hp.host}:${hp.port}` : hp.host;
+  });
+  if (has("stun") && b.stun !== "") field("stun", () => {
+    const e = publicEndpoint(b.stun);
+    if (!e) throw new Error("not a public IPv4 address and port");
+    out.stun = e;
   });
   if (has("lan") && b.lan !== "") field("lan", () => {
     const s = String(b.lan);
@@ -98,7 +117,7 @@ export class Games {
 
   register(body: Record<string, unknown>, from: string): Game {
     const source = normIp(from);
-    const f = parseFields(body) as GameFields & { external?: string; lan?: string };
+    const f = parseFields(body) as GameFields & { external?: string; stun?: string; lan?: string };
     const t = this.now();
     const times = (this.recent.get(source) ?? []).filter(x => t - x < 60_000);
     if (times.length >= REGISTER_PER_MINUTE) throw new LobbyError(429, "too many games registered from your address, try again in a minute");
@@ -113,7 +132,7 @@ export class Games {
     do code = Array.from(crypto.randomBytes(CODE_LENGTH), b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
     while (this.games.has(code));
     const g: Game = { ...f, code, token: crypto.randomBytes(16).toString("hex"), source, external: f.external ?? "",
-                      lan: f.lan ?? (isPrivate(source) ? source : ""), since: t, seen: t };
+                      stun: f.stun ?? "", lan: f.lan ?? (isPrivate(source) ? source : ""), since: t, seen: t, knocks: [] };
     this.games.set(code, g);
     for (const l of this.listeners) l.add(this.public(g));
     return g;
@@ -138,6 +157,27 @@ export class Games {
     return g;
   }
 
+  /** A guest about to join `code` from `from`: its STUN address (body.stun), else where it asked from with its game's
+   *  port (body.port: many routers keep it). The host collects it within a second (takeKnocks) and punches. */
+  knock(code: string, body: Record<string, unknown>, from: string): string {
+    const g = this.games.get(code.toUpperCase());
+    if (!g) throw new LobbyError(404, "no game with that code");
+    const ip = normIp(from);
+    let addr = publicEndpoint(body.stun);
+    if (!addr && isIPv4(ip)) addr = `${ip}:${int(body.port, 1, 65535)}`;
+    if (!addr) throw new Error("stun or port: where to punch toward");
+    g.knocks = [...g.knocks.filter(k => k.addr !== addr), { addr, at: this.now() }].slice(-KNOCKS_KEPT);
+    return addr;
+  }
+
+  /** The host's: the knocks since it last asked (fresh ones only), and they are gone. */
+  takeKnocks(code: string, token: unknown): string[] {
+    const g = this.own(code, token);
+    const t = this.now(), out = g.knocks.filter(k => t - k.at < KNOCK_S * 1000).map(k => k.addr);
+    g.knocks = [];
+    return out;
+  }
+
   unregister(code: string, token: unknown) {
     this.remove(this.own(code, token).code);
   }
@@ -157,11 +197,13 @@ export class Games {
   get(code: string) { return this.games.get(code.toUpperCase()); }
   list(): Game[] { return [...this.games.values()].sort((a, b) => a.since - b.since); }
 
-  /** The host's public address: what UPnP said, else where it registered from when that is on the internet, else
-   *  the lobby's own publicAddress (config.json) when the host is on the lobby's PC or network; "" not known. */
+  /** The host's public address: what UPnP said, else what STUN saw (the port its router really uses), else where
+   *  it registered from when that is on the internet, else the lobby's own publicAddress (config.json) when the host
+   *  is on the lobby's PC or network; "" not known. */
   publicAddress(g: Game): string {
     const withPort = (h: string) => (h.includes(":") ? h : `${h}:${g.port}`);
     if (g.external) return withPort(g.external);
+    if (g.stun) return g.stun;
     if (!isLocal(g.source)) return withPort(g.source);
     if (this.opts.publicAddress) return withPort(this.opts.publicAddress);
     return "";

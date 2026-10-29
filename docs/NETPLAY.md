@@ -148,6 +148,52 @@ A copy that was killed leaves its forward on the router (it is reused by the nex
 it); `RAMPAGE_NET_UPNP=0` leaves the router alone, `RAMPAGE_NET_UPNP_IF=<address>` searches from that network card
 (127.0.0.1: the no-router case, tests\net_test.c). `tools\net_test.ps1` sets `RAMPAGE_NET_UPNP=0` unless `-Upnp`.
 
+## Getting through routers without a forward: STUN and hole punching
+
+**What STUN is.** A STUN server (RFC 5389) is not a relay: it only answers one question, "what address and port did
+your packet come from?". Behind a home router a PC only knows its private address (192.168.x.x); the router rewrites
+every packet going out to its own public address and a port it picks. Asked from the very UDP socket ENet plays on,
+STUN's answer is that public address and port: what a friend on the internet must send to. (A relay, which really
+carries the game's packets for players who cannot reach each other at all, is TURN: we have none; Steam's network
+is the relay we already have.)
+
+**What hole punching is.** A router lets a packet in from the internet only if the PC behind it sent one to that same
+address first (it takes the outside packet as an answer). So the two players each send to the other at about the same
+moment: each router sees its own outgoing packet, and lets the other's in. Neither side forwards a port.
+
+**How RampageRE does it** (src/netstun.c, its parsers in tests\net_test.c, the lobby's half in lobby/src/Games.ts):
+
+1. Hosting, the game asks `stun.l.google.com:19302` (its name looked up on a thread of its own; `RAMPAGE_STUN=host:port`
+   another server, `RAMPAGE_STUN=0` none) from ENet's socket, and again every 20 s (that keeps the router's mapping
+   open). ENet's `intercept` hands the answer to netstun.c before ENet sees it. The log: "STUN: this game is
+   203.0.113.7:27960 on the internet". The listing sends it as `stun=`, and the lobby gives that address to guests on
+   the internet (after a UPnP forward's, before the address the registration came from: STUN's has the port the router
+   really uses).
+2. A guest joining by code (typed, a rampage:// link, or picked from the panel's list, which now joins by code too)
+   binds its socket, starts connecting to the host's address, asks STUN the same, and **knocks**:
+   `POST /games/<code>/knock` with its STUN address (or, without an answer within 2 s, its port: the lobby pairs it
+   with the address the knock came from; many routers keep the port).
+3. The host asks for knocks every second (`GET /games/<code>/knocks?token=`) and sends an 8-byte `RAMPUNCH` packet to
+   each knocking guest four times a second for 6 s. Those open its router to the guest; ENet's own connection
+   attempts, retried, open the guest's router to the host; and the guest's next attempt gets through. Punches that
+   arrive are dropped by the intercept.
+
+This works for most home routers (they keep one public port per socket, whoever it sends to). It fails when a router
+gives a new port for every address it sends to (symmetric NAT: some phone hotspots, carrier-grade NAT): STUN's answer
+is then only good for the STUN server. Those players still have UPnP, a forward by hand, Steam, a LAN or a VPN
+(Tailscale, ZeroTier). Checked on one PC (a host, a guest by code, the lobby on localhost): STUN answered both (the
+router kept the host's port, 27960), the knock went through, the host punched, the guest played. Between two homes:
+not yet.
+
+**Where the idea came from.** Smash 4 PC (github.com/josiahg2502-glitch/Smash4PC, v0.1.1 "netplay rooms") lists rooms
+on a free Cloudflare Worker (one Durable Object, ~100 lines: games check in every couple of seconds with their STUN and
+LAN addresses and the rooms they want to reach, and get back each other's addresses) and punches the same way. Its
+netplay is otherwise unlike ours: only the host runs the game, which is streamed to each guest (1080p60 video and sound
+encoded on the host's GPU, ~12 Mbit/s per guest, like Steam Remote Play Together) while their pads play as the host's
+controllers 2-8. Nothing can desync and guests need no game files, but every guest's input waits a full round trip,
+and the host's upload carries everything. We keep our snapshots (a guest's own monster answers at once, little
+bandwidth); the Worker is an idea for a lobby that needs no VPS.
+
 ## What is shared (phase 1)
 
 | | Who decides | How it gets there |
@@ -276,9 +322,11 @@ each player sets them up once, from the page:
 
 | | |
 |---|---|
-| `POST /games` | name, monster, city, players, max, reserved? (slots kept for a player who dropped out), port, build (8 hex), external?, lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
+| `POST /games` | name, monster, city, players, max, reserved? (slots kept for a player who dropped out), port, build (8 hex), external?, stun? (the host's `ip:port` as STUN saw it), lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
 | `PUT /games/<code>` | the heartbeat: `token` (or `X-Token`) and any changed fields. 404: forgotten, list again; 403: not your token |
 | `DELETE /games/<code>` | unlist, with the token |
+| `POST /games/<code>/knock` | a guest about to join: `stun` (its `ip:port` as STUN saw it) or `port`. Kept 15 s, 8 at most per game |
+| `GET /games/<code>/knocks?token=` | the host's, every second: `ok`, then `knock <ip:port>` per guest since the last ask |
 | `GET /games`, `GET /games/<code>` | JSON, each game with `join`: the address for whoever asked |
 | `GET /games.txt`, `GET /games/<code>.txt` | `rampage-lobby 1`, then a line per game, tab-separated: code, join (`-` none), players, max, build, name, monster, city, reserved (a ninth field; a reader of eight skips it) |
 | `GET /` `/install.ps1` `/install-linux.sh` `/health` | the page, the link installers, `rampage_lobby` |

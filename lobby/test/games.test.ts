@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Games, parseFields, isCode, CODE_ALPHABET, CODE_LENGTH, EXPIRE_S, REGISTER_PER_MINUTE } from "../src/Games";
+import { Games, parseFields, isCode, CODE_ALPHABET, CODE_LENGTH, EXPIRE_S, KNOCK_S, REGISTER_PER_MINUTE } from "../src/Games";
 import { normIp, isPrivate, splitHostPort } from "../src/addr";
 
 const base = { name: "sabba", monster: "George", city: "Chicago 1", players: 1, max: 2, port: 27960, build: "cafe1234" };
@@ -101,5 +101,25 @@ describe("the registry", () => {
     const b = bare.register({ ...base, lan: "100.100.1.2" }, "127.0.0.1");
     expect(bare.joinFor(b, "198.51.100.9")).toBe("100.100.1.2:27960");
     expect(bare.public(b).address).toBe("");
+  });
+
+  it("lists the host's STUN address and hands its guests' knocks to it once", () => {
+    let t = 1_000_000;
+    const games = new Games({ now: () => t });
+    // STUN saw the host's socket as 203.0.113.5:61022 (the router's own port, not 27960): guests join that.
+    const g = games.register({ ...base, stun: "203.0.113.5:61022", lan: "192.168.1.20" }, "203.0.113.5");
+    expect(games.joinFor(g, "198.51.100.9")).toBe("203.0.113.5:61022");
+    expect(() => games.register({ ...base, port: 27961, stun: "192.168.1.20:5000" }, "203.0.113.5")).toThrow(/stun/);
+    // A guest with a STUN answer, and one without (its asking address plus its game's port).
+    expect(games.knock(g.code, { stun: "198.51.100.9:50000" }, "198.51.100.9")).toBe("198.51.100.9:50000");
+    expect(games.knock(g.code.toLowerCase(), { port: "51000" }, "::ffff:198.51.100.10")).toBe("198.51.100.10:51000");
+    expect(() => games.knock(g.code, {}, "198.51.100.11")).toThrow();
+    expect(() => games.knock("ZZZZZ", { port: 1 }, "198.51.100.11")).toThrow(/no game/);
+    expect(() => games.takeKnocks(g.code, "wrong")).toThrow(/not your game/);
+    expect(games.takeKnocks(g.code, g.token)).toEqual(["198.51.100.9:50000", "198.51.100.10:51000"]);
+    expect(games.takeKnocks(g.code, g.token)).toEqual([]);   // collected: gone
+    games.knock(g.code, { port: 52000 }, "198.51.100.12");
+    t += (KNOCK_S + 1) * 1000;                                // too old: the guest gave up meanwhile
+    expect(games.takeKnocks(g.code, g.token)).toEqual([]);
   });
 });

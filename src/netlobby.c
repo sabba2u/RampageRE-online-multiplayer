@@ -7,6 +7,10 @@
  * request runs on a thread of its own (one of each kind at a time) and leaves its answer for netlobby_update, which
  * the game's frame calls through net_update: the frame only ever looks at finished answers.
  *
+ * Hole punching (netstun.h): the host lists its STUN address too (stun=) and asks for its knocks every second
+ * (GET /games/<code>/knocks?token=); a guest that joins by code knocks (POST /games/<code>/knock, its own STUN
+ * address and ENet port) once STUN has answered, and the host punches toward it.
+ *
  * Built with -DNETLOBBY_TEST (tests/build_net_test.bat) only the parsers are here: no network, no net.c. */
 #include "netlobby.h"
 #include <ctype.h>
@@ -185,6 +189,8 @@ int netlobby_parse_registered(const char *text, char *code, int ccap, char *toke
 #ifndef NETLOBBY_TEST
 /* ---- the network ---------------------------------------------------------------------------------------------- */
 #include "net.h"
+#include "netstun.h"
+#include "nettransport.h"
 #include "netwire.h"
 #ifdef _WIN32
 #include <winsock2.h>
@@ -331,7 +337,7 @@ static void local_ip(char *out, int cap)
 }
 
 /* ---- the jobs: one request of each kind at a time, on a thread of its own ---- */
-enum { J_LIST, J_LOOKUP, J_REGISTER, J_BEAT, J_UNLIST, J_COUNT };
+enum { J_LIST, J_LOOKUP, J_REGISTER, J_BEAT, J_UNLIST, J_KNOCKS, J_KNOCK, J_COUNT };
 enum { JOB_IDLE, JOB_RUNNING, JOB_DONE };
 typedef struct {
     int state;                                       /* JOB_*: the frame sets RUNNING, the thread DONE */
@@ -429,9 +435,12 @@ static struct {
     int init, url_fixed, listing;
     char url[256], name[32], monster[32], city[40], external[80];
     /* the host's listing */
-    char code[8], token[80], listed_url[256], host_status[160];
+    char code[8], token[80], listed_url[256], host_status[160], sent_stun[24];
     int heartbeat, sent_players;
-    double beat_at, retry_at;
+    double beat_at, retry_at, knocks_at;
+    /* the guest's knock: the code it joins, until when it waits for STUN's answer before knocking without it */
+    char knock[8];
+    double knock_until;
     /* the guest's list */
     NetLobbyGame games[NETLOBBY_GAMES];
     int ngames, browsing, list_ok;
@@ -584,6 +593,9 @@ static void game_fields(char *b, int cap)
     form_add(b, cap, "reserved", n);
     if (L.external[0])
         form_add(b, cap, "external", L.external);
+    if (netstun_public()[0])
+        form_add(b, cap, "stun", netstun_public());
+    snprintf(L.sent_stun, sizeof L.sent_stun, "%s", netstun_public());
 }
 
 /* the DELETE: on a thread (the frame's), or at once (the exit's, timeout_ms > 0) */
@@ -643,6 +655,12 @@ static void host_frame(double now)
             snprintf(L.host_status, sizeof L.host_status, "Listed in the lobby: join code %s", L.code);
     }
     job_done(J_UNLIST);
+    if (job_done(J_KNOCKS) && g_jobs[J_KNOCKS].status == 200) {
+        char knocks[8][24];
+        int n = netstun_parse_knocks(g_jobs[J_KNOCKS].out, knocks, 8);
+        for (int i = 0; i < n; i++)
+            netstun_punch(knocks[i]);
+    }
     if (!want) {
         unlist(0);
         L.retry_at = 0;
@@ -664,8 +682,14 @@ static void host_frame(double now)
         return;
     }
     /* a heartbeat every few seconds, and at once when something shown changed (a guest came or went) */
-    if (players_now() != L.sent_players)
+    if (players_now() != L.sent_players || strcmp(netstun_public(), L.sent_stun))
         L.beat_at = 0;
+    if (job_idle(J_KNOCKS) && now - L.knocks_at >= 1) {   /* a guest knocking: punched toward within a second */
+        char path[160];
+        snprintf(path, sizeof path, "/games/%s/knocks?token=%s", L.code, L.token);
+        job_start(J_KNOCKS, "GET", L.listed_url, path, NULL, 0);
+        L.knocks_at = now;
+    }
     if (job_idle(J_BEAT) && now - L.beat_at >= L.heartbeat) {
         char body[700] = "", path[32];
         form_add(body, sizeof body, "token", L.token);
@@ -705,6 +729,8 @@ static void guest_frame(double now)
             if (!netlobby_same_build(&g))
                 net_log("lobby: %s runs another build (%s): the host will likely refuse us", g.code, g.build);
             net_start_join(g.join);
+            snprintf(L.knock, sizeof L.knock, "%s", g.code);   /* (knocked once STUN answers: guest_frame) */
+            L.knock_until = now + 2;
         } else {
             if (j->status == 404)
                 snprintf(L.list_status, sizeof L.list_status, "No game with that code in the lobby");
@@ -717,6 +743,20 @@ static void guest_frame(double now)
             snprintf(again, sizeof again, "%s", L.lookup);
             netlobby_lookup(again);
         }
+    }
+    job_done(J_KNOCK);
+    if (L.knock[0] && (net_role() != NET_GUEST || net_state() == NETS_FAILED))
+        L.knock[0] = 0;                              /* (stopped meanwhile) */
+    if (L.knock[0] && job_idle(J_KNOCK) && (netstun_done() || now > L.knock_until)) {
+        char body[128] = "", path[32], n[8];
+        if (netstun_public()[0])
+            form_add(body, sizeof body, "stun", netstun_public());
+        snprintf(n, sizeof n, "%d", nt_local_port());
+        form_add(body, sizeof body, "port", n);
+        snprintf(path, sizeof path, "/games/%s/knock", L.knock);
+        job_start(J_KNOCK, "POST", L.url, path, body, 0);
+        net_log("lobby: knocking on %s (%s)", L.knock, netstun_public()[0] ? netstun_public() : "no STUN answer");
+        L.knock[0] = 0;
     }
     if (L.browsing && L.url[0] && job_idle(J_LIST) && now - L.list_at >= 5) {
         job_start(J_LIST, "GET", L.url, "/games.txt", NULL, 0);

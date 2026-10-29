@@ -16,6 +16,9 @@ import { normIp } from "./addr";
  *                               code  join  players  max  build  name  monster  city  reserved (the slots kept for
  *                               a player who dropped out: a ninth field older games' readers skip)
  *    GET    /games/<code>       one game, JSON; /games/<code>.txt the same as games.txt with only that line
+ *    POST   /games/<code>/knock  a guest about to join: stun (its "ip:port" as a STUN server saw it) or port (its
+ *                               game's). "ok"; the host punches toward it (hole punching, src/netstun.c)
+ *    GET    /games/<code>/knocks?token=  the host's, every second: "ok", then "knock <ip:port>" per guest since
  *  and for people:
  *    GET    /                   the games page (public/index.html): live list, rampage:// links, the join commands
  *    GET    /install.ps1        sets up rampage:// links on Windows, with this lobby's address filled in
@@ -41,6 +44,16 @@ export function httpHandler(games: Games, opts: { trustProxy?: boolean } = {}) {
         return res.end();
       }
       const p = url.pathname;
+      const k = p.match(/^\/games\/([A-Za-z0-9]+)\/(knock|knocks)$/);
+      if (k && k[2] === "knock" && req.method === "POST") {
+        const addr = games.knock(k[1], await readBody(req), from);
+        console.log(`knock on ${k[1].toUpperCase()} from ${addr}`);
+        return send(200, "ok\n");
+      }
+      if (k && k[2] === "knocks" && req.method === "GET") {
+        const token = req.headers["x-token"] ?? url.searchParams.get("token");
+        return send(200, ["ok", ...games.takeKnocks(k[1], token).map(a => `knock ${a}`)].join("\n") + "\n");
+      }
       if (req.method === "GET") {
         if (p === "/health") return send(200, "rampage_lobby\n");
         if (p === "/") return send(200, files.page(), "text/html; charset=utf-8");

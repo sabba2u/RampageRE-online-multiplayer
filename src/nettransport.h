@@ -37,6 +37,9 @@ int nt_rtt_ms(void);                                 /* the first connected peer
 int nt_peer_rtt_ms(int peer);
 unsigned nt_bytes_out(void);                         /* sent so far (counters for the panel) */
 unsigned nt_bytes_in(void);
+/* ENet's own socket, around ENet (netstun.c: STUN and the punches); ip in host byte order. -1 no socket (Steam) */
+int nt_raw_send(uint32_t ip, int port, const void *data, int len);
+int nt_local_port(void);                             /* the port ENet's socket is bound to, 0 none */
 
 /* Steam (netsteam.c): a friends-only lobby the host makes, joined by a lobby id (an invite, Join Game, or
  * +connect_lobby on the command line) */

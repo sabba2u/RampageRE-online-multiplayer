@@ -13,6 +13,7 @@
 #include "netwire.h"
 #include "nettransport.h"
 #include "netupnp.h"
+#include "netstun.h"
 #include "netlobby.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -468,6 +469,7 @@ void net_start_host(int port)
     g.port = port ? port : NET_PORT;                 /* (the lobby lists it: netlobby.c) */
     net_log("hosting on port %d", port ? port : NET_PORT);
     net_upnp_open(port ? port : NET_PORT);           /* the router asked to forward it (netupnp.c, in the background) */
+    netstun_start();                                 /* and STUN asked how the internet sees it (netstun.c) */
 }
 
 void net_start_host_steam(void)
@@ -528,6 +530,7 @@ void net_start_join(const char *addr)
     }
     g.state = NETS_CONNECTING;
     net_log("joining %s", g.peer);
+    netstun_start();                                 /* (for the lobby's knock: netlobby.c) */
 }
 
 void net_stop(void)
@@ -535,6 +538,7 @@ void net_stop(void)
     if (g.role != NET_OFF)
         net_log("stopped");
     net_upnp_close();                                /* (the router's forward, if hosting made one) */
+    netstun_stop();
     nt_close();
     uint32_t world = g.world;
     int info_len = g.info_len;
@@ -804,6 +808,7 @@ void net_update(double now)
 {
     g.now = now;
     net_upnp_poll();                                 /* (the router's answer, into the log) */
+    netstun_update(now);                             /* STUN's asking, the punches toward knocking guests */
     netlobby_update(now);                            /* the lobby's answers, the listing's heartbeat (netlobby.c) */
     uint64_t lobby = nts_take_pending();             /* a Steam invite taken, Join Game, +connect_lobby */
     if (lobby)
