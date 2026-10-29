@@ -194,6 +194,78 @@ controllers 2-8. Nothing can desync and guests need no game files, but every gue
 and the host's upload carries everything. We keep our snapshots (a guest's own monster answers at once, little
 bandwidth); the Worker is an idea for a lobby that needs no VPS.
 
+## How other ports do online play
+
+### 3on3ArcadeRecomp (NHL 3 on 3 Arcade, Xbox 360; github.com/startupandhold/3on3ArcadeRecomp, v0.3.1)
+
+**The idea: revive the game's own netcode.** The Xbox Live Arcade original shipped with online play (EA's servers,
+long gone), so the port writes no sync of its own: it makes the recompiled game believe Xbox LIVE and EA are still
+there, and the original code does menus, matchmaking, sessions and the match itself. (Not open to us: Rampage: Total
+Destruction had no online mode to revive.)
+
+**The stack.**
+
+- *In the game* (`src/nhl3on3_net.cpp`, ~2,400 lines of C++): the recompile's XNet layer was a stub (no link, a
+  loopback address, empty lookups). Overrides present a signed-in LIVE profile and a working XNet: each player's
+  XNADDR carries a real (or tunnel) IPv4 address so peers resolve each other, and every DNS and LSP lookup the game
+  makes for EA's servers resolves to their own server. Every lookup and connection is logged with `[net]`.
+- *Team play* (`src/nhl3on3_team_lobby.*`): the Select Sides picks (side, lineup slot, goalie, position locks) shared
+  between consoles through the session's control messages.
+- *The server* (`server/`, one Python process, standard library only, asyncio):
+  - `lobby.py`, TCP 10901 / 30380 / 42127: a stand-in for EA's DirtySDK "plasma" lobby protocol (4-character
+    commands, KEY=VALUE text; replies modelled on the ea-nation-server emulator): sign-in, the lobby room and its chat,
+    ranked quick match (1 v 1), Online Team Play (a game opens once two search, later searchers join it on Select
+    Sides until the host starts, up to 8 consoles and 8 players), and created or private sessions listed under Custom
+    Match. Only players with the same roster pack are paired.
+  - `tunnel.py`, UDP 3670: the relay (below), and the lockstep host.
+  - `selftest.py`: signs in four fake players, tunnels a packet, makes a 1 v 1 and a team game a third player joins,
+    runs relay frames, checks a started game takes no one new; ends `PASS`. Run against the live server.
+
+**The relay (how nobody forwards a port).** Every game registers with the tunnel (`kHello`) and is given a virtual
+address, `10.66.x.y`, which it advertises as its own. Every packet the game sends to another player's virtual
+address goes to the server (`kData`: destination address and port, source port, payload), which forwards it to that
+player's real address; each player only ever talks to the server, so any home router works, symmetric NAT included.
+A keepalive every few seconds holds the router's mapping open and re-registers after a server restart or a changed
+mapping (an address silent 15 s may move to the player's new endpoint; one silent 120 s is dropped). Limits: 1,500-byte
+datagrams, 600 packets a second per player (bursts to 1,200). If the tunnel does not answer, the game falls back to
+direct connections. The cost: every packet of every match crosses the server, so it carries all the bandwidth and adds
+its own distance to each player's delay (hence a region near the players).
+
+**Lockstep through the server** (`src/nhl3on3_lockstep_relay.*`, the host side in `tunnel.py`). For 3-8 consoles,
+each sends its numbered inputs to the relay host; the host sends frame N to everyone once it holds input N from every
+slot, and every console plays the same frames. Through the tunnel the server is that host, so no player has a
+latency advantage; everyone waits for the slowest connection (lockstep's usual price). Control messages (ready
+handshakes) are forwarded to the other consoles the same way.
+
+**Fly.io (where the server runs).** One machine (`shared-cpu-1x` in their guide, `shared-cpu-2x` with 512 MB in
+`fly.toml`) plus a dedicated IPv4 address, about $4 a month together; Fly routes UDP only to apps that have a dedicated
+IPv4. The steps:
+
+1. Install `flyctl`, `fly auth signup` (or `login`).
+2. `fly apps create <unique name>`, then set `app` and `primary_region` in `fly.toml` (the region nearest the players,
+   since every packet goes through it: `fly platform regions`, e.g. `ord` Chicago, `iad` Virginia, `yyz` Toronto).
+3. `fly ips allocate-v4` (the dedicated address, needed for UDP).
+4. `fly deploy --ha=false` and `fly scale count 1`: the lobby keeps its state in memory, so exactly one machine, and
+   `auto_stop_machines = "off"` so it never sleeps. `fly.toml` lists each TCP port and the UDP port as a service, with a
+   TCP health check on 10901.
+5. `fly status`, `fly ips list`, `fly logs`, then `python selftest.py <app>.fly.dev`.
+
+A redeploy restarts the server: matches in progress keep going (the tunnel re-registers within seconds), lobby
+searches are lost. Players point the launcher's **Server** at the app's name or its IPv4 and keep **Connect through
+server** on.
+
+**What is worth taking for RampageRE.** A relay as a last resort: our hole punching fails on symmetric NATs (some
+hotspots, carrier-grade NAT), and a small UDP relay beside the lobby would carry those players without Steam, at the
+price of a server that carries their packets. Fly.io (or any small VPS with a public IPv4) would host it.
+
+| | 3on3 NHL | Smash 4 PC | RampageRE |
+|---|---|---|---|
+| Sync | the game's own lockstep, inputs combined by the server | video streamed from the host | host-authoritative snapshots |
+| Whose netcode | the original developers' (Xbox LIVE faked) | the port's (streaming) | ours (the original had none) |
+| Through routers | all traffic relayed by their server | STUN + hole punching | UPnP, STUN + hole punching, Steam |
+| Server | Python on Fly.io, ~$4 a month | a free Cloudflare Worker | Colyseus (a VPS or the host's PC) |
+| Server's load | every packet | introductions only | introductions only |
+
 ## What is shared (phase 1)
 
 | | Who decides | How it gets there |
