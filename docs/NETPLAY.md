@@ -258,13 +258,55 @@ server** on.
 hotspots, carrier-grade NAT), and a small UDP relay beside the lobby would carry those players without Steam, at the
 price of a server that carries their packets. Fly.io (or any small VPS with a public IPv4) would host it.
 
-| | 3on3 NHL | Smash 4 PC | RampageRE |
-|---|---|---|---|
-| Sync | the game's own lockstep, inputs combined by the server | video streamed from the host | host-authoritative snapshots |
-| Whose netcode | the original developers' (Xbox LIVE faked) | the port's (streaming) | ours (the original had none) |
-| Through routers | all traffic relayed by their server | STUN + hole punching | UPnP, STUN + hole punching, Steam |
-| Server | Python on Fly.io, ~$4 a month | a free Cloudflare Worker | Colyseus (a VPS or the host's PC) |
-| Server's load | every packet | introductions only | introductions only |
+### OpenCMR2 (Colin McRae Rally 2.0, PC; github.com/pablocpas/OpenCMR2, and the fork Dimax0987/OpenCMR2)
+
+Two different things share the name:
+
+- **The fork's "Coop - Multiplayer" release (Dimax0987) is split screen, not online**: 3 and 4 players on one screen
+  (four quadrants, per-player menus driven by each player's own pad, a "Split Screen - Contact" mode on a 2+2 grid,
+  CPU drivers alongside, everything unlocked with 2+ players), one patch with every change marked `// PORT:`, checked
+  with their headless probe (15 races, 1-4 players, every mode).
+- **Online play is upstream's (pablocpas)**, `docs/NETWORK.md`, `src/net/`. Like 3on3, it revives the game's own
+  netcode: the 2000 original used **DirectPlay 4**, so the port keeps the game's network code and DirectPlay's model
+  (`src/port/net.h`) and implements DirectPlay over UDP with **ENet** (the same library as ours).
+
+**The stack.**
+
+- *Topology*: the host is the session's server; guests connect only to it and the host relays messages between them
+  (one extra hop between two guests; car states are 32 bytes). Only the host must be reachable.
+- *Channels*: ENet 0 reliable and ordered (the game's guaranteed messages, the session protocol), 1 unreliable (car
+  states, with their own sequence number), so a retransmission never delays positions (as ours).
+- *Whose world*: each machine runs its own car and sends its state (the original's model); no host-authoritative world.
+- *Finding games, no lobby server*: the menu's search sends a query every second, answered on the same UDP port through
+  ENet's `intercept` (as our STUN does): a LAN broadcast, the addresses in `peers` (opencmr2.ini), and every online
+  machine of `tailscale status` (on by default). Nothing else: over the internet without a VPN the host forwards UDP
+  28620 by hand. No UPnP, no STUN, no relay.
+- *Host migration* (DirectPlay's): when the host leaves, every machine elects the earliest joined one (they all know the
+  roster's addresses, so they agree without talking) and reconnects to it (`RESUME`); machines that do not come back
+  in time are removed.
+- *A service thread* keeps the socket serviced while the game loads a stage and does not poll; silence of 5-10 s is a
+  disconnection.
+- *Validation*: everything read is bounds-checked (`net_wire.h`); the host drops a machine that creates, changes or
+  speaks for a player not its own; names cut to the game's buffers (it `strcpy`s them), messages up to 256 KB. They say
+  to play with people you trust: the game's own 2000 message handling trusts what it gets.
+- *Tests*: `tests/net_session.cpp` (host and guests on loopback: search, passwords, full sessions, 500 ordered
+  messages, garbage datagrams, protocol violations, host migration, a host vanishing; clean under ThreadSanitizer and
+  AddressSanitizer), and `tests/lan_game.py` (two real game processes through discovery, join and ready, 500 updates,
+  each sees the other's car move; a Windows build can join through Wine).
+
+**What is worth taking for RampageRE.** Searching the tailnet (`tailscale status --json`, the online peers asked on our
+port) and a LAN broadcast: games found with no lobby at all. A service thread so a long city load never times a guest
+out. Host migration does not fit us as it is (our host owns the world: a new host would need the whole world, a
+re-synchronize from the guest's copy).
+
+| | 3on3 NHL | Smash 4 PC | OpenCMR2 | RampageRE |
+|---|---|---|---|---|
+| Sync | the game's own lockstep, inputs combined by the server | video streamed from the host | the game's own (DirectPlay over ENet): each machine its own car | host-authoritative snapshots |
+| Whose netcode | the original developers' (Xbox LIVE faked) | the port's (streaming) | the original developers' (DirectPlay reimplemented) | ours (the original had none) |
+| Finding games | their lobby (EA's protocol) | a Cloudflare Worker | LAN broadcast, Tailscale peers, typed addresses | Colyseus lobby, codes, Steam |
+| Through routers | all traffic relayed by their server | STUN + hole punching | a forward by hand, or a VPN | UPnP, STUN + hole punching, Steam |
+| Server | Python on Fly.io, ~$4 a month | a free Cloudflare Worker | none | Colyseus (a VPS or the host's PC) |
+| Server's load | every packet | introductions only | - | introductions only |
 
 ## What is shared (phase 1)
 
