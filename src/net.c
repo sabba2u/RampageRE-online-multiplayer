@@ -806,6 +806,8 @@ static void on_data(int peer, const uint8_t *data, int len)
 
 void net_update(double now)
 {
+    if (g.role != NET_OFF && g.now > 0 && now - g.now > 1.0)   /* (a load: ENet drops a peer after 5-10 s unserviced) */
+        net_log("no network for %.1f s", now - g.now);
     g.now = now;
     net_upnp_poll();                                 /* (the router's answer, into the log) */
     netstun_update(now);                             /* STUN's asking, the punches toward knocking guests */

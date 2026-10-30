@@ -296,7 +296,9 @@ Two different things share the name:
 
 **What is worth taking for RampageRE.** Searching the tailnet (`tailscale status --json`, the online peers asked on our
 port) and a LAN broadcast: games found with no lobby at all. A service thread so a long city load never times a guest
-out. Host migration does not fit us as it is (our host owns the world: a new host would need the whole world, a
+out: not needed yet. Measured (2026-10-30, one PC, an SSD): Chicago, New York, Los Angeles and Las Vegas each load in
+under a second on the host and the guest, far from the 5-10 s ENet allows; the log says "no network for N s" when a
+frame ever takes over a second, so a slow PC's report shows it. Host migration does not fit us as it is (our host owns the world: a new host would need the whole world, a
 re-synchronize from the guest's copy).
 
 | | 3on3 NHL | Smash 4 PC | OpenCMR2 | RampageRE |
