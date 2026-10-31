@@ -1,6 +1,7 @@
 //! RampageRE's launcher (docs/superpowers/specs/2026-10-31-launcher-design.md).
 //!   rampage-launcher                       the window
 //!   rampage-launcher --serve-lobby [port]  only the built-in lobby, no window (tests, a lobby on a spare PC)
+//!   rampage-launcher --steam-check <dir>   exit 0 when Steam starts this process as Spacewar (steam.rs's check)
 mod game;
 #[cfg(test)]
 mod game_tests;
@@ -9,9 +10,16 @@ mod links;
 mod links_tests;
 mod lobby;
 mod settings;
+mod steam;
+#[cfg(test)]
+mod steam_tests;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--steam-check") {
+        let dir = args.get(2).map(std::path::PathBuf::from).unwrap_or_default();
+        std::process::exit(steam::steam_check_child(&dir));
+    }
     if args.get(1).map(String::as_str) == Some("--serve-lobby") {
         let port = args.get(2).and_then(|p| p.parse().ok()).unwrap_or(19980);
         match lobby::http::LobbyServer::start(port, None) {
