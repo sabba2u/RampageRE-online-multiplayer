@@ -1,5 +1,7 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! RampageRE's launcher (docs/superpowers/specs/2026-10-31-launcher-design.md).
 //!   rampage-launcher                       the window
+//!   rampage-launcher rampage://join/...    a clicked link: the game joins, no window
 //!   rampage-launcher --serve-lobby [port]  only the built-in lobby, no window (tests, a lobby on a spare PC)
 //!   rampage-launcher --steam-check <dir>   exit 0 when Steam starts this process as Spacewar (steam.rs's check)
 mod game;
@@ -13,6 +15,7 @@ mod settings;
 mod steam;
 #[cfg(test)]
 mod steam_tests;
+mod ui;
 mod upnp;
 #[cfg(test)]
 mod upnp_tests;
@@ -41,5 +44,23 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    }
+    if let Some(url) = args.get(1).filter(|a| a.get(..10).map_or(false, |p| p.eq_ignore_ascii_case("rampage://"))) {
+        if let Err(e) = ui::join::open_link(url) {
+            message_box(&e);
+        }
+        return;
+    }
+    if let Err(e) = ui::run() {
+        message_box(&format!("The launcher couldn't open its window: {e}"));
+    }
+}
+
+/// A plain Windows message (a clicked link has no window of its own to say it in).
+fn message_box(text: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+    let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    unsafe {
+        MessageBoxW(std::ptr::null_mut(), w(text).as_ptr(), w("RampageRE").as_ptr(), MB_OK | MB_ICONWARNING);
     }
 }
