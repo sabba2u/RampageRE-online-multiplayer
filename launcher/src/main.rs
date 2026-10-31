@@ -13,6 +13,9 @@ mod settings;
 mod steam;
 #[cfg(test)]
 mod steam_tests;
+mod upnp;
+#[cfg(test)]
+mod upnp_tests;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
