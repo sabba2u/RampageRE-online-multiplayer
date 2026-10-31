@@ -2,6 +2,7 @@
 use super::look::{self, GREEN, YELLOW};
 use super::App;
 use crate::links::{self, LinkStatus};
+use crate::settings::Settings;
 use eframe::egui::{self, Align2, RichText, Stroke, Vec2};
 
 pub const FIRST_RUN_TEXT: &str =
@@ -89,8 +90,5 @@ impl App {
             });
     }
 
-    fn first_run_done(&mut self) {
-        self.settings.first_run_done = true;
-        let _ = self.settings.save();
-    }
+    fn first_run_done(&mut self) { self.settings = Settings::update(|s| s.first_run_done = true); }
 }

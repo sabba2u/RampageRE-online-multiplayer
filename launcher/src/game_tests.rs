@@ -66,3 +66,15 @@ fn build_id_matches_game() {
     let exe = std::env::var("GAME_EXE").expect("GAME_EXE");
     assert_eq!(build_id(std::path::Path::new(&exe)).unwrap(), std::env::var("EXPECT_BUILD").expect("EXPECT_BUILD"));
 }
+
+/// Two launchers (the window, and a clicked link) share the file: a change reads it first, so neither undoes the other.
+#[test]
+fn settings_update_keeps_the_other_writer() {
+    let d = temp("update");
+    let f = d.join("launcher.json");
+    let window = Settings::load_from(&f);
+    Settings::update_at(&f, |s| s.remember("http://from-a-link:19980"));
+    let after = Settings::update_at(&f, |s| s.first_run_done = true);
+    assert!(after.first_run_done && after.servers == vec!["http://from-a-link:19980".to_string()]);
+    drop(window);
+}

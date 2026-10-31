@@ -20,6 +20,9 @@ const PAGE: &str = include_str!("../../../lobby/public/index.html");
 const LOGO: &[u8] = include_bytes!("../../assets/logo.png");
 const BACKGROUND: &[u8] = include_bytes!("../../assets/background.jpg");
 const WORKERS: usize = 4;
+/// The game's bodies are a few hundred bytes. Anything larger, or without a length, is refused before it is read: a
+/// slow sender can't hold a thread, and tiny_http reads bodies this small with the request.
+const BODY_MAX: usize = 1024;
 
 #[derive(Debug)]
 pub enum StartError {
@@ -36,8 +39,18 @@ pub struct LobbyServer {
 }
 
 impl LobbyServer {
-    /// Listens on TCP `port` (0: any free one) on every address; a sweep drops silent games every 5 s.
+    /// Listens on TCP `port` (0: any free one) on every address; a sweep drops silent games every 5 s. A lobby that
+    /// already answers on this PC (the Node one listens on IPv6 too, where Windows would let this one in beside it)
+    /// is PortInUse.
     pub fn start(port: u16, public_address: Option<String>) -> Result<LobbyServer, StartError> {
+        if port != 0 {
+            for a in [format!("127.0.0.1:{port}"), format!("[::1]:{port}")] {
+                let a: std::net::SocketAddr = a.parse().unwrap();
+                if std::net::TcpStream::connect_timeout(&a, Duration::from_millis(300)).is_ok() {
+                    return Err(StartError::PortInUse);
+                }
+            }
+        }
         let server = Server::http(("0.0.0.0", port)).map_err(|e| match e.downcast_ref::<std::io::Error>() {
             Some(io) if io.kind() == std::io::ErrorKind::AddrInUse => StartError::PortInUse,
             _ => StartError::Other(e.to_string()),
@@ -48,9 +61,11 @@ impl LobbyServer {
         let mut threads = Vec::new();
         for _ in 0..WORKERS {
             let (server, games) = (server.clone(), games.clone());
+            // each request on a thread of its own: a client that never reads its answer holds only that one
             threads.push(std::thread::spawn(move || {
                 while let Ok(req) = server.recv() {
-                    handle(&games, req);
+                    let games = games.clone();
+                    std::thread::spawn(move || handle(&games, req));
                 }
             }));
         }
@@ -70,6 +85,9 @@ impl LobbyServer {
     }
 
     pub fn stop(mut self) { self.shutdown(); }
+
+    /// This PC's address on the internet (the launcher's UPnP found it), for guests there when the game knows none.
+    pub fn set_public_address(&self, ip: &str) { self.games.lock().unwrap().set_public_address(Some(ip.to_string())); }
 
     fn shutdown(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
@@ -133,9 +151,17 @@ fn form(s: &str) -> Map<String, Value> {
 }
 
 fn read_body(req: &mut Request) -> Result<Map<String, Value>, String> {
+    // no length: no body at all, unless it is sent in chunks (refused: its length isn't known up front)
+    let chunked = get_header(req, "Transfer-Encoding").is_some();
+    if chunked || req.body_length().unwrap_or(0) > BODY_MAX {
+        return Err("too long".into());
+    }
+    if req.body_length().is_none() {
+        return Ok(Map::new());
+    }
     let mut buf = Vec::new();
-    req.as_reader().take(4097).read_to_end(&mut buf).map_err(|e| e.to_string())?;
-    if buf.len() > 4096 {
+    req.as_reader().take(BODY_MAX as u64 + 1).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    if buf.len() > BODY_MAX {
         return Err("too long".into());
     }
     let text = String::from_utf8_lossy(&buf).into_owned();
@@ -201,14 +227,16 @@ fn handle(games: &Mutex<Games>, mut req: Request) {
         if let Some((code, tail)) = game_path(&p) {
             if tail == "knock" && method == Method::Post {
                 let body = match read_body(&mut req) { Ok(b) => b, Err(e) => return fail(req, bad(e)) };
-                return match games.lock().unwrap().knock(code, &body, &from) {
+                let r = games.lock().unwrap().knock(code, &body, &from); // (the lock let go before answering)
+                return match r {
                     Ok(addr) => { println!("knock on {} from {addr}", code.to_uppercase()); text(req, 200, "ok\n"); Ok(()) }
                     Err(e) => fail(req, e),
                 };
             }
             if tail == "knocks" && method == Method::Get {
                 let token = get_header(&req, "X-Token").or(q_token.clone());
-                return match games.lock().unwrap().take_knocks(code, token.as_deref()) {
+                let r = games.lock().unwrap().take_knocks(code, token.as_deref());
+                return match r {
                     Ok(k) => {
                         let mut out = vec!["ok".to_string()];
                         out.extend(k.into_iter().map(|a| format!("knock {a}")));

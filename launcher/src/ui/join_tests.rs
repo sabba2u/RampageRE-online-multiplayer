@@ -45,3 +45,25 @@ fn check_build_against_lobby() {
     let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     assert_eq!(check_build(&format!("http://127.0.0.1:{free}"), &code, "0000ABCD").unwrap_err(), CANT_REACH);
 }
+
+#[test]
+fn no_game_is_said_first() {
+    let none: Result<std::path::PathBuf, String> = Err(crate::game::NO_GAME.into());
+    assert_eq!(plan_join(&Link::Code("K7PQ2".into()), &Settings::default(), &none).unwrap_err(), crate::game::NO_GAME);
+    let l = Link::CodeAt { code: "K7PQ2".into(), server: "http://203.0.113.5:19980".into() };
+    assert_eq!(plan_join(&l, &Settings::default(), &none).unwrap_err(), crate::game::NO_GAME);
+}
+
+/// Any web page can open a link: its server is only remembered once the join went through.
+#[test]
+fn link_server_remembered_only_after_success() {
+    let d = std::env::temp_dir().join(format!("rampage-launcher-link-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("RampageRE.exe"), b"x").unwrap();
+    let file = d.join("launcher.json");
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let r = open_link_in(&format!("rampage://join/K7PQ2@127.0.0.1:{free}"), &d, &file);
+    assert_eq!(r.unwrap_err(), CANT_REACH);
+    assert!(Settings::load_from(&file).servers.is_empty());
+}

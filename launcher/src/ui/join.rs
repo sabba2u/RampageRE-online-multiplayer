@@ -40,6 +40,14 @@ pub fn check_build(server: &str, code: &str, mine: &str) -> Result<(), String> {
     }
 }
 
+/// The game first (nothing else matters without it), then what `link` starts and the server to remember.
+pub fn plan_join(link: &Link, settings: &Settings, game: &Result<std::path::PathBuf, String>)
+                 -> Result<(std::path::PathBuf, Start, Option<String>), String> {
+    let game = game.clone()?;
+    let (start, remember) = join_target(link, settings)?;
+    Ok((game, start, remember))
+}
+
 /// The version check (for a code), then the game started: the window's Join and a clicked link both end here.
 pub fn run_join(game: &std::path::Path, build: &str, start: &Start) -> Result<(), String> {
     if let Start::Join { target, lobby: Some(server) } = start {
@@ -62,15 +70,19 @@ pub fn typed(input: &str) -> Result<Link, String> {
 
 /// A rampage:// link clicked anywhere: no window, the game joins (errors in a message box, by the caller).
 pub fn open_link(url: &str) -> Result<(), String> {
-    let link = crate::links::parse_link(url)?;
-    let mut settings = Settings::load();
-    let (start, remember) = join_target(&link, &settings)?;
-    if let Some(s) = remember {
-        settings.remember(&s);
-        let _ = settings.save();
-    }
     let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
-    let game = crate::game::find_game(&dir)?;
+    open_link_in(url, &dir, &crate::settings::path())
+}
+
+/// open_link for the game in `dir` and the settings in `settings_file`. The link's server is remembered only once
+/// the join went through: any web page can open a link.
+pub fn open_link_in(url: &str, dir: &std::path::Path, settings_file: &std::path::Path) -> Result<(), String> {
+    let link = crate::links::parse_link(url)?;
+    let (game, start, remember) = plan_join(&link, &Settings::load_from(settings_file), &crate::game::find_game(dir))?;
     let build = crate::game::build_id(&game).map_err(|e| e.to_string())?;
-    run_join(&game, &build, &start)
+    run_join(&game, &build, &start)?;
+    if let Some(s) = remember {
+        Settings::update_at(settings_file, |x| x.remember(&s));
+    }
+    Ok(())
 }

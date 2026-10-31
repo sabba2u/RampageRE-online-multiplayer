@@ -195,6 +195,8 @@ impl Games {
         Games { games: HashMap::new(), recent: HashMap::new(), public_address: public_address.filter(|s| !s.is_empty()), now }
     }
 
+    pub fn set_public_address(&mut self, ip: Option<String>) { self.public_address = ip.filter(|s| !s.is_empty()); }
+
     pub fn with_system_clock(public_address: Option<String>) -> Games {
         Games::new(public_address, Box::new(|| {
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)

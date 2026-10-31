@@ -8,7 +8,12 @@ use crate::lobby::games::Games;
 use crate::lobby::http::{LobbyServer, StartError};
 use crate::upnp::{self, Reach};
 use eframe::egui::{self, Align2, RichText, Vec2};
-use std::sync::mpsc::channel;
+use std::process::Child;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::Arc;
+use std::time::Instant;
+use upnp::Opened;
 
 pub const LOBBY_PORT: u16 = 19980;
 /// the game's own port when hosting (src/net.h NET_PORT)
@@ -18,6 +23,8 @@ pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you o
 pub const ROUTER_TEXT: &str = "Friends on the same home network can still join with your code.";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
+pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";
+pub const GAME_CLOSED: &str = "The game closed: hosting stopped.";
 
 /// What to send friends: the internet one when the router let us in, and the home network's always (a friend in the
 /// same house often can't reach the house's own public address).
@@ -40,12 +47,57 @@ pub fn find_my_code(games: &Games, game_port: u16) -> Option<String> {
 #[derive(Default)]
 pub struct Hosting {
     pub lobby: Option<LobbyServer>,
+    /// the hosting game: when it closes, hosting ends
+    pub game: Option<Child>,
     pub reach: Option<Reach>,
-    reach_rx: Option<std::sync::mpsc::Receiver<Reach>>,
+    reach_rx: Option<Receiver<Opened>>,
+    /// the router made the forward: removed on stop, renewed while hosting
+    forwarded: bool,
+    opened_at: Option<Instant>,
+    /// set on stop: a router answer still on its way removes its forward at once
+    cancelled: Arc<AtomicBool>,
     pub code: Option<String>,
     pub lan: Option<String>,
     pub router_popup: bool,
     pub confirm_close: bool,
+}
+
+impl Hosting {
+    /// The game closed (or crashed): what to say. None while it runs.
+    pub fn check_game(&mut self) -> Option<&'static str> {
+        let exited = self.game.as_mut().map_or(false, |c| !matches!(c.try_wait(), Ok(None)));
+        if !exited {
+            return None;
+        }
+        self.game = None;
+        Some(if self.code.is_some() { GAME_CLOSED } else { GAME_CLOSED_EARLY })
+    }
+
+    /// Closes the hosting game (switching to Steam: one game at a time).
+    pub fn end_game(&mut self) {
+        if let Some(mut c) = self.game.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+
+    /// Asks the router (again), on a thread; a stop meanwhile removes what it made.
+    fn open_router(&mut self) {
+        let (tx, rx) = channel();
+        let cancelled = self.cancelled.clone();
+        std::thread::spawn(move || {
+            let o = upnp::open_lobby_port(LOBBY_PORT);
+            if cancelled.load(Ordering::Relaxed) {
+                if o.forwarded {
+                    upnp::close_lobby_port(LOBBY_PORT);
+                }
+                return;
+            }
+            let _ = tx.send(o);
+        });
+        self.reach_rx = Some(rx);
+        self.opened_at = Some(Instant::now());
+    }
 }
 
 impl App {
@@ -53,48 +105,76 @@ impl App {
 
     /// "With my own server": the firewall note once, then the lobby, the router, the game.
     pub fn host_own(&mut self) {
-        if !self.settings.firewall_note_shown {
-            self.card = Some(Card::Firewall);
-            return;
-        }
         let game = match &self.game {
             Ok(g) => g.clone(),
             Err(e) => return self.say(&e.clone(), true),
         };
+        if !self.settings.firewall_note_shown {
+            self.card = Some(Card::Firewall);
+            return;
+        }
         let lobby = match LobbyServer::start(LOBBY_PORT, None) {
             Ok(l) => l,
             Err(StartError::PortInUse) => return self.say(PORT_IN_USE, true),
             Err(StartError::Other(e)) => return self.say(&format!("The lobby couldn't start: {e}"), true),
         };
-        if let Err(e) = game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{LOBBY_PORT}") }) {
-            return self.say(&format!("Couldn't start RampageRE: {e}"), true);
-        }
-        let (tx, rx) = channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(upnp::open_lobby_port(LOBBY_PORT));
-        });
-        self.host = Hosting { lobby: Some(lobby), reach_rx: Some(rx), lan: upnp::lan_ip(), ..Default::default() };
+        let child = match game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{LOBBY_PORT}") }) {
+            Ok(c) => c,
+            Err(e) => return self.say(&format!("Couldn't start RampageRE: {e}"), true),
+        };
+        self.host = Hosting { lobby: Some(lobby), game: Some(child), lan: upnp::lan_ip(), ..Default::default() };
+        self.host.open_router();
         self.say("Starting your game and server...", false);
     }
 
-    /// Stops the lobby and closes the router's forward (the game itself keeps running).
+    /// Stops the lobby and removes the router's forward, on a thread (the router can take seconds). The game itself
+    /// keeps running.
     pub fn stop_hosting(&mut self) {
+        self.host.cancelled.store(true, Ordering::Relaxed);
         if let Some(l) = self.host.lobby.take() {
             l.stop();
-            if matches!(self.host.reach, Some(Reach::Internet { .. })) {
-                upnp::close_lobby_port(LOBBY_PORT);
-            }
+        }
+        if self.host.forwarded {
+            std::thread::spawn(|| upnp::close_lobby_port(LOBBY_PORT));
         }
         self.host = Hosting::default();
     }
 
+    /// Like stop_hosting, but waits for the router (the launcher is closing: a thread would die with it).
+    pub fn stop_hosting_now(&mut self) {
+        let forwarded = self.host.forwarded;
+        self.host.forwarded = false;
+        self.stop_hosting();
+        if forwarded {
+            upnp::close_lobby_port(LOBBY_PORT);
+        }
+    }
+
     pub fn poll_hosting(&mut self) {
+        if !self.hosting() {
+            return;
+        }
+        if let Some(why) = self.host.check_game() {
+            self.stop_hosting();
+            return self.say(why, true);
+        }
         if let Some(rx) = &self.host.reach_rx {
-            if let Ok(r) = rx.try_recv() {
-                self.host.router_popup = matches!(r, Reach::HomeOnly { .. });
-                self.host.reach = Some(r);
+            if let Ok(o) = rx.try_recv() {
+                let renewal = self.host.reach.is_some();
+                self.host.forwarded |= o.forwarded;
+                if let (Reach::Internet { public_ip }, Some(l)) = (&o.reach, &self.host.lobby) {
+                    l.set_public_address(public_ip);
+                }
+                self.host.router_popup |= !renewal && matches!(o.reach, Reach::HomeOnly { .. });
+                if !renewal || matches!(o.reach, Reach::Internet { .. }) {
+                    self.host.reach = Some(o.reach);
+                }
                 self.host.reach_rx = None;
             }
+        }
+        let due = self.host.opened_at.map_or(false, |t| t.elapsed().as_secs() >= upnp::RENEW_S);
+        if self.host.forwarded && self.host.reach_rx.is_none() && due {
+            self.host.open_router();
         }
         if self.host.code.is_none() {
             if let Some(l) = &self.host.lobby {
@@ -111,6 +191,9 @@ impl App {
         let Some(code) = self.host.code.clone() else {
             ui.label(RichText::new("Starting your game and server...").size(16.0));
             ui.spinner();
+            if ui.button("Stop hosting").clicked() {
+                self.stop_hosting();
+            }
             return;
         };
         ui.label(RichText::new("Your game's code").color(look::DIM_TEXT));
@@ -161,6 +244,7 @@ impl App {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("Host on Steam instead").strong()).clicked() {
+                        self.host.end_game();
                         self.stop_hosting();
                         self.steam_host();
                     }

@@ -34,6 +34,17 @@ impl Settings {
         std::fs::write(file, serde_json::to_string_pretty(self).unwrap())
     }
 
+    /// A change made to what is on disk now (a clicked link may have saved since this window read it), saved;
+    /// the result is the new state.
+    pub fn update_at(file: &Path, f: impl FnOnce(&mut Settings)) -> Settings {
+        let mut s = Settings::load_from(file);
+        f(&mut s);
+        let _ = s.save_to(file);
+        s
+    }
+
+    pub fn update(f: impl FnOnce(&mut Settings)) -> Settings { Settings::update_at(&path(), f) }
+
     /// `server` to the front; the oldest drop off past SERVERS_KEPT.
     pub fn remember(&mut self, server: &str) {
         self.servers.retain(|s| s != server);

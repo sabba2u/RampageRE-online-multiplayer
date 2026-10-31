@@ -26,3 +26,35 @@ fn finds_code_of_local_host() {
     assert_eq!(find_my_code(&g, 27960), Some(mine));
     assert_eq!(find_my_code(&g, 27999), None);
 }
+
+fn hidden(cmd: &str, args: &[&str]) -> std::process::Child {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new(cmd).args(args).creation_flags(0x0800_0000).spawn().unwrap()
+}
+
+#[test]
+fn a_game_that_closes_ends_hosting() {
+    let mut h = Hosting::default();
+    h.game = Some(hidden("cmd", &["/c", "exit 0"]));
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    assert_eq!(h.check_game(), Some(GAME_CLOSED_EARLY));
+    h.game = Some(hidden("cmd", &["/c", "exit 0"]));
+    h.code = Some("K7PQ2".into());
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    assert_eq!(h.check_game(), Some(GAME_CLOSED));
+    h.game = Some(hidden("ping", &["-n", "30", "127.0.0.1"]));
+    assert_eq!(h.check_game(), None);
+    h.end_game();
+}
+
+#[test]
+fn end_game_closes_it() {
+    let mut h = Hosting::default();
+    let child = hidden("ping", &["-n", "30", "127.0.0.1"]);
+    let pid = child.id().to_string();
+    h.game = Some(child);
+    h.end_game();
+    assert!(h.game.is_none());
+    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(&pid), "the hosting game must be gone");
+}

@@ -29,8 +29,10 @@ pub struct App {
     code: String,
     /// the last thing to tell the player, and whether it is a problem
     note: Option<(String, bool)>,
-    /// a join under way: its outcome
-    busy: Option<Receiver<Result<String, String>>>,
+    /// a join under way: its outcome (the server to remember once it went through)
+    busy: Option<Receiver<Result<Option<String>, String>>>,
+    /// when the settings were last read (a clicked link saves from another process)
+    settings_read: std::time::Instant,
     pub host: host::Hosting,
     /// a card showing in the middle of the window
     pub card: Option<Card>,
@@ -56,7 +58,8 @@ impl App {
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
-                            busy: None, host: host::Hosting::default(), card: None, steam_check: None, steam_problem: None };
+                            busy: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
+                            steam_check: None, steam_problem: None };
         app.refresh_links();
         app
     }
@@ -74,23 +77,16 @@ impl App {
     }
 
     fn join(&mut self) {
-        let r = join::typed(&self.code).and_then(|link| join::join_target(&link, &self.settings));
-        let (start, remember) = match r {
+        self.settings = Settings::load();
+        let r = join::typed(&self.code).and_then(|link| join::plan_join(&link, &self.settings, &self.game));
+        let (game, start, remember) = match r {
             Ok(x) => x,
             Err(e) => return self.say(&e, true),
-        };
-        if let Some(s) = remember {
-            self.settings.remember(&s);
-            let _ = self.settings.save();
-        }
-        let game = match &self.game {
-            Ok(g) => g.clone(),
-            Err(e) => return self.say(&e.clone(), true),
         };
         let (tx, rx) = channel();
         let build = self.build.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(join::run_join(&game, &build, &start).map(|_| "Starting RampageRE: joining...".to_string()));
+            let _ = tx.send(join::run_join(&game, &build, &start).map(|_| remember));
         });
         self.busy = Some(rx);
         self.say("Checking the game...", false);
@@ -101,10 +97,19 @@ impl App {
             if let Ok(r) = rx.try_recv() {
                 self.busy = None;
                 match r {
-                    Ok(t) => self.say(&t, false),
+                    Ok(remember) => {
+                        if let Some(s) = remember {
+                            self.settings = Settings::update(|x| x.remember(&s));
+                        }
+                        self.say("Starting RampageRE: joining...", false);
+                    }
                     Err(e) => self.say(&e, true),
                 }
             }
+        }
+        if self.settings_read.elapsed().as_secs() >= 2 {
+            self.settings = Settings::load();
+            self.settings_read = std::time::Instant::now();
         }
     }
 
@@ -126,8 +131,7 @@ impl App {
                 });
         });
         if let Some(s) = pick {
-            self.settings.remember(&s);
-            let _ = self.settings.save();
+            self.settings = Settings::update(|x| x.remember(&s));
         }
     }
 
@@ -142,7 +146,8 @@ impl App {
                         self.hosting_box(ui);
                         return;
                     }
-                    let ready = self.game.is_ok() && self.steam_check.is_none();
+                    // (without the game every button still answers: with why it can't start)
+                    let ready = self.steam_check.is_none();
                     if look::big(ui, "Play", ready).clicked() {
                         self.play();
                     }
@@ -218,7 +223,7 @@ impl eframe::App for App {
         self.close_question(ctx);
     }
 
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) { self.stop_hosting(); }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) { self.stop_hosting_now(); }
 }
 
 impl App {
@@ -231,7 +236,7 @@ impl App {
                 ui.label(RichText::new(host::CLOSE_TEXT).size(16.0));
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("Close anyway").strong()).clicked() {
-                        self.stop_hosting();
+                        self.stop_hosting_now();
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                     if ui.button("Keep hosting").clicked() {

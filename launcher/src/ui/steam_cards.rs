@@ -3,6 +3,7 @@
 use super::look::{DIM_TEXT, RED, YELLOW};
 use super::{App, Card};
 use crate::game::{self, Start};
+use crate::settings::Settings;
 use crate::steam::{self, SteamProblem, GET_SPACEWAR_NOTE};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::sync::mpsc::channel;
@@ -28,16 +29,15 @@ impl App {
 
     /// The first time: what Spacewar is. Then the checks (on a thread: the ownership check asks Steam), then the game.
     fn steam(&mut self, action: SteamAction) {
-        if !self.settings.spacewar_card_shown {
-            self.settings.spacewar_card_shown = true;
-            let _ = self.settings.save();
-            self.card = Some(Card::Spacewar(Some(action)));
-            return;
-        }
         let dir = match &self.game {
             Ok(g) => g.parent().map(|d| d.to_path_buf()).unwrap_or_default(),
             Err(e) => return self.say(&e.clone(), true),
         };
+        if !self.settings.spacewar_card_shown {
+            self.settings = Settings::update(|s| s.spacewar_card_shown = true);
+            self.card = Some(Card::Spacewar(Some(action)));
+            return;
+        }
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let _ = tx.send(steam::check(&dir));
@@ -107,8 +107,7 @@ impl App {
                         if ui.button(RichText::new("OK, host my game").strong()).clicked() {
                             close = true;
                             then = Some(Box::new(|app: &mut App| {
-                                app.settings.firewall_note_shown = true;
-                                let _ = app.settings.save();
+                                app.settings = Settings::update(|s| s.firewall_note_shown = true);
                                 app.host_own();
                             }));
                         }

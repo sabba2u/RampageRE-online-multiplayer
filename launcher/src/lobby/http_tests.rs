@@ -100,3 +100,57 @@ fn port_in_use() {
         other => panic!("expected PortInUse, got {:?}", other.map(|x| x.port)),
     }
 }
+
+/// A lobby already listening on IPv6 only (Node's listen(port) is [::], dual-stack) must not be shadowed on IPv4.
+#[test]
+fn port_in_use_by_ipv6_lobby() {
+    let other = std::net::TcpListener::bind("[::1]:0").unwrap();
+    let port = other.local_addr().unwrap().port();
+    assert!(matches!(LobbyServer::start(port, None), Err(StartError::PortInUse)));
+}
+
+fn health_within(url: &str, secs: u64) -> bool {
+    let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(secs)).build();
+    agent.get(&format!("{url}/health")).call().map_or(false, |r| r.status() == 200)
+}
+
+/// Strangers on TCP 19980 that send a body slowly, or ask and never read, must not stop friends or Stop hosting.
+#[test]
+fn slow_and_stalled_clients_dont_block() {
+    use std::io::Write;
+    let (s, url) = start();
+    let addr = format!("127.0.0.1:{}", s.port);
+    let mut held = Vec::new();
+    for _ in 0..6 {
+        let mut c = std::net::TcpStream::connect(&addr).unwrap();
+        c.write_all(b"POST /games HTTP/1.1\r\nHost: x\r\nContent-Length: 4000\r\n\r\nab").unwrap();
+        held.push(c);
+    }
+    for _ in 0..6 {
+        let mut c = std::net::TcpStream::connect(&addr).unwrap();
+        for _ in 0..8 {
+            c.write_all(b"GET /logo.png HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        }
+        held.push(c);
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(health_within(&url, 3), "an honest request must still be answered");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        s.stop();
+        let _ = tx.send(());
+    });
+    assert!(rx.recv_timeout(std::time::Duration::from_secs(3)).is_ok(), "stop must not wait on stuck clients");
+    drop(held);
+}
+
+#[test]
+fn launcher_knows_the_public_address() {
+    let (s, url) = start();
+    let body = serde_json::json!({"name": "h", "port": 27960, "build": "0000ABCD", "lan": "192.168.1.20"});
+    let code = s.games.lock().unwrap().register(body.as_object().unwrap(), "127.0.0.1").unwrap().code;
+    s.set_public_address("203.0.113.50");
+    let g = s.games.lock().unwrap().get(&code).unwrap().clone();
+    assert_eq!(s.games.lock().unwrap().join_for(&g, "198.51.100.9"), "203.0.113.50:27960");
+    drop(url);
+}
