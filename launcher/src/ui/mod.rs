@@ -3,12 +3,18 @@
 pub mod join;
 #[cfg(test)]
 mod join_tests;
+mod host;
+#[cfg(test)]
+mod host_tests;
 mod links_button;
 pub mod look;
+mod steam_cards;
 
 use crate::game::{self, Start};
 use crate::links::LinkStatus;
 use crate::settings::Settings;
+use crate::steam::SteamProblem;
+use steam_cards::SteamAction;
 use eframe::egui::{self, RichText};
 use look::{DIM_TEXT, GREEN, RED};
 use std::path::PathBuf;
@@ -25,6 +31,21 @@ pub struct App {
     note: Option<(String, bool)>,
     /// a join under way: its outcome
     busy: Option<Receiver<Result<String, String>>>,
+    pub host: host::Hosting,
+    /// a card showing in the middle of the window
+    pub card: Option<Card>,
+    /// Steam's checks under way, for which button
+    pub steam_check: Option<(SteamAction, Receiver<Result<(), SteamProblem>>)>,
+    pub steam_problem: Option<SteamProblem>,
+}
+
+#[derive(Clone)]
+pub enum Card {
+    Firewall,
+    /// what Spacewar is; then that Steam button's checks (None: opened from the "?")
+    Spacewar(Option<SteamAction>),
+    ShiftTab,
+    JoinGame,
 }
 
 impl App {
@@ -35,7 +56,7 @@ impl App {
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
-                            busy: None };
+                            busy: None, host: host::Hosting::default(), card: None, steam_check: None, steam_problem: None };
         app.refresh_links();
         app
     }
@@ -117,9 +138,34 @@ impl App {
             look::panel().show(ui, |ui| {
                 ui.set_width(380.0);
                 ui.vertical_centered(|ui| {
-                    if look::big(ui, "Play", self.game.is_ok()).clicked() {
+                    if self.hosting() {
+                        self.hosting_box(ui);
+                        return;
+                    }
+                    let ready = self.game.is_ok() && self.steam_check.is_none();
+                    if look::big(ui, "Play", ready).clicked() {
                         self.play();
                     }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Host a game").size(17.0).strong());
+                        if ui.add_enabled(ready, egui::Button::new(RichText::new("On Steam").size(17.0))).clicked() {
+                            self.steam_host();
+                        }
+                        if ui.add_enabled(ready, egui::Button::new(RichText::new("With my own server").size(17.0))).clicked() {
+                            self.host_own();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if look::big(ui, "Join on Steam", ready).clicked() {
+                            self.steam_join();
+                        }
+                        if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
+                            self.card = Some(Card::Spacewar(None));
+                        }
+                    });
+                    self.steam_problem_line(ui);
+                    ui.add_space(4.0);
                     ui.add_space(6.0);
                     ui.label(RichText::new("Join by code").strong());
                     ui.horizontal(|ui| {
@@ -152,20 +198,53 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll();
-        if self.busy.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        self.poll_hosting();
+        self.poll_steam();
+        if self.busy.is_some() || self.hosting() || self.steam_check.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        // closing while hosting: asked first (the lobby lives in this window)
+        if ctx.input(|i| i.viewport().close_requested()) && self.hosting() && !self.host.confirm_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.host.confirm_close = true;
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
             look::background(ui);
             self.main_screen(ui);
         });
         self.first_run_popup(ctx);
+        self.router_popup(ctx);
+        self.card_window(ctx);
+        self.close_question(ctx);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) { self.stop_hosting(); }
+}
+
+impl App {
+    fn close_question(&mut self, ctx: &egui::Context) {
+        if !self.host.confirm_close || !self.hosting() {
+            return;
+        }
+        egui::Window::new("Stop hosting?").anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false)
+            .resizable(false).show(ctx, |ui| {
+                ui.label(RichText::new(host::CLOSE_TEXT).size(16.0));
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("Close anyway").strong()).clicked() {
+                        self.stop_hosting();
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    if ui.button("Keep hosting").clicked() {
+                        self.host.confirm_close = false;
+                    }
+                });
+            });
     }
 }
 
 pub fn run() -> eframe::Result<()> {
     let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 640.0]).with_min_inner_size([560.0, 560.0])
+        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 720.0]).with_min_inner_size([600.0, 640.0])
             .with_title("RampageRE Launcher"),
         ..Default::default()
     };
