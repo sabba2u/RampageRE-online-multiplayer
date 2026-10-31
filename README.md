@@ -10,6 +10,19 @@ Two players on two PCs. The **host** is player 1 and runs the game; the **guest*
 world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
 host. Each player needs their own copy of the game disc and the same build of this fork.
 
+### The easy way: the launcher
+
+Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, nothing to set up.
+
+- **Host a game**: **With my own server** shows a 5-letter code and links to send your friends (the launcher opens your
+  router for them), or **On Steam** (then Shift+Tab in the game to invite friends).
+- **Join**: click the link your host sent, or type their code under **Join by code**. On Steam: **Join on Steam**, then
+  right-click your friend in Steam's friends list and pick **Join Game**.
+- The first time, click **Set up join links** so a link from a friend opens the game straight away.
+- Steam play borrows Valve's free test app **Spacewar** (the launcher explains it): add it to your Steam library once.
+
+Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-rust).
+
 ### How to play
 
 1. Both players start RampageRE.

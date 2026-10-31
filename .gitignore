@@ -42,9 +42,10 @@ android/local.properties
 imgui.ini
 tests/*.exe
 
-# Steam for development: Valve's redistributable and the Spacewar app id (docs/NETPLAY.md)
-steam_api64.dll
-steam_appid.txt
+# Steam for development: Valve's redistributable and the Spacewar app id (docs/NETPLAY.md); the release's own copy is
+# kept in third_party/steamworks/ (the launcher's zip carries it)
+/steam_api64.dll
+/steam_appid.txt
 
 # the look as last set in the Insert panel (src/lookfx.c)
 lookfx.cfg

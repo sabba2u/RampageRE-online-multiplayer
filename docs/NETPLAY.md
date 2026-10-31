@@ -450,6 +450,37 @@ each player sets them up once, from the page:
 Colyseus clients join `lobby` (the built-in LobbyRoom): each listed game is a `game` room whose id is its code and whose
 metadata is the listing.
 
+## The launcher (launcher/, Rust)
+
+`RampageRE-Launcher.exe` (in the Windows release zip, next to `RampageRE.exe`) is the foolproof way in: big buttons,
+nothing to type but a code. Design: docs/superpowers/specs/2026-10-31-launcher-design.md.
+
+- **Play** starts the game offline. **Host a game, With my own server** starts the lobby built into the launcher (TCP
+  19980), asks the router to forward it (UPnP, searched from the PC's own LAN address: a PC with Hyper-V or VPN adapters
+  otherwise asks where no router answers), starts the game as `--host --lobby http://127.0.0.1:19980`, and shows the
+  code big with two links to send: **Friends anywhere** `rampage://join/<code>@<public address>` and **Same Wi-Fi**
+  `rampage://join/<code>@<LAN address>`. A router that won't open (UPnP off, a shared address: phone hotspots, Starlink,
+  carrier-grade NAT) gets a pop-up offering Steam. Closing the launcher while hosting asks first (the lobby lives in it).
+- **Host a game, On Steam** and **Join on Steam** check Steam is running, `steam_api64.dll` and `steam_appid.txt` are
+  beside the game, and the account owns Spacewar (480; asked of Steam itself by `--steam-check` in a child process),
+  each problem with its fix (Open Steam, Get Spacewar). Then `--steam-host` and the Shift+Tab card, or the game waiting
+  in its menus and the Join Game card (a friend's right-click, Join Game; the game must already be running, or Steam
+  would start the real Spacewar).
+- **Join by code** takes a code (through the group server the launcher remembers, newest first, 8 kept) or a pasted
+  group link (its server is remembered). Before the game starts it asks the lobby for the host's build and compares it
+  with its own sum of `RampageRE.exe` (FNV-1a, as `src/net.c` `build_id`): a different version is said plainly.
+- **Set up join links** registers `rampage://` under `HKCU\Software\Classesampage` with the launcher itself as the
+  handler (no PowerShell, no admin). A link opens no window: the launcher checks it, remembers its server and starts
+  the game joining. Forms: `rampage://join/<code>`, `rampage://join/<code>@<host[:port]>` (port 19980 when left out),
+  `rampage://join/<host[:port]>` (a direct address must have a dot or a port); anything else is refused. The program
+  started is always the game next to the launcher.
+- **Its lobby** is lobby/src's plain HTTP side in Rust (launcher/src/lobby: the same routes, rules, codes and texts; no
+  Colyseus, so the games page reads `/games` every 3 s). `rampage-launcher --serve-lobby [port]` runs only that.
+  `lobby/test/conformance.test.ts` runs one set of HTTP cases against both lobbies, so they can't drift apart (build
+  the launcher first: `cargo build --manifest-path launcher/Cargo.toml`).
+- Tests: `cargo test --manifest-path launcher/Cargo.toml`; with the real game and router, `-- --ignored`
+  (`build_id_matches_game` with GAME_EXE and EXPECT_BUILD, `open_and_close_on_this_router`).
+
 ## Testing on one PC
 
 ```
