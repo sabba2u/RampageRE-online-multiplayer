@@ -1,10 +1,14 @@
 //! RampageRE's launcher (docs/superpowers/specs/2026-10-31-launcher-design.md).
 //!   rampage-launcher                       the window
 //!   rampage-launcher --serve-lobby [port]  only the built-in lobby, no window (tests, a lobby on a spare PC)
+mod game;
+#[cfg(test)]
+mod game_tests;
 mod links;
 #[cfg(test)]
 mod links_tests;
 mod lobby;
+mod settings;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

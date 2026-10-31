@@ -1,0 +1,62 @@
+//! The game next to the launcher: which exe, its build id (src/net.c build_id: guest and host must match), and
+//! starting it with the flags it already has (--host, --steam-host, --join, --lobby).
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
+
+pub const NO_GAME: &str = "RampageRE.exe isn't next to the launcher: put the launcher in the game's folder.";
+
+/// RampageRE.exe, else the developer build.
+pub fn find_game(dir: &Path) -> Result<PathBuf, String> {
+    ["RampageRE.exe", "RampageRE-dev.exe"].iter().map(|n| dir.join(n)).find(|p| p.is_file()).ok_or_else(|| NO_GAME.to_string())
+}
+
+/// FNV-1a 32 over the exe's bytes, "%08X", exactly as the game computes and lists it.
+pub fn build_id(exe: &Path) -> io::Result<String> {
+    let mut f = std::fs::File::open(exe)?;
+    let mut buf = vec![0u8; 65536];
+    let mut h: u32 = 2166136261;
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        for b in &buf[..n] {
+            h = (h ^ *b as u32).wrapping_mul(16777619);
+        }
+    }
+    Ok(format!("{:08X}", if h == 0 { 1 } else { h }))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Start {
+    Offline,
+    /// hosting, listed in this lobby
+    Host { lobby: String },
+    SteamHost,
+    /// a code (through `lobby`) or an address
+    Join { target: String, lobby: Option<String> },
+    /// started in its menus, ready for a friend's Steam invite or Join Game
+    SteamWait,
+}
+
+pub fn args(s: &Start) -> Vec<String> {
+    let v: Vec<&str> = match s {
+        Start::Offline | Start::SteamWait => vec![],
+        Start::Host { lobby } => vec!["--host", "--lobby", lobby],
+        Start::SteamHost => vec!["--steam-host"],
+        Start::Join { target, lobby: Some(l) } => vec!["--lobby", l, "--join", target],
+        Start::Join { target, lobby: None } => vec!["--join", target],
+    };
+    v.into_iter().map(String::from).collect()
+}
+
+/// Started from its own folder (it finds its data there).
+pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
+    let mut c = Command::new(exe);
+    c.args(args(s));
+    if let Some(dir) = exe.parent() {
+        c.current_dir(dir);
+    }
+    c.spawn()
+}
