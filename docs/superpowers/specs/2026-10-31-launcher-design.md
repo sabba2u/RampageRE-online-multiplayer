@@ -35,6 +35,15 @@ Big, plain buttons:
 - **The group's server**: shown small, with a way to change it. The launcher remembers the servers it has used (a
   short list), so someone in two groups can switch between them.
 
+### The look
+
+- **The background** is `images/titlescreen.png` (1672×941: the monsters over Chicago), heavily dimmed, to about 20–25%
+  brightness and perhaps slightly blurred. It sets the mood without competing with the buttons.
+- **The logo** is `images/logo.png` (2172×724, transparent: "RAMPAGE MULTIPLAYER LAUNCHER"), at the top, full
+  brightness.
+- **Both the launcher and the lobby's games page** use the same background and logo, so they look like one product.
+- **Inside the launcher exe,** both images are scaled down to the sizes they're shown at, keeping it small.
+
 ### The first run
 
 If `rampage://` isn't registered for this user, the **Set up join links** button flashes, and a small pop-up says:
@@ -104,16 +113,19 @@ Steam button is used and from a small **?** after that:
 > Steam online play only works for games that have their own Steam app. RampageRE doesn't have one (that needs a paid
 > Steam listing). Valve gives every game maker a free test app called **Spacewar** (app 480). Game developers use it to
 > test their multiplayer through Steam before their own game has a store page, and RampageRE uses the same technique.
-> Steam treats RampageRE as Spacewar, so you and your friends each need Spacewar in your Steam library. It's free and
-> tiny, and you never have to play it. Your friends list will show you as "playing Spacewar".
+> Steam treats RampageRE as Spacewar, so you and your friends each need to own Spacewar. It's free, and you don't need
+> to download or play it: it only has to be in your Steam library. Your friends list will show you as "playing Spacewar".
 
 **Checks, on both Steam buttons, before the game starts.** Each failed check is one plain line with a button that fixes
 it:
 - **Steam is running** (`steam.exe` is running): "Steam isn't running." **[Open Steam]**
 - **Steam's files are next to the game** (`steam_api64.dll`, `steam_appid.txt`): "This copy is missing Steam's files:
   download the release again."
-- **Spacewar is installed** (Steam's own records, under `HKCU\Software\Valve\Steam\Apps\480`): "You need Spacewar
-  (free) in your Steam library." **[Get Spacewar]** opens `steam://install/480`.
+- **The account owns Spacewar.** Owning it is what matters; it doesn't need to be installed. The launcher asks Steam
+  itself: it loads `steam_api64.dll` as app 480 for a moment, which is the same check the game's Steam start makes. If
+  the account doesn't own it: "You need Spacewar (free) in your Steam library." **[Get Spacewar]** opens
+  `steam://install/480`, with the note: "Click Install, then you can cancel the download: it just needs to be in your
+  library."
 
 **Hosting on Steam:**
 - The button starts the game with `--steam-host`, which makes a friends-only Steam lobby.
