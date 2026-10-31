@@ -56,3 +56,8 @@ lobby/node_modules/
 lobby/config.json
 netlobby.cfg
 netrejoin.cfg
+
+# superpowers plan workspaces
+.superpowers/
+# the launcher's build output
+launcher/target/
