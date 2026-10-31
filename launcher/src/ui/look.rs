@@ -32,6 +32,17 @@ pub fn big(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
     ui.add_enabled(enabled, egui::Button::new(RichText::new(text).size(20.0).strong()).min_size(Vec2::new(300.0, 46.0)))
 }
 
+/// A section's heading ("HOST A GAME"), centered.
+pub fn section(ui: &mut egui::Ui, title: &str) {
+    ui.vertical_centered(|ui| ui.label(RichText::new(title.to_uppercase()).size(15.0).strong().color(YELLOW)));
+}
+
+/// One of two big buttons side by side (a section's choices), filling its column.
+pub fn half(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
+    let w = ui.available_width();
+    ui.add_enabled(enabled, egui::Button::new(RichText::new(text).size(18.0).strong()).min_size(Vec2::new(w, 46.0)))
+}
+
 /// The dark panel the buttons sit on.
 pub fn panel() -> egui::Frame {
     egui::Frame::none()

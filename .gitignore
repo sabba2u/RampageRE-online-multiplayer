@@ -62,3 +62,4 @@ netrejoin.cfg
 .superpowers/
 # the launcher's build output
 launcher/target/
+launcher/target-alt/

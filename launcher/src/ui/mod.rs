@@ -1,5 +1,5 @@
-//! The launcher's window: Play, Host a game (on Steam / with my own server), Join on Steam, Join by code, and the
-//! join links. Anything slow (a version check, the router, Steam's checks) runs on a thread; the window keeps drawing.
+//! The launcher's window: Play, Host a game (my own server), Steam (host / join), Join by code, and Settings (the
+//! join links, group servers, tips). Anything slow (a version check, the router, Steam's checks) runs on a thread; the window keeps drawing.
 pub mod join;
 #[cfg(test)]
 mod join_tests;
@@ -39,6 +39,8 @@ pub struct App {
     /// Steam's checks under way, for which button
     pub steam_check: Option<(SteamAction, Receiver<Result<(), SteamProblem>>)>,
     pub steam_problem: Option<SteamProblem>,
+    /// the Settings window showing
+    pub settings_open: bool,
 }
 
 #[derive(Clone)]
@@ -59,7 +61,7 @@ impl App {
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
                             busy: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
-                            steam_check: None, steam_problem: None };
+                            steam_check: None, steam_problem: None, settings_open: false };
         app.refresh_links();
         app
     }
@@ -151,28 +153,31 @@ impl App {
                     if look::big(ui, "Play", ready).clicked() {
                         self.play();
                     }
-                    ui.add_space(4.0);
+                    ui.separator();
+                    look::section(ui, "Host a game");
+                    if look::big(ui, "With my own server", ready).clicked() {
+                        self.host_own();
+                    }
+                    ui.separator();
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Host a game").size(17.0).strong());
-                        if ui.add_enabled(ready, egui::Button::new(RichText::new("On Steam").size(17.0))).clicked() {
-                            self.steam_host();
-                        }
-                        if ui.add_enabled(ready, egui::Button::new(RichText::new("With my own server").size(17.0))).clicked() {
-                            self.host_own();
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if look::big(ui, "Join on Steam", ready).clicked() {
-                            self.steam_join();
-                        }
+                        // the heading centered over the row, the "?" at its end
+                        ui.add_space((ui.available_width() - 120.0).max(0.0) / 2.0);
+                        ui.label(RichText::new("STEAM").size(15.0).strong().color(look::YELLOW));
                         if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
                             self.card = Some(Card::Spacewar(None));
                         }
                     });
+                    ui.columns(2, |c| {
+                        if look::half(&mut c[0], "Host on Steam", ready).clicked() {
+                            self.steam_host();
+                        }
+                        if look::half(&mut c[1], "Join on Steam", ready).clicked() {
+                            self.steam_join();
+                        }
+                    });
                     self.steam_problem_line(ui);
-                    ui.add_space(4.0);
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Join by code").strong());
+                    ui.separator();
+                    look::section(ui, "Join by code");
                     ui.horizontal(|ui| {
                         let edit = ui.add(egui::TextEdit::singleline(&mut self.code).hint_text("K7PQ2 or a group link")
                             .font(egui::TextStyle::Heading).desired_width(250.0));
@@ -184,12 +189,12 @@ impl App {
                         }
                     });
                     self.server_picker(ui);
-                    ui.add_space(6.0);
-                    self.links_button(ui);
                     if let Some((t, problem)) = &self.note {
                         ui.add_space(4.0);
                         ui.label(RichText::new(t).size(15.0).color(if *problem { RED } else { GREEN }));
                     }
+                    ui.separator();
+                    self.settings_button(ui);
                 });
             });
         });
@@ -217,6 +222,7 @@ impl eframe::App for App {
             look::background(ui);
             self.main_screen(ui);
         });
+        self.settings_window(ctx);
         self.first_run_popup(ctx);
         self.router_popup(ctx);
         self.card_window(ctx);
@@ -249,8 +255,8 @@ impl App {
 
 pub fn run() -> eframe::Result<()> {
     let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 720.0]).with_min_inner_size([600.0, 640.0])
-            .with_title("RampageRE Launcher"),
+        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 700.0]).with_resizable(false)
+            .with_maximize_button(false).with_title("RampageRE Launcher"),
         ..Default::default()
     };
     eframe::run_native("RampageRE Launcher", opts, Box::new(|cc| Ok(Box::new(App::new(cc)))))
