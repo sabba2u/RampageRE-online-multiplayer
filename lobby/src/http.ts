@@ -21,6 +21,7 @@ import { normIp } from "./addr";
  *    GET    /games/<code>/knocks?token=  the host's, every second: "ok", then "knock <ip:port>" per guest since
  *  and for people:
  *    GET    /                   the games page (public/index.html): live list, rampage:// links, the join commands
+ *    GET    /logo.png /background.jpg  its pictures (launcher/assets)
  *    GET    /install.ps1        sets up rampage:// links on Windows, with this lobby's address filled in
  *    GET    /install-linux.sh   the same for Linux desktops (xdg-mime)
  *    GET    /health             "rampage_lobby" */
@@ -58,6 +59,10 @@ export function httpHandler(games: Games, opts: { trustProxy?: boolean } = {}) {
         if (p === "/health") return send(200, "rampage_lobby\n");
         if (p === "/") return send(200, files.page(), "text/html; charset=utf-8");
         if (p === "/colyseus.js") return send(200, files.colyseus(), "text/javascript");
+        if (p === "/logo.png" || p === "/background.jpg") {
+          res.writeHead(200, { "Content-Type": p === "/logo.png" ? "image/png" : "image/jpeg", "Cache-Control": "max-age=3600" });
+          return res.end(files.image(p.slice(1)));
+        }
         if (p === "/install.ps1" || p === "/install-linux.sh") {
           const lobby = lobbyUrl(req);
           res.setHeader("Content-Disposition", `attachment; filename="${p === "/install.ps1" ? "install-rampage-links.ps1" : "install-rampage-links.sh"}"`);
@@ -136,6 +141,8 @@ const files = (() => {
   const safe = (s: string) => s.replace(/['"`$\\\s]/g, "");
   return {
     page: () => (page ??= read("public/index.html")),
+    // the page's background and logo: the launcher's own copies (launcher/assets), so both look the same
+    image: (name: string) => fs.readFileSync(new URL(`../launcher/assets/${name}`, root)),
     // The package's exports don't include dist/: find it from the package's entry point.
     colyseus: () => (colyseus ??= fs.readFileSync(createRequire(import.meta.url).resolve("colyseus.js")
       .replace(/build[\\/]cjs[\\/]index\.js$/, "dist/colyseus.js"), "utf8")),

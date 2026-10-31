@@ -11,10 +11,13 @@
     --yellow: #ffc21a; --yellow-hi: #ffd35a; --glow: rgba(255, 194, 26, .3); --red: #e2402c; --ok: #7fd67f;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; color: var(--text); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; min-height: 100vh;
-         background: radial-gradient(1000px 420px at 50% -180px, #3a1d12 0%, transparent 70%), var(--bg); background-color: var(--bg); }
+  body { margin: 0; color: var(--text); font: 15px/1.45 system-ui, "Segoe UI", sans-serif; min-height: 100vh; background-color: var(--bg); }
+  /* the title screen, dimmed far down: mood, not a focal point */
+  body::before { content: ""; position: fixed; inset: -8px; z-index: -1; background: url(/background.jpg) center / cover no-repeat;
+                 filter: brightness(.22) blur(2px); }
+  .logo { display: block; width: min(560px, 100%); height: auto; margin: 0 auto 4px; }
   main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { margin: 0; font-size: 32px; letter-spacing: .06em; text-transform: uppercase; font-weight: 900; }
+  h1 { margin: 0; text-align: center; font-size: 32px; letter-spacing: .06em; text-transform: uppercase; font-weight: 900; }
   h1 .r { color: var(--red); text-shadow: 0 0 16px rgba(226, 64, 44, .45); }
   h1 small { display: block; font-size: 13px; letter-spacing: .3em; color: var(--dim); font-weight: 600; }
   .sub { color: var(--dim); margin: 10px 0 22px; }
@@ -49,7 +52,7 @@
 </head>
 <body>
 <main>
-  <h1><span class="r">Rampage</span>RE <small>Games online</small></h1>
+  <h1><img class="logo" src="/logo.png" alt="Rampage Multiplayer"><small>Games online</small></h1>
   <p class="sub">Pick a game to join. Hosts list themselves from the game (Insert, Host a game). <span class="status" id="status">connecting...</span></p>
 
   <section>
@@ -65,6 +68,7 @@
   <section>
     <details>
       <summary>Join does nothing? Set up RampageRE links (once per PC)</summary>
+      <p>The easy way: open <b>RampageRE-Launcher</b> and click <b>Set up join links</b>. Or by hand:</p>
       <p><b>Windows</b></p>
       <ol>
         <li>Download <a href="/install.ps1">the setup script</a>.</li>
@@ -118,7 +122,7 @@
   function status(text, ok) { $("status").innerHTML = `<b>&#9679;</b> ${text}`; $("status").className = ok ? "status" : "status off"; }
 
   // The list itself comes from GET /games (it has each game's address as seen from here); the Colyseus lobby says
-  // when it changed. Without the lobby, it asks every 5 seconds.
+  // when it changed. Without it (the launcher's lobby), it asks every 3 seconds.
   let asking = null;
   async function fetchGames() {
     if (asking) return asking;
@@ -142,11 +146,11 @@
       lobby.onLeave(() => { status("reconnecting...", false); setTimeout(live, 3000); });
       fetchGames();
     } catch {
-      status("polling", false);
+      status("updating every few seconds", true);   // (the launcher's built-in lobby has no Colyseus)
       poll();
     }
   }
-  async function poll() { await fetchGames(); setTimeout(poll, 5000); }
+  async function poll() { await fetchGames(); setTimeout(poll, 3000); }
   live();
 </script>
 </body>
