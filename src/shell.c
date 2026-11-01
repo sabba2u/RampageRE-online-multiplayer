@@ -3230,6 +3230,18 @@ static void am_exit(Shell *s)
     }
 }
 
+/* NET: shell_skip_boot (shell.h) */
+void shell_skip_boot(Shell *s)
+{
+    if (!s || s->boot_completed || s->state != 1)
+        return;
+    am_send(s, EV_LOSE);                                 /* (the notice or the movie showing: let go) */
+    s->mc.boot_done = 1;
+    s->boot_completed = 1;
+    s->attract_state = -1;
+    am_exit(s);
+}
+
 /* gotoNextState */
 static void am_next(Shell *s)
 {

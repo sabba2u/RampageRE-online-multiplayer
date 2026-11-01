@@ -184,12 +184,12 @@ impl App {
                     }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
-                    let play = if self.settings.local_players() == 1 { "Play Alone Locally" } else { "Play Local" };
+                    let play = if self.settings.local_players() == 1 { "Play Alone Locally" } else { "Play Local (LAN)" };
                     if look::big(ui, play, ready).clicked() {
                         self.play();
                     }
                     self.players_choice(ui);
-                    if look::big(ui, "Play Local (LAN)", ready)
+                    if look::big(ui, "Join Local (LAN)", ready)
                         .on_hover_text("Joins a game hosted on this PC (127.0.0.1), as the game's Insert panel's Join does")
                         .clicked()
                     {

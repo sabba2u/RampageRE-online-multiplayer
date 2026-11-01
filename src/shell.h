@@ -182,6 +182,9 @@ void shell_hold_idle(Shell *s);
 /* NET: online play, this PC hosts: the main menu's computer players box starts on none (a bot's monster is no
  * friend's to play), not on the game's one computer player */
 void shell_set_hosting(Shell *s, int on);
+/* NET: online play, this PC joins: the boot's autosave notice and movies skipped, the main menu at once (the guest's
+ * front end then shows the host's) */
+void shell_skip_boot(Shell *s);
 /* a convenience the game does not have: a character typed into the profile name entry ('\b' rubs one out, '\r' is
  * DONE) when it shows; returns 1 when it took it */
 int shell_type(Shell *s, int ch);
