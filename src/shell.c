@@ -25,6 +25,7 @@
 #include "plat.h"
 #include "shell.h"
 #include "wrand.h"
+static int g_hosting;                                  /* NET: online play, this PC hosts (shell_set_hosting) */
 
 #define SH_PI 3.14159265f
 #define MAX_TEXT 640
@@ -3700,7 +3701,8 @@ static void mm_num_player_select(Shell *s)             /* processNumPlayerSelect
         } else
             show(item, 0);
     }
-    list_set(m->lb_bots, m->num_players - 1);
+    list_set(m->lb_bots, g_hosting ? 0 : m->num_players - 1);   /* [port extra] hosting online: no computer player
+                                                          * first (shell_set_hosting) */
 }
 
 static void mm_num_bot_select(Shell *s)                /* processNumBotSelect */
@@ -5850,6 +5852,7 @@ void shell_input_pad(Shell *s, int ev, int button, int pad)
 }
 void shell_input(Shell *s, int ev, int button) { shell_input_pad(s, ev, button, 0); }
 void shell_hold_idle(Shell *s) { if (s && s->idle > 0) s->idle = IDLE_SECONDS; }   /* NET: online play */
+void shell_set_hosting(Shell *s, int on) { (void)s; g_hosting = on != 0; }
 
 void shell_pad_held(Shell *s, float stick_x, int buttons)
 {

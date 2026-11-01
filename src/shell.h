@@ -179,6 +179,9 @@ enum { SHELL_HELD_UP = 1, SHELL_HELD_DOWN = 2, SHELL_HELD_LEFT = 4, SHELL_HELD_R
 void shell_pad_held(Shell *s, float stick_x, int buttons);
 /* NET: online play, someone waits in the menus: the idle timer held at 120 s (no attract mode), as a press would */
 void shell_hold_idle(Shell *s);
+/* NET: online play, this PC hosts: the main menu's computer players box starts on none (a bot's monster is no
+ * friend's to play), not on the game's one computer player */
+void shell_set_hosting(Shell *s, int on);
 /* a convenience the game does not have: a character typed into the profile name entry ('\b' rubs one out, '\r' is
  * DONE) when it shows; returns 1 when it took it */
 int shell_type(Shell *s, int ch);

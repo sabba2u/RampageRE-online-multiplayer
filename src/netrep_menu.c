@@ -475,6 +475,8 @@ static void netgame_shell_start(Viewer *v, ShellStart *st)
 /* once a frame (netgame_frame, online or not) */
 static void ngr_menu_frame(Viewer *v)
 {
+    if (v->shell)
+        shell_set_hosting(v->shell, net_role() == NET_HOST);   /* (its computer players box: none first) */
     if (net_role() == NET_HOST) {
         static int was_on;
         if (!v->hud || !hud_pause_showing(v->hud))
