@@ -116,3 +116,15 @@ fn play_local_players_choice() {
     }
     assert_eq!(Settings { local_players: 9, ..Default::default() }.local_players(), 2);
 }
+
+#[test]
+fn unlock_all_on_by_default_and_passed() {
+    assert!(Settings::default().unlock_all);
+    let old: Settings = serde_json::from_str(r#"{"servers": []}"#).unwrap();
+    assert!(old.unlock_all, "a settings file from before the box: on");
+    let off: Settings = serde_json::from_str(r#"{"unlock_all": false}"#).unwrap();
+    assert!(!off.unlock_all);
+    let a = start_args(&Start::Offline { four_players: false }, true);
+    assert_eq!(&a[a.len() - 2..], ["--cheat", "141421"]);
+    assert!(!start_args(&Start::Offline { four_players: false }, false).contains(&"--cheat".to_string()));
+}

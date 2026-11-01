@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 const SERVERS_KEPT: usize = 8;
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// the group servers used ("http://host:port"), newest first
@@ -19,6 +19,14 @@ pub struct Settings {
     /// every monster (and city) unlocked: the game's own cheat 141421, passed at each start; not saved in the game's
     /// profile, so unticked they are as the profile has them again
     pub unlock_all: bool,
+}
+
+impl Default for Settings {
+    /// Unlock all monsters on; the rest empty, off, never chosen.
+    fn default() -> Settings {
+        Settings { servers: Vec::new(), first_run_done: false, firewall_note_shown: false, spacewar_card_shown: false,
+                   banned: Vec::new(), local_players: 0, unlock_all: true }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]

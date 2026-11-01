@@ -69,16 +69,22 @@ pub fn supports_online(exe: &Path) -> bool {
     std::fs::read(exe).is_ok_and(|b| b.windows(12).any(|w| w == b"--steam-host"))
 }
 
+/// What a start passes: args(s), and the cheat for every monster when Settings' Unlock all monsters is on.
+pub fn start_args(s: &Start, unlock_all: bool) -> Vec<String> {
+    let mut a = args(s);
+    if unlock_all {
+        a.extend(UNLOCK_ALL.iter().map(|x| x.to_string()));
+    }
+    a
+}
+
 /// Started from its own folder (it finds its data there). Anything but Offline needs a game with online play.
 pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
     if !matches!(s, Start::Offline { .. }) && !supports_online(exe) {
         return Err(io::Error::other(OLD_GAME));
     }
     let mut c = Command::new(exe);
-    c.args(args(s));
-    if crate::settings::Settings::load().unlock_all {
-        c.args(UNLOCK_ALL);
-    }
+    c.args(start_args(s, crate::settings::Settings::load().unlock_all));
     if let Some(dir) = exe.parent() {
         c.current_dir(dir);
     }
