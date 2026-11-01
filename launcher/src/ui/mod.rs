@@ -215,7 +215,7 @@ impl App {
                     }
                     ui.separator();
                     look::section(ui, "Host an internet game");
-                    if look::big(ui, "With my own server", ready).clicked() {
+                    if look::big(ui, "Run an Internet Multiplayer Server", ready).clicked() {
                         self.host_own();
                     }
                     ui.separator();

@@ -17,7 +17,7 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
 - **HOST A GAME (LAN)**: **Host Local (LAN)** starts the game already hosting (2 players); friends join your address.
   With 1, 3 or 4 players it's the normal game on this PC (**Play Local**). **Join Local (LAN)** joins a game hosted on
   this PC (127.0.0.1).
-- **HOST AN INTERNET GAME**: **With my own server** shows a 5-letter room code and links to send your friends (the
+- **HOST AN INTERNET GAME**: **Run an Internet Multiplayer Server** shows a 5-letter room code and links to send your friends (the
   launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
 - **JOIN A ROOM**: click the link your host sent, or **Connect** to their server and **Join** with the room code.
 - **HOST ON STEAM**: **Host on Steam** (then Shift+Tab in the game to invite friends), or **Join on Steam** (then

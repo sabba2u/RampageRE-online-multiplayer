@@ -103,7 +103,7 @@ impl Hosting {
 impl App {
     pub fn hosting(&self) -> bool { self.host.lobby.is_some() }
 
-    /// "With my own server": the firewall note once, then the lobby, the router, the game.
+    /// "Run an Internet Multiplayer Server": the firewall note once, then the lobby, the router, the game.
     pub fn host_own(&mut self) {
         let game = match &self.game {
             Ok(g) => g.clone(),
