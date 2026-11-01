@@ -14,12 +14,21 @@ host. Each player needs their own copy of the game disc and the same build of th
 
 Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, nothing to set up.
 
-- **Host a game**: **With my own server** shows a 5-letter code and links to send your friends (the launcher opens your
-  router for them), or **On Steam** (then Shift+Tab in the game to invite friends).
-- **Join**: click the link your host sent, or type their code under **Join by code**. On Steam: **Join on Steam**, then
-  right-click your friend in Steam's friends list and pick **Join Game**.
-- The first time, click **Set up join links** so a link from a friend opens the game straight away.
-- Steam play borrows Valve's free test app **Spacewar** (the launcher explains it): add it to your Steam library once.
+- **HOST A GAME (LAN)**: **Host Local (LAN)** starts the game already hosting (2 players); friends join your address.
+  With 1, 3 or 4 players it's the normal game on this PC (**Play Local**). **Join Local (LAN)** joins a game hosted on
+  this PC (127.0.0.1).
+- **HOST AN INTERNET GAME**: **With my own server** shows a 5-letter room code and links to send your friends (the
+  launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
+- **JOIN A ROOM**: click the link your host sent, or **Connect** to their server and **Join** with the room code.
+- **HOST ON STEAM**: **Host on Steam** (then Shift+Tab in the game to invite friends), or **Join on Steam** (then
+  right-click your friend in Steam's friends list and pick **Join Game**). Steam play borrows Valve's free test app
+  **Spacewar** (the launcher explains it): add it to your Steam library once.
+- The first time, click **REGISTER RAMPAGE:// LINKS** so a link from a friend opens the game straight away.
+- **Settings**: join links, servers, banned players, and **Unlock all monsters** (on by default).
+
+**Which "server" is which:** the game host is inside **RampageRE.exe** (every way of hosting uses it); the room server
+(codes, links, the player list) is in the launcher, or the Node `lobby/` for a VPS, and is not in the game. Read
+[docs/HOSTING.md](docs/HOSTING.md): what runs where, what each button starts, and the ports.
 
 Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-rust).
 
@@ -61,8 +70,9 @@ other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
 ### Finding games: the lobby
 
-Instead of passing an IP address around, run the **lobby** (`lobby/`, a small Node server) and the guest picks the game
-from a list. The lobby only lists games and hands out addresses; the game itself still goes straight from guest to host.
+Instead of passing an IP address around, run the **lobby** (the room server: `lobby/`, a small Node server, or the one
+built into the launcher) and the guest picks the game from a list. The lobby only lists games and hands out addresses;
+the game itself still goes straight from guest to host ([docs/HOSTING.md](docs/HOSTING.md)).
 
 - **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `lobby\start.bat`.
   The host's game lists itself with `http://localhost:19980` by default. Guests set the panel's **Lobby** field to
