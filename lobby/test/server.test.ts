@@ -64,7 +64,7 @@ describe("the lobby over HTTP", () => {
   });
 
   it("serves the page, the browser client and both link installers", async () => {
-    expect(await (await fetch(`${base}/`)).text()).toContain("<title>RampageRE Games</title>");
+    expect(await (await fetch(`${base}/`)).text()).toContain("<title>RampageRE Rooms</title>");
     expect(await (await fetch(`${base}/colyseus.js`)).text()).toContain("Colyseus");
     expect(await (await fetch(`${base}/health`)).text()).toBe("rampage_lobby\n");
     const win = await (await fetch(`${base}/install.ps1`)).text();

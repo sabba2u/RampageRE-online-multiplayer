@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RampageRE Games</title>
+<title>RampageRE Rooms</title>
 <style>
   /* Rampage's own colours: rubble grey, hazard yellow, monster red. Yellow is for actions. */
   :root {
@@ -52,23 +52,23 @@
 </head>
 <body>
 <main>
-  <h1><img class="logo" src="/logo.png" alt="Rampage Multiplayer"><small>Games online</small></h1>
-  <p class="sub">Pick a game to join. Hosts list themselves from the game (Insert, Host a game). <span class="status" id="status">connecting...</span></p>
+  <h1><img class="logo" src="/logo.png" alt="Rampage Multiplayer"><small>Rooms online</small></h1>
+  <p class="sub">Pick a room to join. Hosts list their rooms from the launcher (Run an Internet Multiplayer Server) or the game (Insert, Host a game). <span class="status" id="status">connecting...</span></p>
 
   <section>
-    <h2>Open games <span class="status" id="count"></span></h2>
+    <h2>Open rooms <span class="status" id="count"></span></h2>
     <table>
-      <thead><tr><th>Code</th><th>Host</th><th class="hide">Monster</th><th class="hide">City</th><th>Players</th><th></th></tr></thead>
+      <thead><tr><th>Room code</th><th>Host</th><th class="hide">Monster</th><th class="hide">City</th><th>Players</th><th></th></tr></thead>
       <tbody id="games"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
     </table>
-    <p class="note">In the game: Insert, type the code under <b>Join code</b>, Join. Or start it with
+    <p class="note">In the launcher: <b>Connect</b> to this server, then <b>Join</b> with the room code. In the game: Insert, type the room code under <b>Join by code</b>. Or start it with
       <code>rampage --join CODE</code>. Join here opens the game through a <code>rampage://</code> link (set it up below).</p>
   </section>
 
   <section>
     <details>
       <summary>Join does nothing? Set up RampageRE links (once per PC)</summary>
-      <p>The easy way: open <b>RampageRE-Launcher</b> and click <b>Set up join links</b>. Or by hand:</p>
+      <p>The easy way: open <b>RampageRE-Launcher</b> and click <b>Settings</b>, <b>Register join links</b>. Or by hand:</p>
       <p><b>Windows</b></p>
       <ol>
         <li>Download <a href="/install.ps1">the setup script</a>.</li>
@@ -107,8 +107,8 @@
         <td class="hide">${esc(g.monster) || "-"}</td>
         <td class="hide">${esc(g.city) || "in the menus"}</td>
         <td>${g.players} / ${g.max}${kept ? ` (${kept} rejoining)` : ""}</td>
-        <td style="text-align:right"><a class="btn ${full ? "off" : ""}" href="rampage://join/${esc(g.code)}">${full ? "Full" : "Join"}</a></td></tr>`;
-    }).join("") : `<tr><td colspan="6" class="empty">No games right now. Host one from the game: Insert, Host a game.</td></tr>`;
+        <td style="text-align:right"><a class="btn ${full ? "off" : ""}" href="rampage://join/${esc(g.code)}@${esc(location.host)}">${full ? "Full" : "Join"}</a></td></tr>`;
+    }).join("") : `<tr><td colspan="6" class="empty">No rooms right now. Host one from the launcher (Run an Internet Multiplayer Server) or the game (Insert, Host a game).</td></tr>`;
   }
 
   $("games").addEventListener("click", async e => {
