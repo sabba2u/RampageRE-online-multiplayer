@@ -48,6 +48,26 @@ pub fn parse_link(s: &str) -> Result<Link, String> {
     }
 }
 
+pub const NOT_A_SERVER: &str = "That isn't a server address: type it as your host gave it, like 192.168.7.105.";
+
+/// A server as typed ("192.168.7.105", "host:port", "http://host:port") or the server of a pasted room link:
+/// "http://host:port" (port 19980 when left out).
+pub fn server_url(input: &str) -> Result<String, String> {
+    let s = input.trim();
+    if s.len() >= 10 && s.is_char_boundary(10) && s[..10].eq_ignore_ascii_case("rampage://") {
+        return match parse_link(s)? {
+            Link::CodeAt { server, .. } => Ok(server),
+            _ => Err(NOT_A_SERVER.into()),
+        };
+    }
+    let s = s.strip_prefix("http://").unwrap_or(s);
+    let s = s.strip_suffix('/').unwrap_or(s);
+    match split_host_port(s) {
+        Some((host, port)) if !host.is_empty() && s.is_ascii() => Ok(format!("http://{host}:{}", port.unwrap_or(LOBBY_PORT))),
+        _ => Err(NOT_A_SERVER.into()),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LinkStatus {
     NotSet,

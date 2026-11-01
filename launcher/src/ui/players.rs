@@ -24,6 +24,51 @@ pub fn player_state(p: &Player) -> String {
     }
 }
 
+pub(super) fn guest_rows(ui: &mut egui::Ui, roster: &[Player]) {
+    player_rows(ui, roster, &vec![false; roster.len()], false);
+}
+
+/// The rows: P1, the name with its state under it (a fixed width: names never wrap), and with `controls` (the host's)
+/// Mute, Kick and Ban for each friend. What was clicked.
+fn player_rows(ui: &mut egui::Ui, roster: &[Player], muted: &[bool], controls: bool) -> Option<Action> {
+    let mut act = None;
+        for (p, &mute) in roster.iter().zip(muted) {
+            // one row: P1, the name with its state under it (a fixed width: names never wrap), the buttons
+            ui.horizontal(|ui| {
+                ui.set_width(ui.available_width());
+                ui.label(RichText::new(format!("P{}", p.slot + 1)).strong().color(if p.slot == 0 { YELLOW } else { GREEN }));
+                ui.allocate_ui_with_layout(egui::vec2(150.0, 40.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_min_width(150.0);
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.add(egui::Label::new(RichText::new(player_name(p)).size(16.0).strong()).truncate());
+                    let mut s = player_state(p);
+                    if mute {
+                        s += "  ·  muted";
+                    }
+                    ui.add(egui::Label::new(RichText::new(s).small().color(DIM_TEXT)).truncate());
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if controls && p.is_guest() {
+                        // (right to left: they read Mute, Kick, Ban)
+                        if ui.button(RichText::new("Ban").color(RED))
+                            .on_hover_text("Removes them and stops them joining again (undo it in Settings)").clicked()
+                        {
+                            act = Some(Action::Ban(p.ip().to_string(), player_name(p)));
+                        }
+                        if ui.button("Kick").on_hover_text("Removes them from the game; they can join again").clicked() {
+                            act = Some(Action::Kick(p.addr.clone()));
+                        }
+                        let m = if mute { "Unmute" } else { "Mute" };
+                        if ui.button(m).on_hover_text("Their chat messages are hidden from everyone").clicked() {
+                            act = Some(Action::Mute(p.addr.clone(), !mute));
+                        }
+                    }
+                });
+            });
+        }
+    act
+}
+
 enum Action {
     Mute(String, bool),
     Kick(String),
@@ -51,43 +96,9 @@ impl App {
             ui.label(RichText::new("Waiting for the game to say who's in...").color(DIM_TEXT));
             return;
         }
-        let mut act = None;
-        for (p, &mute) in roster.iter().zip(&muted) {
-            // one row: P1, the name with its state under it (a fixed width: names never wrap), the buttons
-            ui.horizontal(|ui| {
-                ui.set_width(ui.available_width());
-                ui.label(RichText::new(format!("P{}", p.slot + 1)).strong().color(if p.slot == 0 { YELLOW } else { GREEN }));
-                ui.allocate_ui_with_layout(egui::vec2(150.0, 40.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.set_min_width(150.0);
-                    ui.spacing_mut().item_spacing.y = 2.0;
-                    ui.add(egui::Label::new(RichText::new(player_name(p)).size(16.0).strong()).truncate());
-                    let mut s = player_state(p);
-                    if mute {
-                        s += "  ·  muted";
-                    }
-                    ui.add(egui::Label::new(RichText::new(s).small().color(DIM_TEXT)).truncate());
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if p.is_guest() {
-                        // (right to left: they read Mute, Kick, Ban)
-                        if ui.button(RichText::new("Ban").color(RED))
-                            .on_hover_text("Removes them and stops them joining again (undo it in Settings)").clicked()
-                        {
-                            act = Some(Action::Ban(p.ip().to_string(), player_name(p)));
-                        }
-                        if ui.button("Kick").on_hover_text("Removes them from the game; they can join again").clicked() {
-                            act = Some(Action::Kick(p.addr.clone()));
-                        }
-                        let m = if mute { "Unmute" } else { "Mute" };
-                        if ui.button(m).on_hover_text("Their chat messages are hidden from everyone").clicked() {
-                            act = Some(Action::Mute(p.addr.clone(), !mute));
-                        }
-                    }
-                });
-            });
-        }
+        let act = player_rows(ui, &roster, &muted, true);
         if roster.len() == 1 {
-            ui.label(RichText::new("No friends in yet: send them your code.").small().color(DIM_TEXT));
+            ui.label(RichText::new("No friends in yet: send them your link, or your server and room code.").small().color(DIM_TEXT));
         }
         let Some(a) = act else { return };
         match a {

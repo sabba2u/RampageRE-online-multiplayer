@@ -233,6 +233,19 @@ fn handle(games: &Mutex<Games>, mut req: Request) {
                     Err(e) => fail(req, e),
                 };
             }
+            if tail == "players" && method == Method::Get {
+                // who is in a game, for its guests' launchers: names and states only (no addresses)
+                let r = games.lock().unwrap().get(code).map(|g| g.roster.clone());
+                return match r {
+                    Some(p) => {
+                        let list: Vec<Value> = p.iter()
+                            .map(|x| json!({"slot": x.slot, "state": x.state, "name": x.name, "ping": x.ping})).collect();
+                        json_out(req, 200, &json!({ "players": list }));
+                        Ok(())
+                    }
+                    None => fail(req, LobbyError { status: 404, msg: "no game with that code".into() }),
+                };
+            }
             if tail == "knocks" && method == Method::Get {
                 let token = get_header(&req, "X-Token").or(q_token.clone());
                 // a game that sends its players (src/netlobby.c) hears the launcher's mutes, bans and kicks back

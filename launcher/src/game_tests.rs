@@ -25,7 +25,9 @@ fn args_per_start() {
     assert_eq!(args(&Start::SteamHost), vec!["--steam-host"]);
     assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec!["--lobby", l.as_str(), "--join", "K7PQ2"]);
     assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec!["--join", "203.0.113.5:27960"]);
-    assert!(args(&Start::Offline).is_empty() && args(&Start::SteamWait).is_empty());
+    assert!(args(&Start::SteamWait).is_empty());
+    assert_eq!(args(&Start::Offline { four_players: true }), vec!["--four-players"]);
+    assert_eq!(args(&Start::Offline { four_players: false }), vec!["--no-four-players"]);
 }
 
 #[test]
@@ -100,4 +102,11 @@ fn bans_kept_once_and_lifted() {
     assert_eq!(s.banned[0].name, "Lizzie again");
     s.unban("203.0.113.9");
     assert_eq!(s.banned_ips(), vec!["198.51.100.2"]);
+}
+
+#[test]
+fn play_local_four_players_by_default() {
+    assert!(Settings::default().four_players());
+    let s = Settings { two_players_only: true, ..Default::default() };
+    assert!(!s.four_players());
 }

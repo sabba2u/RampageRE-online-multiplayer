@@ -38,3 +38,14 @@ fn register_status_unregister() {
     assert_eq!(status(&root, me), LinkStatus::NotSet);
     RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(r"Software\RampageRELauncherTest").unwrap();
 }
+
+#[test]
+fn server_typed_or_from_a_link() {
+    assert_eq!(server_url("192.168.7.105").unwrap(), "http://192.168.7.105:19980");
+    assert_eq!(server_url("  192.168.7.105:20000 ").unwrap(), "http://192.168.7.105:20000");
+    assert_eq!(server_url("http://example.org:19980/").unwrap(), "http://example.org:19980");
+    assert_eq!(server_url("rampage://join/KREJC@192.168.7.105").unwrap(), "http://192.168.7.105:19980");
+    assert!(server_url("").is_err());
+    assert!(server_url("not a server!").is_err());
+    assert!(server_url("rampage://join/KREJC").is_err());
+}

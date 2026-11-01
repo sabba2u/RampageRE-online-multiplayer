@@ -137,6 +137,10 @@ extern "C" int netui_init(void *hwnd)
     ImGuiStyle &st = ImGui::GetStyle();
     st.WindowRounding = 6;
     st.FrameRounding = 4;
+    /* buttons solid blue: the dark style's are faint until hovered, and read as plain text over the game */
+    st.Colors[ImGuiCol_Button] = ImVec4(0.18f, 0.42f, 0.82f, 1.00f);
+    st.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.30f, 0.56f, 1.00f, 1.00f);
+    st.Colors[ImGuiCol_ButtonActive] = ImVec4(0.12f, 0.33f, 0.70f, 1.00f);
     if (GetFileAttributesA("C:\\Windows\\Fonts\\segoeui.ttf") != INVALID_FILE_ATTRIBUTES)
         io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
     if (GetFileAttributesA("C:\\Windows\\Fonts\\segoeuib.ttf") != INVALID_FILE_ATTRIBUTES)   /* the chat's and the
@@ -232,9 +236,9 @@ static void lobby_join_code(void)                    /* offline: a join code fro
     bool go = ImGui::InputTextWithHint("##code", "K7PQ2", g_code, sizeof g_code,
                                        ImGuiInputTextFlags_CharsUppercase | ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    go |= ImGui::Button("Join code");
+    go |= ImGui::Button("Join by code");
     ImGui::SameLine();
-    ImGui::TextColored(OFF, "a code from the lobby");
+    ImGui::TextColored(OFF, "a room code from the server");
     if (go && g_code[0])
         net_start_join(g_code);                      /* (net.c hands a code to the lobby, then joins its address) */
 }
@@ -246,7 +250,7 @@ static void lobby_section(void)
         ImGui::Separator();
         const char *code = netlobby_my_code();
         if (code[0]) {
-            ImGui::TextColored(ON, "Listed in the lobby. Join code:");
+            ImGui::TextColored(ON, "Your room code:");
             ImGui::SameLine();
             if (g_bold)
                 ImGui::PushFont(g_bold);
@@ -257,13 +261,13 @@ static void lobby_section(void)
             if (ImGui::SmallButton("Copy"))
                 ImGui::SetClipboardText(code);
         } else
-            ImGui::TextColored(OFF, "%s", !netlobby_listing() ? "Not listed in the lobby"
-                               : netlobby_host_status()[0] ? netlobby_host_status() : "Listing the game...");
+            ImGui::TextColored(OFF, "%s", !netlobby_listing() ? "Not listed on the server"
+                               : netlobby_host_status()[0] ? netlobby_host_status() : "Listing the room...");
         bool list = netlobby_listing() != 0;
-        if (ImGui::Checkbox("List my game in the lobby", &list))
+        if (ImGui::Checkbox("List my room on the server", &list))
             netlobby_set_listing(list);
     }
-    if (!ImGui::CollapsingHeader("Games online", ImGuiTreeNodeFlags_DefaultOpen))
+    if (!ImGui::CollapsingHeader("Rooms online", ImGuiTreeNodeFlags_DefaultOpen))
         return;
     static char url[256], name[32];
     static int have;
@@ -273,7 +277,7 @@ static void lobby_section(void)
         have = 1;
     }
     ImGui::SetNextItemWidth(230);
-    ImGui::InputText("Lobby", url, sizeof url);
+    ImGui::InputText("Server", url, sizeof url);
     if (ImGui::IsItemDeactivatedAfterEdit())
         netlobby_set_url(url, 1);
     ImGui::SameLine();
@@ -287,7 +291,7 @@ static void lobby_section(void)
         return;                                      /* (online already: the list would only tempt) */
     netlobby_browse();                               /* shown: kept fresh, every 5 s */
     const char *st = netlobby_list_status();
-    ImGui::TextColored(strstr(st, "not") || strstr(st, "No ") ? BAD : OFF, "%s", st[0] ? st : "Asking the lobby...");
+    ImGui::TextColored(strstr(st, "not") || strstr(st, "No ") ? BAD : OFF, "%s", st[0] ? st : "Asking the server...");
     if (!netlobby_count())
         return;
     if (ImGui::BeginTable("games", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
@@ -303,7 +307,7 @@ static void lobby_section(void)
             const char *why = !same ? "Another build of RampageRE: both players need the same one"
                               : full ? (g->reserved ? "A player who dropped out has their place kept (60 s)"
                                                     : "Full: every player slot is taken")
-                              : none ? "The lobby has no address for it" : NULL;
+                              : none ? "The server has no address for it" : NULL;
             ImGui::PushID(i);
             ImGui::TableNextRow();
             if (why)

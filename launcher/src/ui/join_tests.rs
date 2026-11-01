@@ -15,7 +15,7 @@ fn code_uses_newest_server() {
 #[test]
 fn code_without_server() {
     assert_eq!(join_target(&Link::Code("K7PQ2".into()), &Settings::default()).unwrap_err(),
-               "Paste the group link from your host first.");
+               NO_SERVER);
 }
 
 #[test]
@@ -66,4 +66,26 @@ fn link_server_remembered_only_after_success() {
     let r = open_link_in(&format!("rampage://join/K7PQ2@127.0.0.1:{free}"), &d, &file);
     assert_eq!(r.unwrap_err(), CANT_REACH);
     assert!(Settings::load_from(&file).servers.is_empty());
+}
+
+#[test]
+fn players_read_from_the_server() {
+    let s = LobbyServer::start(0, None).unwrap();
+    let url = format!("http://127.0.0.1:{}", s.port);
+    let g = s.games.lock().unwrap().register(json!({"name": "a", "monster": "", "city": "", "players": 1, "max": 2,
+        "port": 27960, "build": "CAFE1234"}).as_object().unwrap(), "127.0.0.1").unwrap();
+    s.games.lock().unwrap().report_players(&g.code, Some(&g.token), "0\thost\t\t0\tGeorge\n1\tonline\t10.0.0.2:5\t30\t\n").unwrap();
+    let p = fetch_players(&url, &g.code).unwrap();
+    assert_eq!(p.len(), 2);
+    assert_eq!((p[0].name.as_str(), p[1].state.as_str(), p[1].ping), ("George", "online", 30));
+    assert!(p[1].addr.is_empty());
+    assert_eq!(fetch_players(&url, "ZZZZZ").unwrap_err(), GAME_GONE);
+}
+
+#[test]
+fn connect_checks_its_a_server() {
+    let s = LobbyServer::start(0, None).unwrap();
+    assert_eq!(check_server(&format!("http://127.0.0.1:{}", s.port)), Ok(()));
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    assert_eq!(check_server(&format!("http://127.0.0.1:{free}")).unwrap_err(), CANT_REACH);
 }

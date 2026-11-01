@@ -30,7 +30,8 @@ pub fn build_id(exe: &Path) -> io::Result<String> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Start {
-    Offline,
+    /// Play Local: the game's own menus; four_players adds 3 and 4 Player there (rampage.cfg four_players)
+    Offline { four_players: bool },
     /// hosting, listed in this lobby
     Host { lobby: String },
     SteamHost,
@@ -42,7 +43,9 @@ pub enum Start {
 
 pub fn args(s: &Start) -> Vec<String> {
     let v: Vec<&str> = match s {
-        Start::Offline | Start::SteamWait => vec![],
+        Start::Offline { four_players: true } => vec!["--four-players"],
+        Start::Offline { four_players: false } => vec!["--no-four-players"],
+        Start::SteamWait => vec![],
         Start::Host { lobby } => vec!["--host", "--lobby", lobby],
         Start::SteamHost => vec!["--steam-host"],
         Start::Join { target, lobby: Some(l) } => vec!["--lobby", l, "--join", target],
@@ -61,7 +64,7 @@ pub fn supports_online(exe: &Path) -> bool {
 
 /// Started from its own folder (it finds its data there). Anything but Offline needs a game with online play.
 pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
-    if *s != Start::Offline && !supports_online(exe) {
+    if !matches!(s, Start::Offline { .. }) && !supports_online(exe) {
         return Err(io::Error::other(OLD_GAME));
     }
     let mut c = Command::new(exe);

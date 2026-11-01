@@ -5,9 +5,9 @@ use crate::links::Link;
 use crate::settings::Settings;
 use std::time::Duration;
 
-pub const NO_SERVER: &str = "Paste the group link from your host first.";
-pub const CANT_REACH: &str = "Can't reach your group's server: ask your host for a new link.";
-pub const NO_SUCH_CODE: &str = "No game with that code right now: check the code with your host.";
+pub const NO_SERVER: &str = "Connect to your host's server first (type its address above, or paste their link).";
+pub const CANT_REACH: &str = "Can't reach that server: check the address with your host.";
+pub const NO_SUCH_CODE: &str = "No room with that code on this server: check the room code with your host.";
 pub const DIFFERENT_VERSION: &str = "Your friend has a different version of RampageRE: you both need the same release.";
 
 /// The game's start for `link`, and the server to remember (a group link's).
@@ -49,11 +49,41 @@ pub fn plan_join(link: &Link, settings: &Settings, game: &Result<std::path::Path
 }
 
 /// The version check (for a code), then the game started: the window's Join and a clicked link both end here.
-pub fn run_join(game: &std::path::Path, build: &str, start: &Start) -> Result<(), String> {
+pub fn run_join(game: &std::path::Path, build: &str, start: &Start) -> Result<std::process::Child, String> {
     if let Start::Join { target, lobby: Some(server) } = start {
         check_build(server, target, build)?;
     }
-    crate::game::start(game, start).map(|_| ()).map_err(|e| format!("Couldn't start RampageRE: {e}"))
+    crate::game::start(game, start).map_err(|e| format!("Couldn't start RampageRE: {e}"))
+}
+
+/// Connect: the address answers as a RampageRE server (GET /health).
+pub fn check_server(server: &str) -> Result<(), String> {
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(4)).build();
+    match agent.get(&format!("{server}/health")).call().ok().and_then(|r| r.into_string().ok()) {
+        Some(b) if b.starts_with("rampage_lobby") => Ok(()),
+        _ => Err(CANT_REACH.into()),
+    }
+}
+
+pub const GAME_GONE: &str = "That room isn't on the server any more.";
+
+/// Who is in game `code` on `server` (the host's game says it every second): names and states, no addresses.
+pub fn fetch_players(server: &str, code: &str) -> Result<Vec<crate::lobby::games::Player>, String> {
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(3)).build();
+    let body = match agent.get(&format!("{server}/games/{code}/players")).call() {
+        Ok(r) => r.into_string().map_err(|_| CANT_REACH.to_string())?,
+        Err(ureq::Error::Status(404, _)) => return Err(GAME_GONE.into()),
+        Err(_) => return Err(CANT_REACH.into()),
+    };
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|_| CANT_REACH.to_string())?;
+    let list = v["players"].as_array().ok_or(CANT_REACH)?;
+    Ok(list.iter().map(|p| crate::lobby::games::Player {
+        slot: p["slot"].as_u64().unwrap_or(0) as u8,
+        state: p["state"].as_str().unwrap_or("").chars().take(12).collect(),
+        addr: String::new(),
+        ping: p["ping"].as_u64().unwrap_or(0) as u32,
+        name: p["name"].as_str().unwrap_or("").chars().take(32).collect(),
+    }).take(8).collect())
 }
 
 /// What the player typed in the Join box: a code, or a pasted group link.
@@ -65,7 +95,7 @@ pub fn typed(input: &str) -> Result<Link, String> {
     if crate::lobby::games::is_code(s) {
         return Ok(Link::Code(s.to_uppercase()));
     }
-    Err("Type the 5-letter code, or paste the group link from your host.".into())
+    Err("Type the 5-letter room code, or paste your host's link.".into())
 }
 
 /// A rampage:// link clicked anywhere: no window, the game joins (errors in a message box, by the caller).

@@ -18,9 +18,9 @@ use upnp::Opened;
 pub const LOBBY_PORT: u16 = 19980;
 /// the game's own port when hosting (src/net.h NET_PORT)
 pub const GAME_PORT: u16 = 27960;
-pub const PORT_IN_USE: &str = "Another lobby is already running on this PC.";
+pub const PORT_IN_USE: &str = "Another RampageRE server is already running on this PC.";
 pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you on this network.";
-pub const ROUTER_TEXT: &str = "Friends on the same home network can still join with your code.";
+pub const ROUTER_TEXT: &str = "Friends on the same home network can still join your room.";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
 pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";
@@ -116,7 +116,7 @@ impl App {
         let lobby = match LobbyServer::start(LOBBY_PORT, None) {
             Ok(l) => l,
             Err(StartError::PortInUse) => return self.say(PORT_IN_USE, true),
-            Err(StartError::Other(e)) => return self.say(&format!("The lobby couldn't start: {e}"), true),
+            Err(StartError::Other(e)) => return self.say(&format!("The server couldn't start: {e}"), true),
         };
         let child = match game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{LOBBY_PORT}") }) {
             Ok(c) => c,
@@ -197,7 +197,7 @@ impl App {
             }
             return;
         };
-        ui.label(RichText::new("Your game's code").color(look::DIM_TEXT));
+        ui.label(RichText::new("Your room code").color(look::DIM_TEXT));
         ui.horizontal(|ui| {
             ui.label(RichText::new(&code).size(40.0).strong().color(YELLOW).monospace());
             if ui.button("Copy").clicked() {
@@ -223,7 +223,7 @@ impl App {
                     });
                 }
                 if matches!(reach, Reach::Internet { .. }) {
-                    ui.label(RichText::new("Friends who already have your link can just type the code.").small().color(GREEN));
+                    ui.label(RichText::new("Friends who already connected to your server can just type the room code.").small().color(GREEN));
                 }
             }
         }

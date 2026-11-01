@@ -430,12 +430,12 @@ static int job_done(int k)
 static void why(char *to, int cap, const char *what, const Job *j)
 {
     if (j->status < 0)
-        snprintf(to, (size_t)cap, "%s: the lobby is not reachable", what);
+        snprintf(to, (size_t)cap, "%s: the server is not reachable", what);
     else if (!strncmp(j->out, "error ", 6)) {
         int n = (int)strcspn(j->out + 6, "\r\n");
         snprintf(to, (size_t)cap, "%s: %.*s", what, n > 100 ? 100 : n, j->out + 6);
     } else
-        snprintf(to, (size_t)cap, "%s: the lobby answered %d", what, j->status);
+        snprintf(to, (size_t)cap, "%s: the server answered %d", what, j->status);
 }
 
 /* form values: letters, digits and -._~ as they are, the rest %XX */
@@ -671,7 +671,7 @@ static void host_frame(double now)
             L.sent_players = players_now();
             snprintf(L.listed_url, sizeof L.listed_url, "%s", j->url);
             L.listed_url[strlen(L.listed_url) - strlen("/games")] = 0;
-            snprintf(L.host_status, sizeof L.host_status, "Listed in the lobby: join code %s", L.code);
+            snprintf(L.host_status, sizeof L.host_status, "Listed on the server: room code %s", L.code);
             net_log("lobby: listed as %s at %s", L.code, L.listed_url);
         } else {
             static char said[sizeof L.host_status];
@@ -689,9 +689,9 @@ static void host_frame(double now)
             L.code[0] = 0;
             L.retry_at = 0;
         } else if (j->status != 200 && j->status != 204 && L.code[0])
-            why(L.host_status, sizeof L.host_status, "The lobby did not hear the heartbeat", j);
+            why(L.host_status, sizeof L.host_status, "The server did not hear from us", j);
         else if (L.code[0])
-            snprintf(L.host_status, sizeof L.host_status, "Listed in the lobby: join code %s", L.code);
+            snprintf(L.host_status, sizeof L.host_status, "Listed on the server: room code %s", L.code);
     }
     job_done(J_UNLIST);
     if (job_done(J_KNOCKS) && g_jobs[J_KNOCKS].status == 200) {
@@ -721,7 +721,7 @@ static void host_frame(double now)
             form_add(body, sizeof body, "build", n);
             job_start(J_REGISTER, "POST", L.url, "/games", body, 1);
             if (!L.host_status[0])                   /* (a failure stays up while it tries again) */
-                snprintf(L.host_status, sizeof L.host_status, "Listing the game with %s...", L.url);
+                snprintf(L.host_status, sizeof L.host_status, "Listing the room on %s...", L.url);
             L.retry_at = now + 10;
         }
         return;
@@ -758,11 +758,11 @@ static void guest_frame(double now)
         int n = j->status == 200 ? netlobby_parse_games(j->out, L.games, NETLOBBY_GAMES) : -1;
         if (n >= 0) {
             L.ngames = n;
-            snprintf(L.list_status, sizeof L.list_status, "%d %s", n, n == 1 ? "game" : "games");
+            snprintf(L.list_status, sizeof L.list_status, "%d %s", n, n == 1 ? "room" : "rooms");
         } else {
             L.ngames = 0;
             if (j->status == 200)
-                snprintf(L.list_status, sizeof L.list_status, "That is not a RampageRE lobby");
+                snprintf(L.list_status, sizeof L.list_status, "That is not a RampageRE server");
             else
                 why(L.list_status, sizeof L.list_status, "No list", j);
         }
@@ -780,7 +780,7 @@ static void guest_frame(double now)
             L.knock_until = now + 2;
         } else {
             if (j->status == 404)
-                snprintf(L.list_status, sizeof L.list_status, "No game with that code in the lobby");
+                snprintf(L.list_status, sizeof L.list_status, "No room with that code on the server");
             else
                 why(L.list_status, sizeof L.list_status, "Code not found", j);
             net_log("lobby: %s", L.list_status);

@@ -85,7 +85,7 @@ impl App {
             .resizable(false).show(ctx, |ui| {
                 ui.set_width(420.0);
                 look::section(ui, "Join links");
-                ui.label(RichText::new("rampage:// links from friends open the game and join.").color(DIM_TEXT));
+                ui.label(RichText::new("rampage:// links from friends open the game and join their room.").color(DIM_TEXT));
                 match self.links.clone() {
                     LinkStatus::Ok => {
                         ui.label(RichText::new("✔ Join links registered").size(22.0).strong().color(GREEN));
@@ -112,9 +112,9 @@ impl App {
                     }
                 }
                 ui.separator();
-                look::section(ui, "Group servers");
+                look::section(ui, "Servers");
                 if self.settings.servers.is_empty() {
-                    ui.label(RichText::new("None yet: a group link from your host adds one.").color(DIM_TEXT));
+                    ui.label(RichText::new("None yet: connecting to a server adds it.").color(DIM_TEXT));
                 }
                 let mut forget = None;
                 for (i, s) in self.settings.servers.iter().enumerate() {

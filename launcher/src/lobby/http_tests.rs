@@ -166,3 +166,20 @@ fn launcher_knows_the_public_address() {
     assert_eq!(s.games.lock().unwrap().join_for(&g, "198.51.100.9"), "203.0.113.50:27960");
     drop(url);
 }
+
+#[test]
+fn players_for_guests_without_addresses() {
+    let (s, url) = start();
+    let (code, token) = register(&url);
+    let rows = "0%09host%09%090%09George%0A1%09online%09192.168.1.20%3A27961%0942%09Lizzie%0A";
+    call("GET", &format!("{url}/games/{code}/knocks?token={token}&players={rows}"), false, None);
+    let (st, body) = call("GET", &format!("{url}/games/{code}/players"), false, None);
+    assert_eq!(st, 200);
+    assert!(!body.contains("192.168"), "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["players"][1]["name"], "Lizzie");
+    assert_eq!(v["players"][1]["slot"], 1);
+    assert_eq!(v["players"][0]["state"], "host");
+    assert_eq!(call("GET", &format!("{url}/games/ZZZZZ/players"), false, None).0, 404);
+    drop(s);
+}

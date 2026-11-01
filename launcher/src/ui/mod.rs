@@ -3,9 +3,11 @@
 pub mod join;
 #[cfg(test)]
 mod join_tests;
+mod join_box;
 mod host;
 #[cfg(test)]
 mod host_tests;
+mod guest;
 mod links_button;
 mod players;
 pub mod look;
@@ -31,7 +33,11 @@ pub struct App {
     /// the last thing to tell the player, and whether it is a problem
     note: Option<(String, bool)>,
     /// a join under way: its outcome (the server to remember once it went through)
-    busy: Option<Receiver<Result<Option<String>, String>>>,
+    busy: Option<Receiver<Result<(Option<String>, std::process::Child), String>>>,
+    /// the room being joined (its server, its code): the guest view once the game started
+    joining: Option<(String, String)>,
+    /// in a room (joined by its code)
+    pub guest: Option<guest::Guest>,
     /// when the settings were last read (a clicked link saves from another process)
     settings_read: std::time::Instant,
     pub host: host::Hosting,
@@ -42,6 +48,7 @@ pub struct App {
     pub steam_problem: Option<SteamProblem>,
     /// the Settings window showing
     pub settings_open: bool,
+    pub join_box: join_box::JoinBox,
 }
 
 #[derive(Clone)]
@@ -61,8 +68,9 @@ impl App {
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
-                            busy: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
-                            steam_check: None, steam_problem: None, settings_open: false };
+                            busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
+                            steam_check: None, steam_problem: None, settings_open: false,
+                            join_box: join_box::JoinBox::default() };
         app.refresh_links();
         app
     }
@@ -71,7 +79,7 @@ impl App {
 
     fn play(&mut self) {
         match &self.game {
-            Ok(g) => match game::start(g, &Start::Offline) {
+            Ok(g) => match game::start(g, &Start::Offline { four_players: self.settings.four_players() }) {
                 Ok(_) => self.say("Starting RampageRE...", false),
                 Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
             },
@@ -86,10 +94,14 @@ impl App {
             Ok(x) => x,
             Err(e) => return self.say(&e, true),
         };
+        self.joining = match &start {
+            Start::Join { target, lobby: Some(server) } => Some((server.clone(), target.clone())),
+            _ => None,
+        };
         let (tx, rx) = channel();
         let build = self.build.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(join::run_join(&game, &build, &start).map(|_| remember));
+            let _ = tx.send(join::run_join(&game, &build, &start).map(|child| (remember, child)));
         });
         self.busy = Some(rx);
         self.say("Checking the game...", false);
@@ -100,11 +112,17 @@ impl App {
             if let Ok(r) = rx.try_recv() {
                 self.busy = None;
                 match r {
-                    Ok(remember) => {
+                    Ok((remember, child)) => {
                         if let Some(s) = remember {
                             self.settings = Settings::update(|x| x.remember(&s));
                         }
-                        self.say("Starting RampageRE: joining...", false);
+                        match self.joining.take() {
+                            Some((server, code)) => {
+                                self.guest = Some(guest::Guest::new(server, code, child));
+                                self.note = None;
+                            }
+                            None => self.say("Starting RampageRE: joining...", false),
+                        }
                     }
                     Err(e) => self.say(&e, true),
                 }
@@ -116,25 +134,21 @@ impl App {
         }
     }
 
-    fn server_picker(&mut self, ui: &mut egui::Ui) {
-        if self.settings.servers.is_empty() {
-            ui.label(RichText::new("No group server yet: paste the group link from your host.").small().color(DIM_TEXT));
-            return;
-        }
-        let mut pick = None;
+    /// Under Play Local: how many players the game's menu offers (the game's --four-players / --no-four-players).
+    fn players_choice(&mut self, ui: &mut egui::Ui) {
+        let label = |four: bool| if four { "Up to 4 players" } else { "2 players" };
+        let four = self.settings.four_players();
+        let mut pick = four;
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Group server:").small().color(DIM_TEXT));
-            egui::ComboBox::from_id_salt("server").selected_text(RichText::new(&self.settings.servers[0]).small())
-                .show_ui(ui, |ui| {
-                    for s in &self.settings.servers {
-                        if ui.selectable_label(false, s).clicked() {
-                            pick = Some(s.clone());
-                        }
-                    }
-                });
-        });
-        if let Some(s) = pick {
-            self.settings = Settings::update(|x| x.remember(&s));
+            ui.add_space((ui.available_width() - 230.0).max(0.0) / 2.0);
+            ui.label(RichText::new("Players:").color(DIM_TEXT));
+            egui::ComboBox::from_id_salt("players").selected_text(label(four)).width(150.0).show_ui(ui, |ui| {
+                ui.selectable_value(&mut pick, false, label(false));
+                ui.selectable_value(&mut pick, true, label(true));
+            });
+        }).response.on_hover_text("Up to 4: the game's players menu has 3 Player and 4 Player too (not in the campaign)");
+        if pick != four {
+            self.settings = Settings::update(|s| s.two_players_only = !pick);
         }
     }
 
@@ -149,11 +163,16 @@ impl App {
                         self.hosting_box(ui);
                         return;
                     }
+                    if self.guest.is_some() {
+                        self.guest_box(ui);
+                        return;
+                    }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
                     if look::big(ui, "Play Local", ready).clicked() {
                         self.play();
                     }
+                    self.players_choice(ui);
                     ui.separator();
                     look::section(ui, "Host a game");
                     if look::big(ui, "With my own server", ready).clicked() {
@@ -178,22 +197,7 @@ impl App {
                     });
                     self.steam_problem_line(ui);
                     ui.separator();
-                    look::section(ui, "Join by code");
-                    ui.horizontal(|ui| {
-                        let edit = ui.add(egui::TextEdit::singleline(&mut self.code).hint_text("K7PQ2 or a group link")
-                            .font(egui::TextStyle::Heading).desired_width(250.0));
-                        let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        let button = ui.add_enabled(self.busy.is_none(),
-                                                    egui::Button::new(RichText::new("Join").size(18.0).strong()));
-                        if button.clicked() || enter {
-                            self.join();
-                        }
-                    });
-                    self.server_picker(ui);
-                    if let Some((t, problem)) = &self.note {
-                        ui.add_space(4.0);
-                        ui.label(RichText::new(t).size(15.0).color(if *problem { RED } else { GREEN }));
-                    }
+                    self.join_room_box(ui);
                     ui.separator();
                     self.settings_button(ui);
                 });
@@ -211,7 +215,9 @@ impl eframe::App for App {
         self.poll();
         self.poll_hosting();
         self.poll_steam();
-        if self.busy.is_some() || self.hosting() || self.steam_check.is_some() {
+        self.poll_guest();
+        self.poll_connect();
+        if self.connecting() || self.busy.is_some() || self.hosting() || self.steam_check.is_some() || self.guest.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
         // closing while hosting: asked first (the lobby lives in this window)
