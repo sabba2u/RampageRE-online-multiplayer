@@ -21,11 +21,12 @@ fn build_id_fnv1a() {
 #[test]
 fn args_per_start() {
     let l = "http://127.0.0.1:19980".to_string();
-    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec!["--host", "--lobby", "http://127.0.0.1:19980"]);
-    assert_eq!(args(&Start::SteamHost), vec!["--steam-host"]);
-    assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec!["--lobby", l.as_str(), "--join", "K7PQ2"]);
-    assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec!["--join", "203.0.113.5:27960"]);
-    assert!(args(&Start::SteamWait).is_empty());
+    let n = "--no-four-players";
+    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![n, "--host", "--lobby", "http://127.0.0.1:19980"]);
+    assert_eq!(args(&Start::SteamHost), vec![n, "--steam-host"]);
+    assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![n, "--lobby", l.as_str(), "--join", "K7PQ2"]);
+    assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![n, "--join", "203.0.113.5:27960"]);
+    assert_eq!(args(&Start::SteamWait), vec![n]);
     assert_eq!(args(&Start::Offline { four_players: true }), vec!["--four-players"]);
     assert_eq!(args(&Start::Offline { four_players: false }), vec!["--no-four-players"]);
 }
