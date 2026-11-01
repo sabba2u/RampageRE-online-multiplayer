@@ -148,6 +148,9 @@ extern "C" int netui_init(void *hwnd)
         g_bold = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 21.0f);
     if (g_bold)                                      /* the player slots' big labels: the same, at 44 px */
         g_big = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 44.0f);
+    if (g_bold)                                      /* everything else (the panel, the corner, the notices): bold too,
+                                                      * at the regular size: clearer over the game (the badge's) */
+        io.FontDefault = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeuib.ttf", 18.0f);
     if (!ImGui_ImplWin32_InitForOpenGL(hwnd) || !ImGui_ImplOpenGL3_Init("#version 130")) {
         ImGui::DestroyContext();
         return -1;
