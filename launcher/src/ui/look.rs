@@ -25,7 +25,10 @@ pub fn background(ui: &mut egui::Ui) {
     } else {
         Vec2::new(full.height() * aspect, full.height())
     };
-    let rect = Rect::from_center_size(full.center(), size);
+    // cropped toward the right: George climbing the Sears Tower on the right edge stays in view (the lizard on the
+    // left is wide enough to lose a little)
+    let spare = size.x - full.width();
+    let rect = Rect::from_min_size(egui::pos2(full.min.x - spare * 0.85, full.center().y - size.y / 2.0), size);
     let dim = if WGPU.load(std::sync::atomic::Ordering::Relaxed) { DIM_WGPU } else { DIM };
     egui::Image::from_bytes("bytes://background.jpg", BACKGROUND).tint(Color32::from_gray(dim)).paint_at(ui, rect);
 }

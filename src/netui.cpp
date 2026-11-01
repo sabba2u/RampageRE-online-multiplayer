@@ -523,6 +523,38 @@ static void corner(void)                             /* online, the panel closed
     ImGui::End();
 }
 
+/* hosting: a small badge at the top middle, always (menus and play, the panel closed), so the host knows without the
+ * panel: HOSTING, the room code, and who is in ("waiting for a friend" until one is) */
+static void hosting_badge(void)
+{
+    if (net_role() != NET_HOST || net_state() == NETS_FAILED)
+        return;
+    char line[160], who[64];
+    int friends = net_slot_count(NSL_ONLINE);
+    const char *name = netgame_slot_name(1);
+    if (friends > 0)
+        snprintf(who, sizeof who, "%s is in (P2)", name[0] ? name : "Your friend");
+    else
+        snprintf(who, sizeof who, "waiting for a friend");
+    if (net_is_steam())
+        snprintf(line, sizeof line, "HOSTING ON STEAM  \xC2\xB7  %s%s", who, friends ? "" : " (Shift+Tab to invite)");
+    else if (netlobby_my_code()[0])
+        snprintf(line, sizeof line, "HOSTING  \xC2\xB7  Room %s  \xC2\xB7  %s", netlobby_my_code(), who);
+    else
+        snprintf(line, sizeof line, "HOSTING  \xC2\xB7  %s", who);
+    ImDrawList *dl = ImGui::GetForegroundDrawList();
+    ImFont *f = g_bold ? g_bold : ImGui::GetFont();
+    float fs = g_bold ? g_bold->FontSize : ImGui::GetFontSize();
+    ImVec2 ds = ImGui::GetIO().DisplaySize, sz = f->CalcTextSizeA(fs, 1e9f, 0, line);
+    ImVec2 p(ds.x * 0.5f - sz.x / 2, 10);
+    ImVec2 a(p.x - 24, p.y - 5), b(p.x + sz.x + 14, p.y + sz.y + 5);
+    dl->AddRectFilled(a, b, IM_COL32(12, 24, 52, 200), 12);
+    dl->AddRect(a, b, IM_COL32(70, 140, 255, 230), 12, 0, 2);
+    dl->AddCircleFilled(ImVec2(a.x + 12, (a.y + b.y) / 2), 4.0f,   /* a dot: green with a friend in, amber waiting */
+                        friends ? IM_COL32(110, 230, 120, 255) : IM_COL32(255, 190, 60, 255));
+    dl->AddText(f, fs, p, IM_COL32(235, 242, 255, 255), line);
+}
+
 static int g_notice_big, g_have_notice;
 static char g_notice_title[128], g_notice_text[1024];
 
@@ -579,6 +611,8 @@ extern "C" void netui_frame(void)
     labels();
     toast();
     netui_chat_draw();
+    if (!g_have_notice && !g_open)                   /* (a notice takes the top middle; the panel says it itself) */
+        hosting_badge();
     notice();
     if (g_open)
         panel();
