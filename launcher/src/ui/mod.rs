@@ -184,6 +184,7 @@ impl App {
                     }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
+                    look::section(ui, "Host a game (LAN)");
                     let play = if self.settings.local_players() == 1 { "Play Alone Locally" } else { "Play Local (LAN)" };
                     if look::big(ui, play, ready).clicked() {
                         self.play();
@@ -196,10 +197,12 @@ impl App {
                         self.join_this_pc();
                     }
                     ui.separator();
-                    look::section(ui, "Host a game");
+                    look::section(ui, "Host an internet game");
                     if look::big(ui, "With my own server", ready).clicked() {
                         self.host_own();
                     }
+                    ui.separator();
+                    self.join_room_box(ui);
                     ui.separator();
                     ui.horizontal(|ui| {
                         // the heading centered over the row, the "?" at its end
@@ -216,8 +219,6 @@ impl App {
                         self.steam_join();
                     }
                     self.steam_problem_line(ui);
-                    ui.separator();
-                    self.join_room_box(ui);
                     ui.separator();
                     self.settings_button(ui);
                 });
