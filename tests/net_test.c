@@ -351,6 +351,19 @@ static void test_lobby_games_txt(void)
     CHECK(netlobby_parse_registered("error too many games\n", code, sizeof code, token, sizeof token, &hb) < 0);
 }
 
+/* the launcher's word on the guests in the knocks' answer: bans and mutes as lists, kicks; a Node lobby's (no "admin")
+ * changes nothing */
+static void test_lobby_admin(void)
+{
+    NetLobbyAdmin a;
+    CHECK(netlobby_parse_admin("ok\nknock 1.2.3.4:5\nadmin 1\nban 203.0.113.9\nban 198.51.100.2\n"
+                               "mute 192.168.1.20:27961\nkick 192.168.1.20:27961\n", &a) == 0 &&
+          a.admin && !strcmp(a.banned, "203.0.113.9 198.51.100.2") && !strcmp(a.muted, "192.168.1.20:27961") &&
+          a.nkicks == 1 && !strcmp(a.kicks[0], "192.168.1.20:27961"));
+    CHECK(netlobby_parse_admin("ok\nadmin 1\n", &a) == 0 && !a.banned[0] && !a.muted[0] && !a.nkicks);
+    CHECK(netlobby_parse_admin("ok\nknock 1.2.3.4:5\n", &a) == -1);
+}
+
 /* STUN (netstun.c): a request's bytes, an answer's XOR-MAPPED-ADDRESS (203.0.113.7:54321, after a plain
  * MAPPED-ADDRESS a router rewrote), another request's answer refused, the punch, the lobby's knocks */
 static void test_stun(void)
@@ -400,6 +413,7 @@ int main(void)
     test_lobby_url();
     test_lobby_join_kind();
     test_lobby_games_txt();
+    test_lobby_admin();
     test_upnp_no_router();
     test_stun();
     printf("%d checks, %d failed\n", checks, fails);

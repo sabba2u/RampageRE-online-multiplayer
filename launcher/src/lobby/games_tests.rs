@@ -132,3 +132,27 @@ fn stun_and_knocks() {
     advance(&t, (KNOCK_S + 1) * 1000);
     assert!(games.take_knocks(&g.code, Some(&g.token)).unwrap().is_empty());
 }
+
+#[test]
+fn players_reported_and_the_hosts_word() {
+    let mut games = Games::new(None, Box::new(|| 5000));
+    let g = games.register(&base(json!({})), "127.0.0.1").unwrap();
+    let rows = "0\thost\t\t0\tGeorge\n1\tonline\t192.168.1.20:27961\t42\tLizzie\n9\tbogus\n";
+    assert!(games.report_players(&g.code, Some("wrong"), rows).is_err());
+    // nothing said yet: only that this lobby speaks it
+    assert_eq!(games.report_players(&g.code, Some(&g.token), rows).unwrap(), vec!["admin 1"]);
+    let p = games.roster(&g.code);
+    assert_eq!(p.len(), 2);
+    assert_eq!(p[1], Player { slot: 1, state: "online".into(), addr: "192.168.1.20:27961".into(), ping: 42, name: "Lizzie".into() });
+    assert_eq!(p[1].ip(), "192.168.1.20");
+    games.set_muted("192.168.1.20:27961", true);
+    games.set_banned(vec!["203.0.113.9".into()]);
+    games.kick("192.168.1.20:27961");
+    assert_eq!(games.report_players(&g.code, Some(&g.token), rows).unwrap(),
+               vec!["admin 1", "ban 203.0.113.9", "mute 192.168.1.20:27961", "kick 192.168.1.20:27961"]);
+    // a kick is said once; an unmute is gone at the next
+    games.set_muted("192.168.1.20:27961", false);
+    assert!(games.is_muted("192.168.1.20:27961") == false);
+    assert_eq!(games.report_players(&g.code, Some(&g.token), rows).unwrap(), vec!["admin 1", "ban 203.0.113.9"]);
+    assert!(games.roster("ZZZZZ").is_empty());
+}

@@ -4,6 +4,7 @@
 #include "nettransport.h"
 #include "netstun.h"
 #include <enet/enet.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -324,5 +325,21 @@ void nt_flush(void) { if (!g_steam) nte_flush(); }
 int nt_connected(void) { return g_steam ? nts_connected() : nte_connected(); }
 int nt_rtt_ms(void) { return g_steam ? 0 : nte_rtt_ms(); }
 int nt_peer_rtt_ms(int peer) { return g_steam ? 0 : nte_peer_rtt_ms(peer); }
+int nt_peer_addr(int peer, char *out, int cap)
+{
+    if (cap > 0)
+        out[0] = 0;
+    if (g_steam) {
+        snprintf(out, (size_t)cap, "Steam");
+        return 0;
+    }
+    if (peer < 0 || peer >= NT_PEERS || !g_peers[peer])
+        return -1;
+    char ip[64];
+    if (enet_address_get_host_ip(&g_peers[peer]->address, ip, sizeof ip) != 0)
+        return -1;
+    snprintf(out, (size_t)cap, "%s:%u", ip, (unsigned)g_peers[peer]->address.port);
+    return 0;
+}
 unsigned nt_bytes_out(void) { return g_steam ? nts_bytes_out() : nte_bytes_out(); }
 unsigned nt_bytes_in(void) { return g_steam ? nts_bytes_in() : nte_bytes_in(); }

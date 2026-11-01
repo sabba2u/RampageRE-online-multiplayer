@@ -86,6 +86,18 @@ fn knock_then_knocks() {
 }
 
 #[test]
+fn knocks_with_players_hear_the_hosts_word() {
+    let (s, url) = start();
+    let (code, token) = register(&url);
+    s.games.lock().unwrap().kick("192.168.1.20:27961");
+    let rows = "0%09host%09%090%09George%0A1%09online%09192.168.1.20%3A27961%0942%09Lizzie%0A";
+    assert_eq!(call("GET", &format!("{url}/games/{code}/knocks?token={token}&players={rows}"), false, None),
+               (200, "ok\nadmin 1\nkick 192.168.1.20:27961\n".into()));
+    let p = s.games.lock().unwrap().roster(&code);
+    assert_eq!((p.len(), p[1].name.as_str(), p[1].ping), (2, "Lizzie", 42));
+}
+
+#[test]
 fn health() {
     let (_s, url) = start();
     assert_eq!(call("GET", &format!("{url}/health"), false, None), (200, "rampage_lobby\n".into()));

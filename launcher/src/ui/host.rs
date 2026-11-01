@@ -122,6 +122,7 @@ impl App {
             Ok(c) => c,
             Err(e) => return self.say(&format!("Couldn't start RampageRE: {e}"), true),
         };
+        lobby.games.lock().unwrap().set_banned(self.settings.banned_ips());
         self.host = Hosting { lobby: Some(lobby), game: Some(child), lan: upnp::lan_ip(), ..Default::default() };
         self.host.open_router();
         self.say("Starting your game and server...", false);
@@ -226,6 +227,9 @@ impl App {
                 }
             }
         }
+        ui.separator();
+        self.players_box(ui);
+        ui.separator();
         if ui.button("Stop hosting").clicked() {
             self.stop_hosting();
         }

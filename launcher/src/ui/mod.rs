@@ -7,6 +7,7 @@ mod host;
 #[cfg(test)]
 mod host_tests;
 mod links_button;
+mod players;
 pub mod look;
 mod steam_cards;
 
@@ -150,7 +151,7 @@ impl App {
                     }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
-                    if look::big(ui, "Play", ready).clicked() {
+                    if look::big(ui, "Play Local", ready).clicked() {
                         self.play();
                     }
                     ui.separator();

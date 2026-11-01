@@ -186,6 +186,28 @@ int netlobby_parse_registered(const char *text, char *code, int ccap, char *toke
     return 0;
 }
 
+/* the knocks' answer from the launcher's own lobby: "admin 1", then "ban <ip>", "mute <ip:port>", "kick <ip:port>"
+ * lines (a lobby without them: a->admin 0, and nothing changes) */
+int netlobby_parse_admin(const char *text, NetLobbyAdmin *a)
+{
+    memset(a, 0, sizeof *a);
+    for (const char *p = text; p && *p; p = strchr(p, '\n') ? strchr(p, '\n') + 1 : NULL) {
+        char w[8], v[64];
+        if (sscanf(p, "%7s %63s", w, v) != 2)
+            continue;
+        char *list = !strcmp(w, "ban") ? a->banned : !strcmp(w, "mute") ? a->muted : NULL;
+        if (!strcmp(w, "admin"))
+            a->admin = atoi(v) > 0;
+        else if (list && strlen(list) + strlen(v) + 2 < sizeof a->banned) {
+            if (list[0])
+                strcat(list, " ");
+            strcat(list, v);
+        } else if (!strcmp(w, "kick") && a->nkicks < NETLOBBY_KICKS)
+            snprintf(a->kicks[a->nkicks++], sizeof a->kicks[0], "%s", v);
+    }
+    return a->admin ? 0 : -1;
+}
+
 #ifndef NETLOBBY_TEST
 /* ---- the network ---------------------------------------------------------------------------------------------- */
 #include "net.h"
@@ -341,7 +363,7 @@ enum { J_LIST, J_LOOKUP, J_REGISTER, J_BEAT, J_UNLIST, J_KNOCKS, J_KNOCK, J_COUN
 enum { JOB_IDLE, JOB_RUNNING, JOB_DONE };
 typedef struct {
     int state;                                       /* JOB_*: the frame sets RUNNING, the thread DONE */
-    char method[8], url[384], body[768];
+    char method[8], url[1024], body[768];
     int status, register_lan;
     char out[16384];
 } Job;
@@ -579,6 +601,23 @@ static int players_now(void)
            16 * net_slot_count(NSL_RESERVED);        /* (packed with the reserved, for "changed") */
 }
 
+const char *netgame_slot_name(int k);               /* netgame.c (netui.h): slot k's monster, "" none */
+
+/* the players, for the launcher's list: a line each, "slot<tab>state<tab>ip:port<tab>ping<tab>name" (the open slots left out) */
+static void player_rows(char *b, int cap)
+{
+    static const char *const STATE[] = {"open", "online", "kept", "local", "host"};
+    b[0] = 0;
+    for (int k = 0; k < net_slots(); k++) {
+        int st = net_slot_state(k, NULL);
+        if (st == NSL_OPEN || st < 0 || st > NSL_HOST)
+            continue;
+        size_t n = strlen(b);
+        snprintf(b + n, (size_t)cap - n, "%d\t%s\t%s\t%d\t%s\n", k, net_slot_joining(k) ? "joining" : STATE[st],
+                 net_slot_addr(k), net_slot_ping(k), netgame_slot_name(k));
+    }
+}
+
 static void game_fields(char *b, int cap)
 {
     char n[8];
@@ -660,6 +699,12 @@ static void host_frame(double now)
         int n = netstun_parse_knocks(g_jobs[J_KNOCKS].out, knocks, 8);
         for (int i = 0; i < n; i++)
             netstun_punch(knocks[i]);
+        static NetLobbyAdmin ad;                     /* the launcher's mutes, bans and kicks */
+        if (!netlobby_parse_admin(g_jobs[J_KNOCKS].out, &ad)) {
+            net_set_admin(ad.banned, ad.muted);
+            for (int i = 0; i < ad.nkicks; i++)
+                net_kick_addr(ad.kicks[i]);
+        }
     }
     if (!want) {
         unlist(0);
@@ -685,8 +730,10 @@ static void host_frame(double now)
     if (players_now() != L.sent_players || strcmp(netstun_public(), L.sent_stun))
         L.beat_at = 0;
     if (job_idle(J_KNOCKS) && now - L.knocks_at >= 1) {   /* a guest knocking: punched toward within a second */
-        char path[160];
-        snprintf(path, sizeof path, "/games/%s/knocks?token=%s", L.code, L.token);
+        char path[900], rows[400] = "";
+        snprintf(path, sizeof path, "/games/%s/knocks?token=%s&", L.code, L.token);
+        player_rows(rows, sizeof rows);
+        form_add(path + strlen(path), (int)(sizeof path - strlen(path)), "players", rows);
         job_start(J_KNOCKS, "GET", L.listed_url, path, NULL, 0);
         L.knocks_at = now;
     }

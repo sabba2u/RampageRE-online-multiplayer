@@ -106,7 +106,7 @@ impl App {
                         });
                     }
                     LinkStatus::NotSet => {
-                        if look::big(ui, "Register join links", true).clicked() {
+                        if look::half(ui, "Register join links", true).clicked() {
                             self.set_up_links();
                         }
                     }
@@ -130,10 +130,31 @@ impl App {
                     self.settings = Settings::update(|x| x.servers.retain(|y| *y != s));
                 }
                 ui.separator();
+                look::section(ui, "Banned players");
+                if self.settings.banned.is_empty() {
+                    ui.label(RichText::new("Nobody. Ban someone from the player list while you host.").color(DIM_TEXT));
+                }
+                let mut unban = None;
+                for b in &self.settings.banned {
+                    ui.horizontal(|ui| {
+                        let who = if b.name.is_empty() { b.ip.clone() } else { format!("{}  ({})", b.name, b.ip) };
+                        ui.label(who);
+                        if ui.small_button("Unban").clicked() {
+                            unban = Some(b.ip.clone());
+                        }
+                    });
+                }
+                if let Some(ip) = unban {
+                    self.settings = Settings::update(|s| s.unban(&ip));
+                    self.send_bans();
+                }
+                ui.separator();
                 look::section(ui, "Tips");
-                if ui.button("Show the tips again").on_hover_text("The join links pop-up, the firewall note, What's Spacewar?")
-                    .clicked()
-                {
+                let tips = ui.vertical_centered(|ui| {
+                    ui.button("Show the tips again").on_hover_text("The join links pop-up, the firewall note, What's Spacewar?")
+                        .clicked()
+                }).inner;
+                if tips {
                     self.settings = Settings::update(|s| {
                         s.first_run_done = false;
                         s.firewall_note_shown = false;

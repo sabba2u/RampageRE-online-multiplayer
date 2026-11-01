@@ -59,6 +59,40 @@ pub struct Game {
     pub since: u64,
     pub seen: u64,
     pub knocks: Vec<(String, u64)>,
+    /// its players, as its game last said (the launcher's list); when
+    pub roster: Vec<Player>,
+    pub roster_at: u64,
+}
+
+/// One of a hosted game's players, as the game reports them every second with its knocks (src/netlobby.c).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Player {
+    pub slot: u8,
+    /// host, online, joining, local, kept
+    pub state: String,
+    /// a guest's "ip:port" ("" the host's own, a local player's)
+    pub addr: String,
+    pub ping: u32,
+    /// its monster ("" not chosen yet)
+    pub name: String,
+}
+
+impl Player {
+    pub fn ip(&self) -> &str { self.addr.rsplit_once(':').map_or(self.addr.as_str(), |(ip, _)| ip) }
+    pub fn is_guest(&self) -> bool { !self.addr.is_empty() && (self.state == "online" || self.state == "joining") }
+}
+
+/// The game's lines, "slot<TAB>state<TAB>ip:port<TAB>ping<TAB>name"; broken ones skipped, at most 8.
+pub fn parse_players(rows: &str) -> Vec<Player> {
+    let clean = |s: &str, n: usize| s.chars().filter(|c| !c.is_control()).take(n).collect::<String>();
+    rows.lines().filter_map(|l| {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() != 5 {
+            return None;
+        }
+        Some(Player { slot: f[0].parse().ok()?, state: clean(f[1], 12), addr: clean(f[2], 64), ping: f[3].parse().unwrap_or(0),
+                      name: clean(f[4], 32) })
+    }).take(8).collect()
 }
 
 /// What everyone sees of a game: no token, no source.
@@ -186,13 +220,18 @@ pub struct Games {
     recent: HashMap<String, Vec<u64>>, // per source address: when it registered, for the rate limit
     public_address: Option<String>,
     now: Box<dyn Fn() -> u64 + Send>,
+    /// the hosting launcher's word on the guests: banned IPs, muted "ip:port"s, the ones to let go at the next report
+    banned: Vec<String>,
+    muted: Vec<String>,
+    kicks: Vec<String>,
 }
 
 impl Games {
     /// `public_address`: this machine's address on the internet, for hosts on its PC or network without UPnP;
     /// `now`: the clock in milliseconds.
     pub fn new(public_address: Option<String>, now: Box<dyn Fn() -> u64 + Send>) -> Games {
-        Games { games: HashMap::new(), recent: HashMap::new(), public_address: public_address.filter(|s| !s.is_empty()), now }
+        Games { games: HashMap::new(), recent: HashMap::new(), public_address: public_address.filter(|s| !s.is_empty()), now,
+                banned: Vec::new(), muted: Vec::new(), kicks: Vec::new() }
     }
 
     pub fn set_public_address(&mut self, ip: Option<String>) { self.public_address = ip.filter(|s| !s.is_empty()); }
@@ -236,7 +275,7 @@ impl Games {
             players: f.players.unwrap(), max: f.max.unwrap(), reserved: f.reserved.unwrap(), port, build: f.build.unwrap(),
             external: f.external.unwrap_or_default(), stun: f.stun.unwrap_or_default(),
             lan: lan.unwrap_or_else(|| if is_private(&source) { source.clone() } else { String::new() }),
-            source, since: t, seen: t, knocks: Vec::new(),
+            source, since: t, seen: t, knocks: Vec::new(), roster: Vec::new(), roster_at: 0,
         };
         self.games.insert(code, g.clone());
         Ok(g)
@@ -299,6 +338,36 @@ impl Games {
         let out = g.knocks.iter().filter(|(_, at)| now.saturating_sub(*at) < KNOCK_S * 1000).map(|(a, _)| a.clone()).collect();
         g.knocks.clear();
         Ok(out)
+    }
+
+    /// The host's game, every second with its knocks: its players (`rows`, parse_players). The answer: "admin 1" (this
+    /// lobby speaks it), then the bans, the mutes and the kicks (each said once).
+    pub fn report_players(&mut self, code: &str, token: Option<&str>, rows: &str) -> Result<Vec<String>, LobbyError> {
+        let now = (self.now)();
+        let g = self.own(code, token)?;
+        g.roster = parse_players(rows);
+        g.roster_at = now;
+        let mut out = vec!["admin 1".to_string()];
+        out.extend(self.banned.iter().map(|b| format!("ban {b}")));
+        out.extend(self.muted.iter().map(|m| format!("mute {m}")));
+        out.extend(self.kicks.drain(..).map(|k| format!("kick {k}")));
+        Ok(out)
+    }
+
+    /// The players `code`'s game said last (none: no such game, or a game that doesn't say).
+    pub fn roster(&self, code: &str) -> Vec<Player> { self.get(code).map(|g| g.roster.clone()).unwrap_or_default() }
+    pub fn set_banned(&mut self, ips: Vec<String>) { self.banned = ips; }
+    pub fn is_muted(&self, addr: &str) -> bool { self.muted.iter().any(|m| m == addr) }
+    pub fn set_muted(&mut self, addr: &str, on: bool) {
+        self.muted.retain(|m| m != addr);
+        if on {
+            self.muted.push(addr.to_string());
+        }
+    }
+    pub fn kick(&mut self, addr: &str) {
+        if !self.kicks.iter().any(|k| k == addr) {
+            self.kicks.push(addr.to_string());
+        }
     }
 
     pub fn unregister(&mut self, code: &str, token: Option<&str>) -> Result<(), LobbyError> {

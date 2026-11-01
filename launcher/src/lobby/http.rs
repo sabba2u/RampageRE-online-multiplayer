@@ -235,11 +235,20 @@ fn handle(games: &Mutex<Games>, mut req: Request) {
             }
             if tail == "knocks" && method == Method::Get {
                 let token = get_header(&req, "X-Token").or(q_token.clone());
-                let r = games.lock().unwrap().take_knocks(code, token.as_deref());
+                // a game that sends its players (src/netlobby.c) hears the launcher's mutes, bans and kicks back
+                let players = query.get("players").and_then(|v| v.as_str()).map(String::from);
+                let r = {
+                    let mut g = games.lock().unwrap();
+                    g.take_knocks(code, token.as_deref()).and_then(|k| match &players {
+                        Some(rows) => g.report_players(code, token.as_deref(), rows).map(|a| (k, a)),
+                        None => Ok((k, Vec::new())),
+                    })
+                };
                 return match r {
-                    Ok(k) => {
+                    Ok((k, admin)) => {
                         let mut out = vec!["ok".to_string()];
                         out.extend(k.into_iter().map(|a| format!("knock {a}")));
+                        out.extend(admin);
                         text(req, 200, &(out.join("\n") + "\n"));
                         Ok(())
                     }

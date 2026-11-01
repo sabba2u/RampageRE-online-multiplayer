@@ -31,6 +31,11 @@ int netlobby_parse_url(const char *url, char *host, int hcap, int *port, char *p
 int netlobby_parse_games(const char *text, NetLobbyGame *out, int max);
 /* POST /games's answer to the game: "ok <code> <token> <heartbeat seconds>". 0 ok */
 int netlobby_parse_registered(const char *text, char *code, int ccap, char *token, int tcap, int *heartbeat);
+/* the launcher's word on the guests, in the knocks' answer (launcher/src/lobby/http.rs): banned IPs and muted
+ * "ip:port"s space-separated, the guests to let go now. 0: a launcher's lobby said it; -1 a lobby without it */
+#define NETLOBBY_KICKS 4
+typedef struct { int admin; char banned[512], muted[512]; char kicks[NETLOBBY_KICKS][64]; int nkicks; } NetLobbyAdmin;
+int netlobby_parse_admin(const char *text, NetLobbyAdmin *a);
 int netlobby_is_code(const char *s);                 /* 5 of ABCDEFGHJKLMNPQRSTUVWXYZ23456789, any case */
 /* what --join, a rampage:// link or the panel's field gives: NLJ_CODE (out: the code, upper case), NLJ_ADDR (out:
  * "host" or "host:port"), NLJ_NONE (not something to join; out empty). rampage://join/<x>/ takes x */

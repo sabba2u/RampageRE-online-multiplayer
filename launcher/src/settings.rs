@@ -12,6 +12,15 @@ pub struct Settings {
     pub first_run_done: bool,
     pub firewall_note_shown: bool,
     pub spacewar_card_shown: bool,
+    /// players banned from my hosted games (the launcher's player list): by IP, with the name they had
+    pub banned: Vec<Banned>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Banned {
+    pub ip: String,
+    pub name: String,
 }
 
 pub fn path() -> PathBuf {
@@ -44,6 +53,16 @@ impl Settings {
     }
 
     pub fn update(f: impl FnOnce(&mut Settings)) -> Settings { Settings::update_at(&path(), f) }
+
+    /// `ip` banned (once: banned again, its newest name kept).
+    pub fn ban(&mut self, ip: &str, name: &str) {
+        match self.banned.iter_mut().find(|b| b.ip == ip) {
+            Some(b) => b.name = name.to_string(),
+            None => self.banned.push(Banned { ip: ip.to_string(), name: name.to_string() }),
+        }
+    }
+    pub fn unban(&mut self, ip: &str) { self.banned.retain(|b| b.ip != ip); }
+    pub fn banned_ips(&self) -> Vec<String> { self.banned.iter().map(|b| b.ip.clone()).collect() }
 
     /// `server` to the front; the oldest drop off past SERVERS_KEPT.
     pub fn remember(&mut self, server: &str) {

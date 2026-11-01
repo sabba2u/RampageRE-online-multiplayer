@@ -8,12 +8,16 @@ use crate::steam::{self, SteamProblem, GET_SPACEWAR_NOTE};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
 use std::sync::mpsc::channel;
 
-pub const SPACEWAR_TEXT: &str = "Steam online play only works for games that have their own Steam app. RampageRE doesn't \
-have one (that needs a paid Steam listing). Valve gives every game maker a free test app called Spacewar (app 480). Game \
-developers use it to test their multiplayer through Steam before their own game has a store page, and RampageRE uses the \
-same technique. Steam treats RampageRE as Spacewar, so you and your friends each need to own Spacewar. It's free, and you \
-don't need to download or play it: it only has to be in your Steam library. Your friends list will show you as \
-\"playing Spacewar\".";
+/// "What's Spacewar?", one paragraph per entry.
+pub const SPACEWAR_TEXT: &[&str] = &[
+    "Steam online play only works for games that have their own Steam app. RampageRE doesn't have one (that needs a \
+paid Steam listing). Valve gives every game maker a free test app called Spacewar (app 480).",
+    "Game developers use it to test their multiplayer through Steam before their own game has a store page, and \
+RampageRE uses the same technique.",
+    "Steam treats RampageRE as Spacewar, so you and your friends each need to own Spacewar. It's free, and you don't \
+need to download or play it: it only has to be in your Steam library.",
+    "Your friends list will show you as \"playing Spacewar\".",
+];
 pub const SHIFT_TAB_TEXT: &str = "Press Shift+Tab in the game to open Steam, then click Invite to choose your friends.";
 pub const JOIN_GAME_TEXT: &str = "Open your Steam friends list, right-click your friend, then click Join Game.";
 
@@ -104,7 +108,10 @@ impl App {
                 match card {
                     Card::Firewall => {
                         ui.label(RichText::new(super::host::FIREWALL_TEXT).size(16.0));
-                        if ui.button(RichText::new("OK, host my game").strong()).clicked() {
+                        ui.add_space(4.0);
+                        let ok = ui.vertical_centered(|ui| ui.button(RichText::new("OK, host my game").size(16.0).strong())
+                            .clicked()).inner;
+                        if ok {
                             close = true;
                             then = Some(Box::new(|app: &mut App| {
                                 app.settings = Settings::update(|s| s.firewall_note_shown = true);
@@ -113,24 +120,33 @@ impl App {
                         }
                     }
                     Card::Spacewar(next) => {
-                        ui.label(RichText::new(SPACEWAR_TEXT).size(15.0));
-                        if ui.button(RichText::new(if next.is_some() { "Got it" } else { "Close" }).strong()).clicked() {
-                            close = true;
-                            if let Some(a) = next {
-                                then = Some(Box::new(move |app: &mut App| app.steam(a)));
+                        for (i, para) in SPACEWAR_TEXT.iter().enumerate() {
+                            if i > 0 {
+                                ui.add_space(4.0);
                             }
+                            ui.label(RichText::new(*para).size(15.0));
                         }
+                        ui.add_space(6.0);
+                        ui.vertical_centered(|ui| {
+                            let text = if next.is_some() { "Got it" } else { "Close" };
+                            if ui.button(RichText::new(text).size(16.0).strong()).clicked() {
+                                close = true;
+                                if let Some(a) = next {
+                                    then = Some(Box::new(move |app: &mut App| app.steam(a)));
+                                }
+                            }
+                        });
                     }
                     Card::ShiftTab => {
                         ui.label(RichText::new(SHIFT_TAB_TEXT).size(17.0).strong());
                         ui.label(RichText::new("The game's panel (Insert) has an Invite button too.").color(DIM_TEXT));
-                        close = ui.button("OK").clicked();
+                        close = ui.vertical_centered(|ui| ui.button(RichText::new("OK").size(16.0).strong()).clicked()).inner;
                     }
                     Card::JoinGame => {
                         ui.label(RichText::new(JOIN_GAME_TEXT).size(17.0).strong());
                         ui.label(RichText::new("Or accept their invite in Steam chat.").color(DIM_TEXT));
                         friends_picture(ui);
-                        close = ui.button("OK").clicked();
+                        close = ui.vertical_centered(|ui| ui.button(RichText::new("OK").size(16.0).strong()).clicked()).inner;
                     }
                 }
             });

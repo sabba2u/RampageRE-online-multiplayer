@@ -62,6 +62,14 @@ int net_slot_count(int state);                       /* slots 0 .. net_slots() -
 void net_slot_local(int k, int on);                  /* host: a player on this PC took slot k (on) / the panel opened it
                                                       * for online play again (off) */
 void net_slot_kick(int k);                           /* host: its guest let go, the slot open at once, its token void */
+/* the launcher's player list (netlobby.c): slot k's guest's "ip:port" ("" none), its ping; mute, kick and ban from
+ * there. net_set_admin: the banned IPs and the muted guests' "ip:port", space-separated (a banned guest is let go and
+ * refused; a muted one's chat lines are dropped by the host, not shown nor passed on) */
+const char *net_slot_addr(int k);
+int net_slot_ping(int k);
+int net_slot_muted(int k);
+void net_kick_addr(const char *addr);
+void net_set_admin(const char *banned, const char *muted);
 int net_my_slot(void);                               /* the guest: its slot (0 until welcomed); the host 0 */
 int net_msg_slot(void);                              /* host: the slot whose message the handler has now (-1) */
 void net_set_wanted_monster(int monster);            /* the guest: asked for in the hello (-1 any) */

@@ -41,6 +41,7 @@ typedef struct {
     uint32_t remote_frame, remote_pressed;
     int have_remote;
     int sys_run[NET_DSYS];                           /* its digests' systems that differed in a row */
+    char addr[64];                                   /* NSL_ONLINE: its guest's "ip:port" (the launcher's list) */
 } Slot;
 
 static struct {
@@ -78,6 +79,10 @@ static struct {
     unsigned out_at, in_at;
     NetStats stats;
 } g;
+
+/* the launcher's word on the guests (net_set_admin): banned IPs and muted guests' "ip:port", space-separated; kept
+ * over net_stop (the launcher says it again each second) */
+static char g_banned[512], g_muted[512];
 
 static uint64_t g_token;                             /* the guest's rejoin token (kept over net_stop: a rejoin) */
 
@@ -307,6 +312,27 @@ void net_slot_local(int k, int on)
     slot_set(k, on ? NSL_LOCAL : g.slot[k].state == NSL_LOCAL ? NSL_OPEN : g.slot[k].state);
 }
 
+/* word is one of list's space-separated words */
+static int in_list(const char *list, const char *word, size_t n)
+{
+    for (const char *p = list; n && *p;) {
+        while (*p == ' ')
+            p++;
+        size_t m = strcspn(p, " ");
+        if (m == n && !strncmp(p, word, n))
+            return 1;
+        p += m;
+    }
+    return 0;
+}
+
+/* "ip:port"'s ip banned */
+static int is_banned(const char *addr)
+{
+    const char *c = strrchr(addr, ':');
+    return addr[0] && in_list(g_banned, addr, c ? (size_t)(c - addr) : strlen(addr));
+}
+
 static void send_reject(int peer, const char *why)
 {
     uint8_t m[160];
@@ -332,6 +358,40 @@ void net_slot_kick(int k)
     g.slot[k].token = 0;                             /* (its rejoin token is no good now) */
     g.slot[k].peer = -1;
     slot_set(k, NSL_OPEN);
+}
+
+const char *net_slot_addr(int k)
+{
+    return g.role == NET_HOST && k >= 1 && k < NET_SLOTS && g.slot[k].state == NSL_ONLINE ? g.slot[k].addr : "";
+}
+
+int net_slot_ping(int k)
+{
+    return g.role == NET_HOST && k >= 1 && k < NET_SLOTS && g.slot[k].state == NSL_ONLINE ? nt_peer_rtt_ms(g.slot[k].peer) : 0;
+}
+
+int net_slot_muted(int k)
+{
+    const char *a = net_slot_addr(k);
+    return a[0] && in_list(g_muted, a, strlen(a));
+}
+
+void net_kick_addr(const char *addr)
+{
+    for (int k = 1; k < NET_SLOTS; k++)
+        if (addr && addr[0] && !strcmp(net_slot_addr(k), addr))
+            net_slot_kick(k);
+}
+
+void net_set_admin(const char *banned, const char *muted)
+{
+    if (strcmp(g_banned, banned ? banned : ""))
+        net_log("banned: %s", banned && banned[0] ? banned : "nobody");
+    snprintf(g_banned, sizeof g_banned, "%s", banned ? banned : "");
+    snprintf(g_muted, sizeof g_muted, "%s", muted ? muted : "");
+    for (int k = 1; k < NET_SLOTS; k++)              /* (a guest banned while playing goes now) */
+        if (is_banned(net_slot_addr(k)))
+            net_slot_kick(k);
 }
 
 /* every second, and at once on a change: the slots to the guests; a kept slot's time running out */
@@ -570,6 +630,10 @@ static void on_hello(int peer, NetBuf *b)
         snprintf(why, sizeof why, "Broken hello");
     else if (h.build != build_id())
         snprintf(why, sizeof why, "The two copies are different builds of RampageRE");
+    char addr[64] = "";
+    nt_peer_addr(peer, addr, sizeof addr);
+    if (!why[0] && is_banned(addr))
+        snprintf(why, sizeof why, "The host removed you from the game");
     int k = -1;
     if (!why[0]) {
         NetSlotPick pk[NET_SLOTS];
@@ -600,6 +664,7 @@ static void on_hello(int peer, NetBuf *b)
         s->token = new_token(k);
     s->monster = h.monster;
     s->peer = peer;
+    snprintf(s->addr, sizeof s->addr, "%s", addr);
     s->have_remote = 0;
     s->remote_frame = 0;
     s->remote_pressed = 0;

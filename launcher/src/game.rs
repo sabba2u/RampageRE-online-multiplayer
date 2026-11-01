@@ -51,8 +51,19 @@ pub fn args(s: &Start) -> Vec<String> {
     v.into_iter().map(String::from).collect()
 }
 
-/// Started from its own folder (it finds its data there).
+pub const OLD_GAME: &str = "This RampageRE.exe is an older version without online play. Get the online release \
+(RampageRE.exe with the launcher) and put it in this folder. Play Local still works.";
+
+/// The game knows the online flags: an older release reads "--host" as the path to its disc image.
+pub fn supports_online(exe: &Path) -> bool {
+    std::fs::read(exe).is_ok_and(|b| b.windows(12).any(|w| w == b"--steam-host"))
+}
+
+/// Started from its own folder (it finds its data there). Anything but Offline needs a game with online play.
 pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
+    if *s != Start::Offline && !supports_online(exe) {
+        return Err(io::Error::other(OLD_GAME));
+    }
     let mut c = Command::new(exe);
     c.args(args(s));
     if let Some(dir) = exe.parent() {

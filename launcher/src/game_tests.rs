@@ -78,3 +78,26 @@ fn settings_update_keeps_the_other_writer() {
     assert!(after.first_run_done && after.servers == vec!["http://from-a-link:19980".to_string()]);
     drop(window);
 }
+
+#[test]
+fn old_game_without_online_play_is_refused() {
+    let d = temp("old");
+    fs::write(d.join("old.exe"), b"MZ...usage: RampageRE <data>...").unwrap();
+    fs::write(d.join("new.exe"), b"MZ...--host --steam-host --join...").unwrap();
+    assert!(!supports_online(&d.join("old.exe")));
+    assert!(supports_online(&d.join("new.exe")));
+    let e = start(&d.join("old.exe"), &Start::SteamHost).unwrap_err();
+    assert_eq!(e.to_string(), OLD_GAME);
+}
+
+#[test]
+fn bans_kept_once_and_lifted() {
+    let mut s = Settings::default();
+    s.ban("203.0.113.9", "Lizzie");
+    s.ban("203.0.113.9", "Lizzie again");
+    s.ban("198.51.100.2", "");
+    assert_eq!(s.banned_ips(), vec!["203.0.113.9", "198.51.100.2"]);
+    assert_eq!(s.banned[0].name, "Lizzie again");
+    s.unban("203.0.113.9");
+    assert_eq!(s.banned_ips(), vec!["198.51.100.2"]);
+}

@@ -637,8 +637,8 @@ static void ng_on_chat(Viewer *v, NetBuf *b)
     if (b->err || who >= NET_SLOTS || len <= 0)
         return;
     if (net_role() == NET_HOST) {
-        if (who != net_msg_slot())
-            return;
+        if (who != net_msg_slot() || net_slot_muted(who))
+            return;                                  /* (muted from the launcher: nobody sees it) */
         net_send_msg_except(who, 1, b->p, b->cap);
     }
     if (len > 200)
