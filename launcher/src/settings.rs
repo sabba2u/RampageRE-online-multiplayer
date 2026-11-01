@@ -14,8 +14,8 @@ pub struct Settings {
     pub spacewar_card_shown: bool,
     /// players banned from my hosted games (the launcher's player list): by IP, with the name they had
     pub banned: Vec<Banned>,
-    /// Play Local's "Players" choice: 2 only (the PS2's menus), else up to 4 (the default)
-    pub two_players_only: bool,
+    /// Play Local's "Players" choice, 1 to 4 (0: never chosen, 2)
+    pub local_players: u8,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,7 +56,9 @@ impl Settings {
 
     pub fn update(f: impl FnOnce(&mut Settings)) -> Settings { Settings::update_at(&path(), f) }
 
-    pub fn four_players(&self) -> bool { !self.two_players_only }
+    pub fn local_players(&self) -> u8 { if (1..=4).contains(&self.local_players) { self.local_players } else { 2 } }
+    /// 3 or 4 players: the game's menu gets 3 Player and 4 Player (--four-players)
+    pub fn four_players(&self) -> bool { self.local_players() >= 3 }
 
     /// `ip` banned (once: banned again, its newest name kept).
     pub fn ban(&mut self, ip: &str, name: &str) {

@@ -134,22 +134,25 @@ impl App {
         }
     }
 
-    /// Under Play Local: how many players the game's menu offers (the game's --four-players / --no-four-players).
+    /// Under Play Local: how many players (1 to 4; 3 or 4 adds 3 Player and 4 Player to the game's menu), and that
+    /// hosting is still there in the game (Insert).
     fn players_choice(&mut self, ui: &mut egui::Ui) {
-        let label = |four: bool| if four { "Up to 4 players" } else { "2 players" };
-        let four = self.settings.four_players();
-        let mut pick = four;
+        let label = |n: u8| if n == 1 { "1 player".to_string() } else { format!("{n} players") };
+        let now = self.settings.local_players();
+        let mut pick = now;
         ui.horizontal(|ui| {
-            ui.add_space((ui.available_width() - 230.0).max(0.0) / 2.0);
+            ui.add_space((ui.available_width() - 200.0).max(0.0) / 2.0);
             ui.label(RichText::new("Players:").color(DIM_TEXT));
-            egui::ComboBox::from_id_salt("players").selected_text(label(four)).width(150.0).show_ui(ui, |ui| {
-                ui.selectable_value(&mut pick, false, label(false));
-                ui.selectable_value(&mut pick, true, label(true));
+            egui::ComboBox::from_id_salt("players").selected_text(label(now)).width(120.0).show_ui(ui, |ui| {
+                for n in 1..=4u8 {
+                    ui.selectable_value(&mut pick, n, label(n));
+                }
             });
-        }).response.on_hover_text("Up to 4: the game's players menu has 3 Player and 4 Player too (not in the campaign)");
-        if pick != four {
-            self.settings = Settings::update(|s| s.two_players_only = !pick);
+        });
+        if pick != now {
+            self.settings = Settings::update(|s| s.local_players = pick);
         }
+        ui.label(RichText::new("You can still host from the game later: press INSERT.").strong().color(look::YELLOW));
     }
 
     fn main_screen(&mut self, ui: &mut egui::Ui) {
@@ -169,7 +172,8 @@ impl App {
                     }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
-                    if look::big(ui, "Play Local", ready).clicked() {
+                    let play = if self.settings.local_players() == 1 { "Play Alone Locally" } else { "Play Local" };
+                    if look::big(ui, play, ready).clicked() {
                         self.play();
                     }
                     self.players_choice(ui);

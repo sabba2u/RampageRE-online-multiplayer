@@ -106,8 +106,13 @@ fn bans_kept_once_and_lifted() {
 }
 
 #[test]
-fn play_local_four_players_by_default() {
-    assert!(Settings::default().four_players());
-    let s = Settings { two_players_only: true, ..Default::default() };
-    assert!(!s.four_players());
+fn play_local_players_choice() {
+    // never chosen: 2 players
+    assert_eq!(Settings::default().local_players(), 2);
+    assert!(!Settings::default().four_players());
+    for (n, four) in [(1, false), (2, false), (3, true), (4, true)] {
+        let s = Settings { local_players: n, ..Default::default() };
+        assert_eq!((s.local_players(), s.four_players()), (n, four));
+    }
+    assert_eq!(Settings { local_players: 9, ..Default::default() }.local_players(), 2);
 }
