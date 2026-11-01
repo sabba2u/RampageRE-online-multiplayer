@@ -253,10 +253,28 @@ impl App {
     }
 }
 
+/// The window, drawn with OpenGL; where the driver won't give OpenGL 2.0 (an old or missing driver, a remote
+/// session, a laptop handing the window to the wrong GPU), drawn with DirectX / Vulkan instead.
+/// RAMPAGE_LAUNCHER_RENDERER=wgpu skips OpenGL (to try the fallback).
 pub fn run() -> eframe::Result<()> {
+    let force_wgpu = std::env::var("RAMPAGE_LAUNCHER_RENDERER").is_ok_and(|v| v.eq_ignore_ascii_case("wgpu"));
+    if !force_wgpu {
+        match run_with(eframe::Renderer::Glow) {
+            Err(e @ (eframe::Error::OpenGL(_) | eframe::Error::Glutin(_) | eframe::Error::NoGlutinConfigs(..))) => {
+                eprintln!("OpenGL failed ({e}); trying DirectX / Vulkan");
+            }
+            r => return r,
+        }
+    }
+    run_with(eframe::Renderer::Wgpu)
+}
+
+fn run_with(renderer: eframe::Renderer) -> eframe::Result<()> {
+    look::using_wgpu(renderer == eframe::Renderer::Wgpu);
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 700.0]).with_resizable(false)
             .with_maximize_button(false).with_title("RampageRE Launcher"),
+        renderer,
         ..Default::default()
     };
     eframe::run_native("RampageRE Launcher", opts, Box::new(|cc| Ok(Box::new(App::new(cc)))))

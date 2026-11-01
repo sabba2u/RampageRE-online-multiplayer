@@ -5,6 +5,12 @@ pub const BACKGROUND: &[u8] = include_bytes!("../../assets/background.jpg");
 pub const LOGO: &[u8] = include_bytes!("../../assets/logo.png");
 /// the tint multiplies in gamma space: 30 of 255 shows about as dark as the games page's brightness(.22)
 const DIM: u8 = 30;
+/// the DirectX / Vulkan fallback blends the tint brighter: this matches DIM under OpenGL
+const DIM_WGPU: u8 = 21;
+static WGPU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The window is drawn with the DirectX / Vulkan fallback (the background dims to match).
+pub fn using_wgpu(on: bool) { WGPU.store(on, std::sync::atomic::Ordering::Relaxed); }
 pub const YELLOW: Color32 = Color32::from_rgb(255, 194, 26);
 pub const GREEN: Color32 = Color32::from_rgb(110, 214, 110);
 pub const RED: Color32 = Color32::from_rgb(240, 90, 70);
@@ -20,7 +26,8 @@ pub fn background(ui: &mut egui::Ui) {
         Vec2::new(full.height() * aspect, full.height())
     };
     let rect = Rect::from_center_size(full.center(), size);
-    egui::Image::from_bytes("bytes://background.jpg", BACKGROUND).tint(Color32::from_gray(DIM)).paint_at(ui, rect);
+    let dim = if WGPU.load(std::sync::atomic::Ordering::Relaxed) { DIM_WGPU } else { DIM };
+    egui::Image::from_bytes("bytes://background.jpg", BACKGROUND).tint(Color32::from_gray(dim)).paint_at(ui, rect);
 }
 
 pub fn logo(ui: &mut egui::Ui, width: f32) {
