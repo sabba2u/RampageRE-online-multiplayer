@@ -49,6 +49,8 @@ pub struct App {
     /// the Settings window showing
     pub settings_open: bool,
     pub join_box: join_box::JoinBox,
+    /// this PC's address on its network, looked up once (Host Local's hint)
+    lan_ip: Option<String>,
 }
 
 #[derive(Clone)]
@@ -70,16 +72,21 @@ impl App {
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
-                            join_box: join_box::JoinBox::default() };
+                            join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip() };
         app.refresh_links();
         app
     }
 
     pub fn say(&mut self, text: &str, problem: bool) { self.note = Some((text.to_string(), problem)); }
 
+    /// The top button: 2 players host (online play is 2: the host and one friend), 1 or 3 and 4 play on this PC.
     fn play(&mut self) {
+        let hosting = self.settings.local_players() == 2;
+        // on this PC: the game's number of players screen with all of 1 to 4 (computer players fill the others)
+        let start = if hosting { Start::HostLan } else { Start::Offline { four_players: true } };
         match &self.game {
-            Ok(g) => match game::start(g, &Start::Offline { four_players: self.settings.four_players() }) {
+            Ok(g) => match game::start(g, &start) {
+                Ok(_) if hosting => self.say("Starting RampageRE, hosting: friends join this PC's address.", false),
                 Ok(_) => self.say("Starting RampageRE...", false),
                 Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
             },
@@ -164,7 +171,13 @@ impl App {
         if pick != now {
             self.settings = Settings::update(|s| s.local_players = pick);
         }
-        ui.label(RichText::new("You can still host from the game later: press INSERT.").strong().color(look::YELLOW));
+        let hint = if self.settings.local_players() == 2 {
+            let lan = self.lan_ip.as_ref().map_or(String::new(), |ip| format!(", same Wi-Fi: {ip}"));
+            format!("Friends join your address: this PC: 127.0.0.1{lan}. From the internet: your public IP.")
+        } else {
+            "On this PC: the game's players screen gives you 1 to 4, with computer players.".to_string()
+        };
+        ui.label(RichText::new(hint).strong().color(look::YELLOW));
     }
 
     fn main_screen(&mut self, ui: &mut egui::Ui) {
@@ -185,7 +198,11 @@ impl App {
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
                     look::section(ui, "Host a game (LAN)");
-                    let play = if self.settings.local_players() == 1 { "Play Alone Locally" } else { "Play Local (LAN)" };
+                    let play = match self.settings.local_players() {
+                        1 => "Play Alone Locally",
+                        2 => "Host Local (LAN)",
+                        _ => "Play Local",
+                    };
                     if look::big(ui, play, ready).clicked() {
                         self.play();
                     }

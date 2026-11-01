@@ -128,3 +128,8 @@ fn unlock_all_on_by_default_and_passed() {
     assert_eq!(&a[a.len() - 2..], ["--cheat", "141421"]);
     assert!(!start_args(&Start::Offline { four_players: false }, false).contains(&"--cheat".to_string()));
 }
+
+#[test]
+fn host_local_hosts_without_a_server() {
+    assert_eq!(args(&Start::HostLan), vec!["--shell", "--no-four-players", "--host"]);
+}

@@ -34,6 +34,9 @@ pub enum Start {
     Offline { four_players: bool },
     /// hosting, listed in this lobby
     Host { lobby: String },
+    /// Host Local (LAN): hosting with no server (friends join this PC's address: 127.0.0.1, its LAN one, or its
+    /// public one when the router lets the game's port in)
+    HostLan,
     SteamHost,
     /// a code (through `lobby`) or an address
     Join { target: String, lobby: Option<String> },
@@ -49,6 +52,7 @@ pub fn args(s: &Start) -> Vec<String> {
         // menus (a third or fourth monster isn't kept in step on the guest's screen)
         Start::SteamWait => vec!["--no-four-players"],
         Start::Host { lobby } => vec!["--no-four-players", "--host", "--lobby", lobby],
+        Start::HostLan => vec!["--no-four-players", "--host"],
         Start::SteamHost => vec!["--no-four-players", "--steam-host"],
         Start::Join { target, lobby: Some(l) } => vec!["--no-four-players", "--lobby", l, "--join", target],
         Start::Join { target, lobby: None } => vec!["--no-four-players", "--join", target],
