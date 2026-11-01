@@ -128,8 +128,18 @@ impl App {
         self.say("Starting your game and server...", false);
     }
 
+    /// Stop hosting (the button): the hosting game closed too (as its X would, on a thread: it may take a moment to
+    /// save), then the room server stopped and the router's forward removed.
+    pub fn stop_hosting_and_game(&mut self) {
+        if let Some(mut c) = self.host.game.take() {
+            std::thread::spawn(move || crate::game::close_gently(&mut c, std::time::Duration::from_secs(4)));
+        }
+        self.stop_hosting();
+        self.say("Stopped hosting: your game is closing.", false);
+    }
+
     /// Stops the lobby and removes the router's forward, on a thread (the router can take seconds). The game itself
-    /// keeps running.
+    /// keeps running (the game closed by itself, or the launcher closing).
     pub fn stop_hosting(&mut self) {
         self.host.cancelled.store(true, Ordering::Relaxed);
         if let Some(l) = self.host.lobby.take() {
@@ -192,8 +202,8 @@ impl App {
         let Some(code) = self.host.code.clone() else {
             ui.label(RichText::new("Starting your game and server...").size(16.0));
             ui.spinner();
-            if ui.button("Stop hosting").clicked() {
-                self.stop_hosting();
+            if ui.button("Stop hosting").on_hover_text("Closes your game too").clicked() {
+                self.stop_hosting_and_game();
             }
             return;
         };
@@ -230,8 +240,8 @@ impl App {
         ui.separator();
         self.players_box(ui);
         ui.separator();
-        if ui.button("Stop hosting").clicked() {
-            self.stop_hosting();
+        if ui.button("Stop hosting").on_hover_text("Closes your game too").clicked() {
+            self.stop_hosting_and_game();
         }
     }
 

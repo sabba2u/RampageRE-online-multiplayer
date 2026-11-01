@@ -94,3 +94,35 @@ pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
     }
     c.spawn()
 }
+
+/// Closes a game the way its window's X would (WM_CLOSE to each of its windows: it saves and quits as it does then),
+/// and by force when it is still running after `wait` (no window, or stuck).
+pub fn close_gently(child: &mut Child, wait: std::time::Duration) {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{EnumWindows, GetWindowThreadProcessId, PostMessageW, WM_CLOSE};
+        unsafe extern "system" fn each(h: HWND, pid: LPARAM) -> BOOL {
+            let mut p = 0u32;
+            unsafe {
+                GetWindowThreadProcessId(h, &mut p);
+                if p as LPARAM == pid {
+                    PostMessageW(h, WM_CLOSE, 0, 0);
+                }
+            }
+            1
+        }
+        unsafe {
+            EnumWindows(Some(each), child.id() as LPARAM);
+        }
+    }
+    let until = std::time::Instant::now() + wait;
+    while std::time::Instant::now() < until {
+        if !matches!(child.try_wait(), Ok(None)) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}

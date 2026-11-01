@@ -58,3 +58,14 @@ fn end_game_closes_it() {
     let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
     assert!(!String::from_utf8_lossy(&out.stdout).contains(&pid), "the hosting game must be gone");
 }
+
+#[test]
+fn close_gently_ends_it_even_without_a_window() {
+    let mut child = hidden("ping", &["-n", "30", "127.0.0.1"]);
+    let pid = child.id().to_string();
+    let t = std::time::Instant::now();
+    crate::game::close_gently(&mut child, std::time::Duration::from_millis(600));
+    assert!(t.elapsed() < std::time::Duration::from_secs(5));
+    let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(&pid), "closed, by force after the wait");
+}
