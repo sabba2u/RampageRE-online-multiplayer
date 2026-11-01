@@ -53,7 +53,9 @@ pub fn args(s: &Start) -> Vec<String> {
         Start::Join { target, lobby: Some(l) } => vec!["--no-four-players", "--lobby", l, "--join", target],
         Start::Join { target, lobby: None } => vec!["--no-four-players", "--join", target],
     };
-    v.into_iter().map(String::from).collect()
+    // --shell first, always: the player build opens its menus only when started with no flags at all; with any
+    // (these) it opened a free camera over Chicago, no menu and no monster
+    std::iter::once("--shell").chain(v).map(String::from).collect()
 }
 
 pub const OLD_GAME: &str = "This RampageRE.exe is an older version without online play. Get the online release \
