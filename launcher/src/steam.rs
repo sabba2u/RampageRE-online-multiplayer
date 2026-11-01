@@ -22,12 +22,17 @@ pub fn problem_text(p: &SteamProblem) -> &'static str {
     }
 }
 
+/// Steam's DLL beside the game (it comes in the release); steam_appid.txt ("480", Spacewar's app id) made when it
+/// isn't there (a folder built or copied by hand has none), an existing one left as it is.
 pub fn check_files(game_dir: &Path) -> Result<(), SteamProblem> {
-    if game_dir.join("steam_api64.dll").is_file() && game_dir.join("steam_appid.txt").is_file() {
-        Ok(())
-    } else {
-        Err(SteamProblem::FilesMissing)
+    if !game_dir.join("steam_api64.dll").is_file() {
+        return Err(SteamProblem::FilesMissing);
     }
+    let appid = game_dir.join("steam_appid.txt");
+    if !appid.is_file() && std::fs::write(&appid, "480\n").is_err() {
+        return Err(SteamProblem::FilesMissing);
+    }
+    Ok(())
 }
 
 /// Running, files, Spacewar: the first problem found.
