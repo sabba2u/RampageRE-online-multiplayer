@@ -16,6 +16,9 @@ pub struct Settings {
     pub banned: Vec<Banned>,
     /// Play Local's "Players" choice, 1 to 4 (0: never chosen, 2)
     pub local_players: u8,
+    /// every monster (and city) unlocked: the game's own cheat 141421, passed at each start; not saved in the game's
+    /// profile, so unticked they are as the profile has them again
+    pub unlock_all: bool,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]

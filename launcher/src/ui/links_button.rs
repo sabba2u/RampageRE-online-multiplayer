@@ -62,8 +62,8 @@ impl App {
                 ui.add_space(6.0);
                 ui.label(RichText::new(FIRST_RUN_ONCE).size(14.0).color(Color32::from_rgb(235, 215, 170)));
                 ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    if ui.button(RichText::new("Set up").size(18.0).strong()).clicked() {
+                ui.vertical_centered(|ui| {
+                    if look::half(ui, "REGISTER RAMPAGE:// LINKS", true).clicked() {
                         self.set_up_links();
                         self.first_run_done();
                     }
@@ -164,6 +164,12 @@ impl App {
                 }
                 ui.separator();
                 look::section(ui, "Game");
+                let mut unlock = self.settings.unlock_all;
+                if ui.checkbox(&mut unlock, RichText::new("Unlock all monsters").strong())
+                    .on_hover_text("Every monster (the Wii's 40 too) and every city, each time the game starts. Untick it and they're as your profile has them again.").changed()
+                {
+                    self.settings = Settings::update(|s| s.unlock_all = unlock);
+                }
                 match &self.game {
                     Ok(g) => {
                         ui.label(RichText::new(g.display().to_string()).monospace().small());

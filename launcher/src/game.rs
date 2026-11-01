@@ -58,6 +58,9 @@ pub fn args(s: &Start) -> Vec<String> {
     std::iter::once("--shell").chain(v).map(String::from).collect()
 }
 
+/// Settings' "Unlock all monsters": the game's cheat for every monster and city (MainMenu.activateCheat 141421)
+pub const UNLOCK_ALL: [&str; 2] = ["--cheat", "141421"];
+
 pub const OLD_GAME: &str = "This RampageRE.exe is an older version without online play. Get the online release \
 (RampageRE.exe with the launcher) and put it in this folder. Play Local still works.";
 
@@ -73,6 +76,9 @@ pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
     }
     let mut c = Command::new(exe);
     c.args(args(s));
+    if crate::settings::Settings::load().unlock_all {
+        c.args(UNLOCK_ALL);
+    }
     if let Some(dir) = exe.parent() {
         c.current_dir(dir);
     }

@@ -87,6 +87,18 @@ impl App {
         }
     }
 
+    /// Play Local (LAN): the game joining a game hosted on this PC, as the Insert panel's Join on 127.0.0.1.
+    fn join_this_pc(&mut self) {
+        let start = Start::Join { target: "127.0.0.1".into(), lobby: None };
+        match &self.game {
+            Ok(g) => match game::start(g, &start) {
+                Ok(_) => self.say("Starting RampageRE: joining the game on this PC...", false),
+                Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
+            },
+            Err(e) => self.say(&e.clone(), true),
+        }
+    }
+
     fn join(&mut self) {
         self.settings = Settings::load();
         let r = join::typed(&self.code).and_then(|link| join::plan_join(&link, &self.settings, &self.game));
@@ -177,6 +189,12 @@ impl App {
                         self.play();
                     }
                     self.players_choice(ui);
+                    if look::big(ui, "Play Local (LAN)", ready)
+                        .on_hover_text("Joins a game hosted on this PC (127.0.0.1), as the game's Insert panel's Join does")
+                        .clicked()
+                    {
+                        self.join_this_pc();
+                    }
                     ui.separator();
                     look::section(ui, "Host a game");
                     if look::big(ui, "With my own server", ready).clicked() {
@@ -185,20 +203,18 @@ impl App {
                     ui.separator();
                     ui.horizontal(|ui| {
                         // the heading centered over the row, the "?" at its end
-                        ui.add_space((ui.available_width() - 120.0).max(0.0) / 2.0);
-                        ui.label(RichText::new("STEAM").size(15.0).strong().color(look::YELLOW));
+                        ui.add_space((ui.available_width() - 170.0).max(0.0) / 2.0);
+                        ui.label(RichText::new("HOST ON STEAM").size(15.0).strong().color(look::YELLOW));
                         if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
                             self.card = Some(Card::Spacewar(None));
                         }
                     });
-                    ui.columns(2, |c| {
-                        if look::half(&mut c[0], "Host on Steam", ready).clicked() {
-                            self.steam_host();
-                        }
-                        if look::half(&mut c[1], "Join on Steam", ready).clicked() {
-                            self.steam_join();
-                        }
-                    });
+                    if look::big(ui, "Host on Steam", ready).clicked() {
+                        self.steam_host();
+                    }
+                    if look::big(ui, "Join on Steam", ready).clicked() {
+                        self.steam_join();
+                    }
                     self.steam_problem_line(ui);
                     ui.separator();
                     self.join_room_box(ui);
@@ -283,7 +299,7 @@ pub fn run() -> eframe::Result<()> {
 fn run_with(renderer: eframe::Renderer) -> eframe::Result<()> {
     look::using_wgpu(renderer == eframe::Renderer::Wgpu);
     let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 770.0]).with_resizable(false)
+        viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 900.0]).with_resizable(false)
             .with_maximize_button(false).with_title("RampageRE Launcher"),
         renderer,
         ..Default::default()
