@@ -42,9 +42,14 @@ Ideas the owner wants, not started. Newest at the bottom.
   name, and the block's objective is to defeat it (all of them). Decided: any monster of the roster can be a boss,
   even one a player is playing (the same model twice); a boss has a glowing red outline around it so it is told from
   the players' monsters (render_gl.c draw_grey already draws an outline, red, around an online seat nobody plays:
-  the same back-face line pass, with a soft glow around it). The owner liked all the open points below as
+  the same back-face line pass, with a soft glow around it). Decided 2026-11-02: the boss keeps red (steady, glowing:
+  danger), the empty online seat's outline turns grey (it is darkened already: out of the game, not a threat). The owner liked all the open points below as
   suggestions. Things to settle: bigger and tougher (more HP, a scale-up), how it fights (the bots' AI with its target the
   nearest player instead of DestroyBuildings, director.c), what happens when the players lose (all defeated: Game
   Over or the block again), where its bars go with the players' HUD (the challenge's boss bar, ChallengeBoss2.ifc,
   is one already: a second for the Wii's Dallas), online (the host runs the bosses like bots, their HP in the
   snapshot), and whether it is its own mode in the menus / launcher or a block option.
+- **Your own outline** (asked 2026-11-02, not started): a setting (launcher and in-game options) that draws an outline
+  around your own monster, only on your screen, so you find yourself among up to 7 others. The outline in your
+  player's colour (the HUD panel's), thin and steady, no glow, so it is not taken for a boss (red, glowing) or an
+  empty seat (grey). Offline split play on one screen: each local player's in their own colour; online: only yours.
