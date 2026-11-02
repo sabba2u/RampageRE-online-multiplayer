@@ -173,6 +173,7 @@ impl App {
                 // the time of day and smoother edges, passed at each start (the game's own settings when left alone)
                 let mut tod = self.settings.time_of_day.clone();
                 let mut smooth = self.settings.smoothing.clone();
+                let mut weather = self.settings.weather.clone();
                 ui.horizontal(|ui| {
                     ui.label("Time of day:");
                     egui::ComboBox::from_id_salt("tod").selected_text(match tod.as_str() {
@@ -181,6 +182,16 @@ impl App {
                             ui.selectable_value(&mut tod, "game".to_string(), "As the game picks");
                             ui.selectable_value(&mut tod, "day".to_string(), "Always day");
                             ui.selectable_value(&mut tod, "night".to_string(), "Always night");
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Weather:");
+                    egui::ComboBox::from_id_salt("weather").selected_text(match weather.as_str() {
+                        "rain" => "Rain", "storm" => "Storm (rain, lightning, thunder)", _ => "Clear" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut weather, "clear".to_string(), "Clear");
+                            ui.selectable_value(&mut weather, "rain".to_string(), "Rain");
+                            ui.selectable_value(&mut weather, "storm".to_string(), "Storm (rain, lightning, thunder)");
                         });
                 });
                 ui.horizontal(|ui| {
@@ -193,10 +204,11 @@ impl App {
                             ui.selectable_value(&mut smooth, "high".to_string(), "High");
                         });
                 });
-                if tod != self.settings.time_of_day || smooth != self.settings.smoothing {
+                if tod != self.settings.time_of_day || smooth != self.settings.smoothing || weather != self.settings.weather {
                     self.settings = Settings::update(|s| {
                         s.time_of_day = tod.clone();
                         s.smoothing = smooth.clone();
+                        s.weather = weather.clone();
                     });
                 }
                 match &self.game {

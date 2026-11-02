@@ -54,6 +54,7 @@
 #include "settings.h"
 #include "wrand.h"
 #include "autoplay.h"
+#include "weather.h"                             /* port extra: rain, lightning, thunder */
 #include "net.h"                                 /* NET: online play (net.h, netgame.c) */
 #include "netlobby.h"                            /* NET: the game list (--lobby) */
 #include "lookfx.h"                              /* port extra: depth of field, tilt-shift, the camera */
@@ -8928,6 +8929,7 @@ static int viewer_main(int argc, char **argv)
     v.profile_autoload = gfx.profile_autoload;
     v.four_players = gfx.four_players;
     v.time_of_day = gfx.time_of_day;
+    weather_set(gfx.weather);                        /* port extra: rain, a storm (weather.c) */
     int prof_read = !newprofile && v.prof_write ? profile_read(&v.prof, v.prof_path) : -1;
     if (prof_read > 0) {
         printf("profile %s\n", v.prof_path);
@@ -9355,6 +9357,14 @@ static int viewer_main(int argc, char **argv)
                 }
             netgame_pads(&v, &w);                    /* NET: player 2's pad over the network */
             play_step(&v, shot && !v.ap ? 0 : (dt > 0.1f ? 0.1f : dt), aspect);
+            {                                        /* port extra: the rain, a strike now and then (weather.c) */
+                float wx;
+                unsigned wseed;
+                int playing = v.play && !v.shell && v.game && !v.attract;
+                weather_visible(playing);
+                if (playing && weather_update(net_world_paused ? 0 : (dt > 0.1f ? 0.1f : dt), &wx, &wseed))
+                    netgame_weather_strike(wx, wseed);
+            }
             netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */
             pose_monsters(&v, shot && !v.ap ? shot_time : world_t);   /* the clips at the states' times (clip_at),
                                                       * against the clock the scene poses by (scene_update's t) */

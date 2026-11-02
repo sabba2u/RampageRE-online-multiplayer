@@ -153,5 +153,10 @@ fn game_options_passed() {
     s.smoothing = "bogus".into();
     assert!(game_options(&s).is_empty());
     let old: Settings = serde_json::from_str(r#"{"unlock_all": true}"#).unwrap();
-    assert_eq!((old.time_of_day.as_str(), old.smoothing.as_str()), ("game", "off"));
+    assert_eq!((old.time_of_day.as_str(), old.smoothing.as_str(), old.weather.as_str()), ("game", "off", "clear"));
+    let mut w = Settings::default();
+    w.weather = "storm".into();
+    assert_eq!(game_options(&w), vec!["--weather", "storm"]);
+    w.weather = "rain".into();
+    assert_eq!(game_options(&w), vec!["--weather", "rain"]);
 }

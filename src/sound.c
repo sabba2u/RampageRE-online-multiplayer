@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "plat.h"
+#include "weather.h"
 #include "sound.h"
 
 #define PI 3.14159265f
@@ -1113,6 +1114,7 @@ static void mix_block(float *out, int frames)
                 m->at++;
         }
     }
+    weather_mix(out, frames);                        /* port extra: the thunder (weather.c) */
     if (S.pull) {                        /* a movie's sound */
         static int16_t st[2 * 1024];
         S.pull(S.pull_ctx, st, frames);

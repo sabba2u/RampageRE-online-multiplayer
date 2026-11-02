@@ -91,6 +91,11 @@ pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
         "night" => a.extend(["--time-of-day", "night"]),
         _ => {}
     }
+    match s.weather.as_str() {
+        "rain" => a.extend(["--weather", "rain"]),
+        "storm" => a.extend(["--weather", "storm"]),
+        _ => {}
+    }
     match s.smoothing.as_str() {
         "medium" => a.extend(["--smaa", "medium"]),
         "high" => a.extend(["--smaa", "high", "--msaa", "4"]),

@@ -86,6 +86,7 @@ static void ng_pad_in(const NetPad *n, Pad *p, int with_pressed)
 /* ---- the world: what the guest needs to load the host's (NET_WORLD_INFO bytes at most) */
 typedef struct {
     uint8_t city, block, play_type, nmon, bots, night;
+    uint8_t weather;                                 /* the host's (weather.c): every guest's too */
     int16_t monster[MONSTERS];
     uint32_t seed[2], bot_seed;
 } NgWorld;
@@ -111,6 +112,7 @@ static int ng_world_of(const Viewer *v, NgWorld *w)
     w->nmon = (uint8_t)v->nmon;
     w->bots = (uint8_t)v->num_bots;
     w->night = (uint8_t)v->night;
+    w->weather = (uint8_t)weather_get();
     for (int k = 0; k < MONSTERS; k++)
         w->monster[k] = (int16_t)(k < v->nmon ? v->mon[k].monster : -1);
     w->seed[0] = v->prof.current.seed[0];
@@ -127,6 +129,7 @@ static uint32_t ng_world_id(const NgWorld *w)
     k.bot_seed = 0;
     k.nmon = 0;
     k.bots = 0;                                      /* (a guest taking a computer player's seat: the same world) */
+    k.weather = 0;                                   /* (the rain coming or going: the same world) */
     memset(k.monster, 0, sizeof k.monster);
     uint32_t h = net_hash(&k, (int)sizeof k, 2166136261u);
     return h ? h : 1;
@@ -185,6 +188,8 @@ static void ng_follow(Viewer *v)
     const NgWorld *w = (const NgWorld *)net_host_world_info(&len);
     if (!w || len != (int)sizeof *w)
         return;
+    weather_set(w->weather);                         /* the host's weather; its strikes come from it (NM_WEATHER) */
+    weather_local(0);
     if (net_host_world() == ng_followed) {           /* the same world: a player who joined mid-block, added here too */
         while (v->play && v->game && !game_ni_on(v->game) && v->nmon < w->nmon && v->nmon < MONSTERS) {
             int m = w->monster[v->nmon];
@@ -795,6 +800,12 @@ static void ng_handler(const uint8_t *data, int len)
         ng_on_flow(&b);
     else if (type == NM_CHAT && net_state() == NETS_CONNECTED)
         ng_on_chat(g_ngv, &b);
+    else if (type == NM_WEATHER && net_role() == NET_GUEST && net_live()) {
+        float x = net_r_f32(&b);
+        unsigned seed = net_r_u32(&b);
+        if (!b.err)
+            weather_strike(x, seed);
+    }
     else if (type == NM_MENU)
         ngr_menu_message(g_ngv, &b);
     else if (type == NM_STATE && (net_role() == NET_HOST || net_live()))
@@ -2146,6 +2157,20 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     }
     if (!hidden && netui_init(hwnd) != 0)
         printf("net: the panel (Dear ImGui) did not start\n");
+}
+
+/* main.c: a strike this copy picked (offline, or the host): the guests see it too */
+static void netgame_weather_strike(float x, unsigned seed)
+{
+    if (net_role() != NET_HOST || !net_live())
+        return;
+    uint8_t m[16];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_WEATHER);
+    net_w_f32(&b, x);
+    net_w_u32(&b, seed);
+    if (!b.err)
+        net_send_msg(1, m, b.len);
 }
 
 /* the friends list's line (Steam rich presence, while Steam runs here): "RampageRE · Hosting · 2/4 · Chicago 1",
