@@ -366,9 +366,13 @@ pub fn run() -> eframe::Result<()> {
 
 fn run_with(renderer: eframe::Renderer) -> eframe::Result<()> {
     look::using_wgpu(renderer == eframe::Renderer::Wgpu);
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([900.0, 900.0]).with_resizable(false)
+        .with_maximize_button(false).with_title("RampageRE Launcher");
+    if let Some(icon) = look::icon() {
+        viewport = viewport.with_icon(icon);
+    }
     let opts = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 900.0]).with_resizable(false)
-            .with_maximize_button(false).with_title("RampageRE Launcher"),
+        viewport,
         renderer,
         ..Default::default()
     };

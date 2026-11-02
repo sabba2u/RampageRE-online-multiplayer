@@ -1,0 +1,2 @@
+// the launcher exe's icon (build.rs compiles this with the Windows SDK's rc.exe): the owner's Boss Rumble art
+1 ICON "icon.ico"

@@ -3,6 +3,14 @@ use eframe::egui::{self, Color32, Rect, RichText, Vec2};
 
 pub const BACKGROUND: &[u8] = include_bytes!("../../assets/background.jpg");
 pub const LOGO: &[u8] = include_bytes!("../../assets/logo.png");
+/// the window's and the taskbar's icon (the owner's Boss Rumble art, images/bossrush.png; build.rs puts assets/icon.ico
+/// on the exe)
+pub const ICON: &[u8] = include_bytes!("../../assets/icon.png");
+
+pub fn icon() -> Option<egui::IconData> {
+    let img = image::load_from_memory(ICON).ok()?.into_rgba8();
+    Some(egui::IconData { width: img.width(), height: img.height(), rgba: img.into_raw() })
+}
 /// the tint multiplies in gamma space: 30 of 255 shows about as dark as the games page's brightness(.22)
 const DIM: u8 = 30;
 /// the DirectX / Vulkan fallback blends the tint brighter: this matches DIM under OpenGL
