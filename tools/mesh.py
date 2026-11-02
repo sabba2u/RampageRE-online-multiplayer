@@ -210,19 +210,14 @@ def read_mesh(etype, data, data2, endian='<'):
 
 
 def triangles(section):
-    """Triangle list from the strip flags, winding alternating within a strip."""
+    """Triangle list from the strip flags, wound as the game winds them (src/mesh.c): by the vertex's place in the
+    section, an odd one turning it, so they face their normals (counter-clockwise, as glTF wants)."""
     if section.tris is not None:
         return section.tris
     out = []
-    run = 0
     for i, closes in enumerate(section.closes):
-        if not closes:
-            run = 0
-            continue
-        run += 1
-        if i >= 2:
-            a, b, c = i - 2, i - 1, i
-            out.append((a, b, c) if run % 2 else (b, a, c))
+        if closes and i >= 2:
+            out.append((i - 1, i - 2, i) if i & 1 else (i - 2, i - 1, i))
     return out
 
 

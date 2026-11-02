@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include "plat.h"
 #include "city.h"
+#include "modmodel.h"
 #include "ik.h"
 #include "look.h"
 #include "rail.h"
@@ -4057,6 +4058,8 @@ int city_monster(City *c, Scene *s, const char *monster, int clip_index, float x
         Mesh m;
         if (mesh_read(e, &m) != 0)
             continue;
+        if (e->type == ET_SKINNED)                   /* port extra: mods/models/<Monster>.gltf (modmodel.c) */
+            modmodel_mesh(monster, bdp_name(mb, e->name), mb, &in->tree, &m);
         Skin *sk = new_skin(&m);
         uint32_t v = 0;
         for (uint32_t pi = 0; pi < m.nparts; pi++) {
