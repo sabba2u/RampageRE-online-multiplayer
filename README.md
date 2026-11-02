@@ -182,9 +182,9 @@ This is early. Expect issues.
 - **Up to 8 players** (the host and seven guests). Eight players have been through the menus into a game on one PC
   (`tools
 et8_menu_test.ps1`), never yet on eight PCs. Host on Steam takes 8 as well (not yet tried with real Steam
-  accounts). The host sends each guest only what changed since the last update it confirmed, compressed: about
-  35 KB/s a guest (three guests about 104 KB/s, seven about 250 KB/s, 2 Mbit/s of upload), the same on a LAN or over
-  the internet.
+  accounts). The host sends each guest only what changed since the last update it confirmed, compressed: three
+  guests about 95 KB/s; eight players in a busy city (Las Vegas) about 300 KB/s, 2.4 Mbit/s of upload (it was about
+  11). The same on a LAN or over the internet.
 - **Tested only on one PC**, up to four copies talking over localhost, including with simulated lag and packet loss.
   It has **not** been played between two real PCs over the internet yet.
 - **Steam has not been tested.** The code is there (Host on Steam, Invite a friend, Join Game from the friends list,

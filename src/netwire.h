@@ -43,8 +43,9 @@ enum NetMsg {
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
  * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS. 4: 8 monster slots in every build (Boss Rumble's
  * bosses after the players). 5: 8 players in every build (the front end's 8 cards). 6: NM_PUPPET as a delta
- * (seq, base) against the guest's acknowledged copy (NM_PACK) */
-#define NET_PROTO 6
+ * (seq, base) against the guest's acknowledged copy (NM_PACK). 7: the delta as copies out of the base (records cut,
+ * put in or moved cost a few bytes) */
+#define NET_PROTO 7
 #define NET_PORT 27960
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
@@ -101,12 +102,13 @@ float net_r_f32(NetBuf *b);
 double net_r_f64(NetBuf *b);
 void net_r_bytes(NetBuf *b, void *p, int n);
 
-/* the puppets' delta (netgame.c ng_puppets_send): cur against base, a copy the receiver has (NULL / 0: none), as their
- * bytes XOR'd (base read as zeros past its end) in runs: the length, then { unchanged bytes skipped, changed bytes
- * and those bytes } to the end, each count a LEB128 varint. A message much like its base (the street's objects
- * standing still, a crowd's names) costs a few bytes. Lossless: decode gives back cur exactly. Both return the length
- * written, -1 when out is too small or enc is not one (never reading or writing past either) */
+/* the puppets' delta (netgame.c ng_puppets_send; NET_PROTO 7): cur against base, a copy the receiver has (NULL / 0:
+ * none), as tokens of new bytes and copies out of base (LZ77 against the base: a copy's place as the distance from
+ * where the last one ended, so unchanged bytes cost a few and a record gone, one new or a block moved costs a few too).
+ * Lossless: decode gives back cur exactly. Both return the length written, -1 when out is too small or enc is not one
+ * (never reading or writing past either). A base past NET_DELTA_BASE_MAX is used up to there */
 #define NET_DELTA_MAX(n) ((n) + (n) / 64 + 16)       /* room enough for the encoding of n bytes */
+#define NET_DELTA_BASE_MAX 16384
 int net_delta_encode(const uint8_t *base, int blen, const uint8_t *cur, int clen, uint8_t *out, int cap);
 int net_delta_decode(const uint8_t *base, int blen, const uint8_t *enc, int elen, uint8_t *out, int cap);
 

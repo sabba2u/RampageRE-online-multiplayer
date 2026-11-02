@@ -473,6 +473,21 @@ static void test_delta(void)
     for (int i = 0; i < 3000; i++) b[i] = (uint8_t)(i * 31 + i / 7); /* all different: no worse than raw by much */
     CHECK(delta_round(a, 3000, b, 3000, &n));
     CHECK(n <= 3000 + 3000 / 64 + 16);
+    /* a record gone from the middle, one new in it, one moved: the rest found where it went (NET_PROTO 7) */
+    for (int i = 0; i < 3000; i++) a[i] = (uint8_t)(i * 13 + i / 5 + 1);
+    memcpy(b, a, 1000);
+    memcpy(b + 1000, a + 1030, 1970);                            /* 30 bytes cut at 1000 */
+    CHECK(delta_round(a, 3000, b, 2970, &n));
+    CHECK(n < 24);
+    memcpy(b, a, 1500);
+    for (int i = 0; i < 25; i++) b[1500 + i] = (uint8_t)(200 + i);  /* 25 new at 1500 */
+    memcpy(b + 1525, a + 1500, 1475);
+    CHECK(delta_round(a, 3000, b, 3000, &n));
+    CHECK(n < 48);
+    memcpy(b, a + 2000, 1000);                                   /* its halves swapped */
+    memcpy(b + 1000, a, 2000);
+    CHECK(delta_round(a, 3000, b, 3000, &n));
+    CHECK(n < 24);
     static uint8_t enc[64], out[64];                             /* garbage refused, never read or written past */
     for (int i = 0; i < 64; i++) enc[i] = (uint8_t)(i * 37 + 11);
     CHECK(net_delta_decode(a, 10, enc, 64, out, 16) < 0 || 1);

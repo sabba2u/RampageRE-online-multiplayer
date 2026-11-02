@@ -70,15 +70,18 @@ typedef struct {
 
 static NgrSnap ngr_a, ngr_b;
 
-/* a table of names: its index for s, added when new; -1 when full */
-static int ngr_name(const char **tab, int *n, const char *s)
+/* a table of names (copies), rows of `row` bytes (NGR_NAMES of them): s cut to fit, as the guest reads it: its index for s, added when new; -1
+ * when full */
+static int ngr_kept_name(char *tab, size_t row, int *n, const char *s)
 {
+    char cut[96];
+    snprintf(cut, sizeof cut < row ? sizeof cut : row, "%s", s ? s : "");
     for (int i = 0; i < *n; i++)
-        if (!strcmp(tab[i], s))
+        if (!strcmp(tab + row * (size_t)i, cut))
             return i;
     if (*n >= NGR_NAMES)
         return -1;
-    tab[*n] = s;
+    snprintf(tab + row * (size_t)*n, row, "%s", cut);
     return (*n)++;
 }
 
@@ -121,15 +124,24 @@ static int ngr_people_write(Viewer *v, NetBuf *b)
     People *P = v->scene.folk;
     if (!P)
         return 0;
-    const char *tn[NGR_NAMES], *an[NGR_NAMES];
-    int nt = 0, na = 0, n = people_count(P);
+    /* the names: this block's, in the order first seen and kept so (NET_PROTO 7): a person gone or new leaves every
+     * other's numbers as they were, so the delta against the guest's copy finds them (the table is the same bytes) */
+    static char tn[NGR_NAMES][96], an[NGR_NAMES][32];   /* (copies: a person's anim is its own, which moves) */
+    static int nt, na, names_block = -1;
+    static const People *names_of;
+    int n = people_count(P);
+    if (names_block != v->block || names_of != P || nt >= NGR_NAMES || na >= NGR_NAMES) {
+        nt = na = 0;                                 /* (a new block, or full: from the start) */
+        names_block = v->block;
+        names_of = P;
+    }
     static int ti[NGR_PEOPLE], ai[NGR_PEOPLE], live[NGR_PEOPLE];
     int nl = 0;
     for (int who = 0; who < n && nl < NGR_PEOPLE; who++) {
         const Person *q = people_get(P, who);
         if (q->phase == PP_GONE || !q->tmpl.at || !q->name)
             continue;
-        int t = ngr_name(tn, &nt, q->name), a = ngr_name(an, &na, q->anim);
+        int t = ngr_kept_name(tn[0], sizeof tn[0], &nt, q->name), a = ngr_kept_name(an[0], sizeof an[0], &na, q->anim);
         if (t < 0 || a < 0)
             continue;
         ti[nl] = t;
@@ -169,7 +181,8 @@ static int ngr_people_write(Viewer *v, NetBuf *b)
         net_w_u8(b, (uint32_t)ai[i]);
         net_w_u8(b, (uint32_t)bits);
         net_w_u8(b, (uint32_t)(q->fx & 7));
-        net_w_f32(b, q->anim_time);
+        float fr = q->anim_len > 0 ? q->anim_time / q->anim_len : 0;   /* (NET_PROTO 7: the clip's share, 16 bits) */
+        net_w_u16(b, (uint32_t)lrintf((fr < 0 ? 0 : fr > 1 ? 1 : fr) * 65535.0f));
         net_w_f32(b, q->anim_len);
         for (int k = 0; k < 3; k++)
             net_w_f32(b, q->world[12 + k]);
@@ -255,8 +268,9 @@ static int ngr_read(const NetSnapSample *s, NgrSnap *o)
         e->ai = (int)net_r_u8(&b);
         e->bits = (int)net_r_u8(&b);
         e->fx = (int)net_r_u8(&b);
-        e->t = net_r_f32(&b);
+        float fr = (float)net_r_u16(&b) / 65535.0f;   /* (NET_PROTO 7: the clip's share) */
         e->len = net_r_f32(&b);
+        e->t = fr * e->len;
         for (int k = 0; k < 3; k++)
             e->pos[k] = net_r_f32(&b);
         for (int k = 0; k < 4; k++)

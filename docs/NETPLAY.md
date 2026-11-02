@@ -138,9 +138,12 @@ The host's upload grows with each guest: about 35 KB/s each since the deltas (be
 
 ## The upload: deltas and compression
 
-`NET_PROTO` 6. The host sends each guest the monsters' snapshot (NM_SNAP) and every puppet channel's (NM_PUPPET) as a
-delta against the newest copy that guest has said it holds: the bytes XOR'd with that copy and the unchanged runs
-skipped (netwire.c `net_delta_encode`; a guest with none gets the snapshot against nothing). The guest says which it
+`NET_PROTO` 7. The host sends each guest the monsters' snapshot (NM_SNAP) and every puppet channel's (NM_PUPPET) as a
+delta against the newest copy that guest has said it holds: new bytes and copies out of that copy (LZ77 against it,
+netwire.c `net_delta_encode`: a copy's place as the distance from where the last one ended, so the unchanged costs a
+few bytes, and a record cut out, one put in or a block moved costs a few too; a guest with none gets the snapshot as
+it is). The people's snapshot keeps the block's names in the order first seen (a person gone or new leaves every
+other's numbers alone) and a person's clip time as its share of the clip in 16 bits. The guest says which it
 holds in its NM_PAD's last u16 (the monsters') and NM_PACK (the channels', up to 30 a second); it keeps the last 64 it
 made, rebuilds each snapshot exactly and drops one whose base it has not (`RAMPAGE_NET_DELTA_LOG=1` counts them each
 second; none dropped in the tests). A new block or world, or a new guest in a seat, starts from full snapshots. ENet
@@ -149,8 +152,11 @@ host's log names each channel's share every 5 s (`net: channels KB/s: ...`).
 
 Measured with `tools
 et4_test.ps1 -Guests 3` (Chicago 1, four players, the host's upload in all): 615 KB/s before;
-272 with the channels' deltas; 248 with compression; 104 with the monsters' deltas too (about 35 KB/s a guest, so 8
-players about 250 KB/s, 2 Mbit/s). Every check the same (digests, monsters, tails, scores).
+272 with the channels' deltas; 248 with compression; 104 with the monsters' deltas too; about 95 with the copies
+(NET_PROTO 7). Eight players in Las Vegas (`tools
+et8_menu_test.ps1`, its crowds the most): the people's channel about
+200 KB/s with the XOR deltas, about 80 .. 110 with the copies and the people's packing; the host about 300 KB/s in all
+(2.4 Mbit/s), from about 1.4 MB/s. Every check the same (digests, monsters, tails, scores, floating).
 
 ### Fixed: guests' monsters floating (2026-11-02)
 

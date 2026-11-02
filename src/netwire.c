@@ -295,61 +295,106 @@ static int dv_get(const uint8_t *in, int len, int *at, uint32_t *v)
     }
     return -1;
 }
-static uint8_t dv_x(const uint8_t *base, int blen, const uint8_t *cur, int i)
+
+#define DV_HASH 4096                                 /* the base's 4-byte runs, by hash: where each was last seen */
+#define DV_MIN 4                                     /* a copy shorter than this is sent as it is */
+#define DV_CHAIN 24                                  /* places a run is looked for at, at most */
+static uint32_t dv_h(const uint8_t *p) { return ((uint32_t)p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24) * 2654435761u >> 20; }
+static int dv_len(const uint8_t *a, int an, const uint8_t *b, int bn)
 {
-    return (uint8_t)(cur[i] ^ (base && i < blen ? base[i] : 0));
+    int n = an < bn ? an : bn, k = 0;
+    while (k < n && a[k] == b[k])
+        k++;
+    return k;
+}
+/* a token: the literal bytes before it, then a copy of the base: { varint literals, the bytes, varint copy (>= 1),
+ * varint where in the base (zigzag, from where the last copy ended: 0 when nothing moved) }; the last token may stop
+ * after its literals. So a record cut out, one put in or a block moved costs a few bytes, not the rest of the snapshot */
+static int dv_token(uint8_t *out, int cap, int at, const uint8_t *lit, int nlit, int copy, int off)
+{
+    at = dv_put(out, cap, at, (uint32_t)nlit);
+    if (at < 0 || at + nlit > cap)
+        return -1;
+    memcpy(out + at, lit, (size_t)nlit);
+    at += nlit;
+    if (copy > 0) {
+        at = dv_put(out, cap, at, (uint32_t)copy);
+        if (at >= 0)
+            at = dv_put(out, cap, at, (uint32_t)off << 1 ^ (uint32_t)(off >> 31));
+    }
+    return at;
 }
 
 int net_delta_encode(const uint8_t *base, int blen, const uint8_t *cur, int clen, uint8_t *out, int cap)
 {
     if (clen < 0 || (clen && !cur) || !out)
         return -1;
-    int at = dv_put(out, cap, 0, (uint32_t)clen), i = 0;
-    while (at >= 0 && i < clen) {
-        int z = i;
-        while (z < clen && !dv_x(base, blen, cur, z))
-            z++;
-        int e = z;                                   /* the changed run, through gaps of under 3 unchanged bytes (a
-                                                      * skip costs 2) */
-        while (e < clen) {
-            if (dv_x(base, blen, cur, e)) {
-                e++;
-                continue;
-            }
-            int g = e;
-            while (g < clen && g - e < 3 && !dv_x(base, blen, cur, g))
-                g++;
-            if (g >= clen || g - e >= 3)
-                break;
-            e = g;
-        }
-        at = dv_put(out, cap, at, (uint32_t)(z - i));
-        if (at >= 0)
-            at = dv_put(out, cap, at, (uint32_t)(e - z));
-        if (at < 0 || at + (e - z) > cap)
-            return -1;
-        for (int k = z; k < e; k++)
-            out[at++] = dv_x(base, blen, cur, k);
-        i = e;
+    if (!base)
+        blen = 0;
+    static int head[DV_HASH], prev[NET_DELTA_BASE_MAX];
+    if (blen > NET_DELTA_BASE_MAX)
+        blen = NET_DELTA_BASE_MAX;
+    for (int h = 0; h < DV_HASH; h++)
+        head[h] = -1;
+    for (int j = 0; j + 4 <= blen; j++) {            /* (a chain from the latest: the nearest first after expect) */
+        uint32_t h = dv_h(base + j);
+        prev[j] = head[h];
+        head[h] = j;
     }
+    int at = dv_put(out, cap, 0, (uint32_t)clen), i = 0, lit = 0, expect = 0;
+    while (at >= 0 && i < clen) {
+        int best = 0, where = -1;
+        if (expect < blen) {                         /* where it would be if nothing moved */
+            best = dv_len(base + expect, blen - expect, cur + i, clen - i);
+            where = expect;
+        }
+        if (best < 32 && i + 4 <= clen && blen >= 4)
+            for (int j = head[dv_h(cur + i)], k = 0; j >= 0 && k < DV_CHAIN; j = prev[j], k++) {
+                int l = dv_len(base + j, blen - j, cur + i, clen - i);
+                if (l > best) {
+                    best = l;
+                    where = j;
+                }
+            }
+        if (best >= DV_MIN) {
+            at = dv_token(out, cap, at, cur + lit, i - lit, best, where - expect);
+            expect = where + best;
+            i += best;
+            lit = i;
+        } else
+            i++;
+    }
+    if (at >= 0 && (lit < clen || clen == 0))
+        at = dv_token(out, cap, at, cur + lit, clen - lit, 0, 0);
     return at;
 }
 
 int net_delta_decode(const uint8_t *base, int blen, const uint8_t *enc, int elen, uint8_t *out, int cap)
 {
-    uint32_t n, z, l;
+    uint32_t n, nl, nc, zz;
     int at = 0;
+    if (!base)
+        blen = 0;
     if (!enc || !out || dv_get(enc, elen, &at, &n) < 0 || n > (uint32_t)cap)
         return -1;
     uint32_t i = 0;
+    long expect = 0;
     while (i < n) {
-        if (dv_get(enc, elen, &at, &z) < 0 || dv_get(enc, elen, &at, &l) < 0 || z > n - i || l > n - i - z ||
-            (z == 0 && l == 0) || l > (uint32_t)(elen - at))
+        if (dv_get(enc, elen, &at, &nl) < 0 || nl > n - i || nl > (uint32_t)(elen - at))
             return -1;
-        for (uint32_t k = 0; k < z; k++, i++)
-            out[i] = base && (int)i < blen ? base[i] : 0;
-        for (uint32_t k = 0; k < l; k++, i++)
-            out[i] = (uint8_t)(enc[at++] ^ (base && (int)i < blen ? base[i] : 0));
+        memcpy(out + i, enc + at, nl);
+        at += (int)nl;
+        i += nl;
+        if (i >= n)
+            break;
+        if (dv_get(enc, elen, &at, &nc) < 0 || dv_get(enc, elen, &at, &zz) < 0 || nc == 0 || nc > n - i)
+            return -1;
+        long off = (long)(zz >> 1) ^ -(long)(zz & 1), from = expect + off;
+        if (from < 0 || from + (long)nc > blen)
+            return -1;
+        memcpy(out + i, base + from, nc);
+        i += nc;
+        expect = from + (long)nc;
     }
     return (int)n;
 }
