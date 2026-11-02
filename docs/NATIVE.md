@@ -87,7 +87,7 @@ other players on keys idle meanwhile; `--walk S` is `right S`). `--players N` (1
 `--bots B` of them the computer's; `--monster2 Name` .. `--monster4 Name` pick players 2 .. 4's monsters (without
 one: George, Lizzie, Ralph or Boosy, the first not taken). Controllers play too ("Input"): player 1 also on the
 first one, player 2 on the second, players 3 and 4 on the third and fourth; without one, players 3 and 4 and the bots
-are computer-driven (below, "Several monsters"); the front end (`--shell`) hands its players, bots and monsters over the same way. `--cam x y z yaw pitch` (degrees) draws the shot from a fixed view. `--play kingcity|kingworld|timed` plays another mode than the campaign
+are computer-driven (below, "Several monsters"); the front end (`--shell`) hands its players, bots and monsters over the same way. `--cam x y z yaw pitch` (degrees) draws the shot from a fixed view. `--play kingcity|kingworld|timed|rumble` plays another mode than the campaign (`rumble`: Boss Rumble, the port's own: 12 waves of bosses, docs/superpowers/specs/2026-11-02-boss-rumble-design.md; for tests `RAMPAGE_RUMBLE_START_WAVE=n`, `RAMPAGE_RUMBLE_BOSS_HP=f` (their health x f), `RAMPAGE_RUMBLE_SHOTS=1` (autoplay shots of its banners, power-ups and end), `RAMPAGE_RUMBLE_PICKUP_HERE=1`, `RAMPAGE_RUMBLE_BEST=file`)
 (its results screens). `--lang N` picks the texts' language (the .loc column: 0 English, 1 English 2, 2 Japanese,
 3 French, 4 German, 5 Italian, 6 Spanish, 7 Dutch, 8 Portuguese; without it `rampage.cfg`'s `language=`, the console's language as the game
 picks its column from it, `console_language` [R 0x10D300]: English 2 on the European disc, English on the USA one;

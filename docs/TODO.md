@@ -38,7 +38,13 @@ Ideas the owner wants, not started. Newest at the bottom.
   onto it, the thunder at once, React_Front_Zap (React_Side_L_Zap on a wall) and 15 HP, and for 1.2 s it flickers
   between its look and an electric-blue x-ray with its skeleton's bones white. Not yet: the same on the game's own
   shocks (an electric sign, Hazard_Shock, the blimp's barriers: Instance.xray set as their React_*_Zap starts).
-- **Boss mode** (asked 2026-11-02, not started): a mode where a monster (or up to 3) is spawned as a boss whose only
+- (done 2026-11-02: **Boss Rumble**, the fifth game type: docs/superpowers/specs/2026-11-02-boss-rumble-design.md, main.c
+  rumble_*, rumble.c) 12 waves (1,1,1 .. 4,4,4) of any monster as bosses, hunting the players, a red glowing outline, bars
+  with heads and names under the clock, the clock counting up, power-ups on the streets and roofs, the end line (time,
+  wave, best, rumble_best.txt), online (the host's waves in the world, its power-ups by NM_RUMBLE_PICKUP). Not done: the
+  owner's button art (the menu shows the words), new power-ups (double damage, shield, extra life), joining a run under
+  way, the launcher (no game type choice there). The ideas it came from:
+- **Boss mode** (asked 2026-11-02): a mode where a monster (or up to 3) is spawned as a boss whose only
   goal is to attack the players, not the buildings. Each boss gets a health bar at the top of the screen with its
   name, and the block's objective is to defeat it (all of them). Decided: any monster of the roster can be a boss,
   even one a player is playing (the same model twice); a boss has a glowing red outline around it so it is told from
