@@ -78,6 +78,8 @@ typedef struct {
                               * record's +0xC / +0x10 along its x / y axes, x its scale [R] */
     int team;                /* (port extra, Boss Rumble) 0 the players' side, 1 a boss: a hunter goes for the other */
     int out;                 /* (port extra) not to be hunted: down, beaten, hidden, an online seat nobody plays */
+    int spared;              /* (port extra, Boss Rumble) just knocked about by the bosses: they let it get up (a
+                              * hunter goes for another, or waits) */
 } DirMonster;
 typedef struct {
     /* the bot itself */
@@ -115,6 +117,8 @@ typedef struct {
     uint32_t seed;           /* (unused: rand01 is the world's one state, dir_ai_seed) */
     int hunter;              /* (port extra, Boss Rumble) no buildings: it goes for the nearest monster of the other
                               * side (bot_hunt), the bosses for the players and the players' bots for the bosses */
+    float rest, rest_len;    /* (port extra, Boss Rumble) a boss's breath after each attack: rest_len (0: none, the
+                              * players' bots) x 0.7 .. 1.3, counted down in rest */
     int st_front, st_side_l, st_side_r, st_respawn, st_punch_down;   /* +0x74 .. +0x84: the states it goes to */
 } DirBot;
 #define DIR_GOALS 8

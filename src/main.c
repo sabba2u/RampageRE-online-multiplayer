@@ -126,6 +126,9 @@ typedef struct Mon {
     float boss_factor;                               /* its health and hits x this (rumble_factor) */
     float boss_down;                                 /* seconds since its health ran out (beaten at RUMBLE_DOWN) */
     int boss_beaten;                                 /* out for good: hidden till its slot's next boss */
+    float spared;                                    /* (Boss Rumble) a player's seconds left untouchable by the bosses
+                                                      * after a knock down or a run of their hits (RUMBLE_SPARE*) */
+    int boss_hits; float boss_hits_t;                /* the bosses' hits on it in a row, seconds since the last */
     int drive;                                       /* DRIVE_*: whose pad */
     Pad pad;                                         /* this frame's pad (keys, --do, or the computer's) */
     float mx, my, mz, heading;                       /* where the monster stands, its turn about Z (0: facing +Y) */
@@ -3311,8 +3314,9 @@ static void monsters_fight(Viewer *v)
         float h = at->heading / 57.2957795f, fwd[2] = { -sinf(h), cosf(h) };
         for (int j = 0; j < v->nmon; j++) {
             Mon *vi = &v->mon[j];
-            if (j == a || vi->defeated || vi->hp <= 0 || !mon_in(vi) || mon_in(vi)->hidden || (at->boss && vi->boss))
-                continue;                            /* (Boss Rumble: bosses leave each other be) */
+            if (j == a || vi->defeated || vi->hp <= 0 || !mon_in(vi) || mon_in(vi)->hidden || (at->boss && vi->boss) ||
+                (at->boss && vi->spared > 0))
+                continue;                            /* (Boss Rumble: bosses leave each other be, and one getting up) */
             float dx = vi->mx - at->mx, dy = vi->my - at->my, dz = vi->mz - at->mz;
             if (dx * dx + dy * dy + dz * dz > 1600)
                 continue;
@@ -4657,6 +4661,17 @@ static void monster_blow_hit(Mon *mo, const Mon *by, const struct MonAtk *atk, c
             d[1] = mo->my - by->my;
         }
         monster_take(mo, name, atk->damage * (by->boss ? by->boss_factor : 1), atk->level, slot, d, behind);
+        if (by->boss && !mo->boss) {                 /* (Boss Rumble: no juggling: knocked down, or hit a few times
+                                                      * running, the bosses let it get up) */
+            mo->boss_hits = mo->boss_hits_t < RUMBLE_SPARE_RUN ? mo->boss_hits + 1 : 1;
+            mo->boss_hits_t = 0;
+            if (atk->level >= 2 || mo->boss_hits >= RUMBLE_SPARE_HITS) {
+                mo->spared = RUMBLE_SPARE_TIME;
+                mo->boss_hits = 0;
+                if (getenv("RAMPAGE_RUMBLE_SPARE_LOG"))
+                    printf("rumble: P%d spared (%s)\n", mo->slot + 1, atk->level >= 2 ? "knocked down" : "hits");
+            }
+        }
     }
 }
 
@@ -6021,6 +6036,7 @@ static void bot_views(Viewer *v, DirBuilding *db, DirMonster *dm, DirBotView *bv
         o->ref[2] = mo->mz;
         o->team = mo->boss;                          /* (Boss Rumble's sides) */
         o->out = mo->defeated || mo->hp <= 0 || mo->boss_beaten || !mon_in(mo) || mon_in(mo)->hidden || netgame_idle(mo);
+        o->spared = mo->spared > 0;
     }
     for (int k = 0; k < v->nmon; k++) {
         Mon *mo = &v->mon[k];
@@ -8026,6 +8042,8 @@ static void setup_players(Viewer *v, int n, int bots, const int *monster)
         mo->boss = mo->boss_beaten = 0;              /* (a Boss Rumble run's bosses gone) */
         mo->boss_factor = 1;
         mo->boss_down = 0;
+        mo->spared = mo->boss_hits_t = 0;
+        mo->boss_hits = 0;
         mo->drive = mo->bot || v->ap ? DRIVE_COMPUTER : k == 0 ? DRIVE_KEYS1 : k == 1 ? DRIVE_KEYS2 :
                     v->pads_on >> k & 1 ? DRIVE_PAD : DRIVE_COMPUTER;   /* (--autoplay: all the computer's) */
         mo->mx = -17.0f * (float)(v->nmon - 1) / 2 + 17.0f * (float)k;
@@ -8849,6 +8867,7 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
     if (mo->have_graph) {
         dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)k);
         mo->ai.bot.hunter = 1;
+        mo->ai.bot.rest_len = RUMBLE_REST;           /* (a breath after each attack) */
     }
     return k;
 }
@@ -8907,6 +8926,11 @@ static void rumble_driver_step(Viewer *v, float dt)
         v->rumble.seed = v->prof.current.seed[0] * 2654435761u + 7u;
         v->rumble.wave = (int)rumble_env("RAMPAGE_RUMBLE_START_WAVE", 1) - 1;
         v->rumble.pause = RUMBLE_WAVE_PAUSE - 1.0f;  /* (the first wave a second in) */
+    }
+    for (int k = 0; k < v->rumble.players && k < v->nmon; k++) {   /* the players' breath (RUMBLE_SPARE*) */
+        Mon *mo = &v->mon[k];
+        mo->spared = mo->spared > dt ? mo->spared - dt : 0;
+        mo->boss_hits_t += dt;
     }
     int alive = 0;
     for (int k = v->rumble.players; k < v->nmon; k++) {

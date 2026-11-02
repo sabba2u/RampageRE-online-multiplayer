@@ -42,7 +42,9 @@ Ideas the owner wants, not started. Newest at the bottom.
   rumble_*, rumble.c) 12 waves (1,1,1 .. 4,4,4) of any monster as bosses, hunting the players, a red glowing outline, bars
   with heads and names under the clock, the clock counting up, power-ups on the streets and roofs, the end line (time,
   wave, best, rumble_best.txt), online (the host's waves in the world, its power-ups by NM_RUMBLE_PICKUP). Not done: the
-  owner's button art (the menu shows the words), new power-ups (double damage, shield, extra life), joining a run under
+  owner's button art (done 2026-11-02: images/bossrush.png, the fifth icon), the bosses' manners (done 2026-11-02: a
+  1.4 s breath after each attack, and a player knocked down or hit 3 times running is left be for 2 s: rumble.h
+  RUMBLE_REST, RUMBLE_SPARE_*), new power-ups (double damage, shield, extra life), joining a run under
   way, the launcher (no game type choice there). The ideas it came from:
 - **Boss mode** (asked 2026-11-02): a mode where a monster (or up to 3) is spawned as a boss whose only
   goal is to attack the players, not the buildings. Each boss gets a health bar at the top of the screen with its

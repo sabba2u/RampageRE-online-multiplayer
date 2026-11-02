@@ -1208,6 +1208,9 @@ static void bot_hunt(DirAI *ai, const DirGraph *ag, MoveRunner *r, const DirBotV
         if (ai->bot.hunter && (v->m[k].team == v->team || v->m[k].out || v->m[k].human))
             continue;                                /* (port extra: a hunter's prey, the other side's in play) */
         float dx = v->m[k].pos[0] - v->pos[0], dy = v->m[k].pos[1] - v->pos[1], d = dx * dx + dy * dy;
+        if (ai->bot.hunter && v->m[k].spared)        /* (port extra, Boss Rumble: one just knocked about the last
+                                                      * choice) */
+            d += 1e20f;
         if (d < bd) {
             bd = d;
             best = k;
@@ -1228,8 +1231,17 @@ static void bot_hunt(DirAI *ai, const DirGraph *ag, MoveRunner *r, const DirBotV
         bot_walk(ai, ag, r, v, back, 0, -1, call, ctx);
     } else if (l > 1e-6f && (v->fwd[0] * dx + v->fwd[1] * dy) / l < 0.95f)
         bot_walk(ai, ag, r, v, o->pos, 0, o->mounted, call, ctx);
-    else
+    else if (ai->bot.rest_len > 0 && (ai->bot.rest > 0 || o->spared))
+        ai_pick(r, ag, DA_IDLE, -1, call, ctx);      /* (port extra, Boss Rumble: a boss's breath; its prey getting up) */
+    else {
+        int was = r->chosen;
         bot_action(r, ag, DA_ATTACK, 1, call, ctx);
+        if (ai->bot.rest_len > 0 && r->chosen >= 0 && r->chosen != was) {   /* an attack taken: (its own numbers: the
+                                                                         * world's rand01 is the city's) */
+            ai->bot.seed = ai->bot.seed * 1664525u + 1013904223u;
+            ai->bot.rest = ai->bot.rest_len * (0.7f + 0.6f * (float)(ai->bot.seed >> 8) * (1.0f / 16777216.0f));
+        }
+    }
 }
 
 /* +0x30 0x2EEBE0: knocked off building b (or an obstacle in its way): 3 s of avoiding it, the walk to its front */
@@ -1256,6 +1268,8 @@ static int destroy_update(DirAI *ai, const DirGraph *ag, MoveRunner *r, float dt
         bot_go_state(r, ag, bt->st_respawn, call, ctx);
         return 1;
     }
+    if (bt->rest > 0)                                /* (port extra, Boss Rumble) */
+        bt->rest -= dt;
     if (bt->hunter) {                                /* (port extra) no buildings: on the street, hunting */
         if (v->mounted >= 0)
             bot_action(r, ag, DA_JUMP, 0, call, ctx);

@@ -9,6 +9,13 @@
 #define RUMBLE_MAX_BOSSES 4
 #define RUMBLE_PICKUP_LIFE 20.0f                     /* a power-up nobody takes is gone after this */
 #define RUMBLE_WAVE_PAUSE 3.0f                       /* between a wave cleared and the next, its banner up */
+/* the bosses' manners (the owner, 2026-11-02: "the ai never lets up ... they just juggle us"): */
+#define RUMBLE_REST 1.4f                             /* a boss's breath after each attack, x 0.7 .. 1.3 */
+#define RUMBLE_SPARE_TIME 2.0f                       /* a player knocked down, or hit RUMBLE_SPARE_HITS times with no
+                                                      * more than RUMBLE_SPARE_RUN s between, is the bosses' to leave be
+                                                      * this long: their blows pass, they go for another or wait */
+#define RUMBLE_SPARE_HITS 3
+#define RUMBLE_SPARE_RUN 2.5f
 
 int rumble_wave_size(int wave);                      /* wave 1 .. 12: the bosses at once; else 0 */
 float rumble_factor(int wave);                       /* their health and hits: 1, 1.25, 1.5, 1.75 by group of three */
