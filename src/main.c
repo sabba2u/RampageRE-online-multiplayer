@@ -940,6 +940,8 @@ static int hud_project(void *ctx, const float p[3], float screen[2], float *px_p
     return 1;
 }
 
+static float results_shot_t;                         /* (testing: results_shots, below) */
+
 /* the players' HUDs closed (player 1's is the screen's, Viewer.hud) */
 static void huds_close(Viewer *v)
 {
@@ -4101,7 +4103,7 @@ static void game_step(Viewer *v, float dt)
                     HudResults r;
                     memset(&r, 0, sizeof r);
                     r.play_type = game_play_type(v->game);   /* GP_* and HUD_PLAY_* agree */
-                    r.num_players = v->nmon < 4 ? v->nmon : 4;   /* (HudResults holds 4: with more, dev8, the first 4) */
+                    r.num_players = v->nmon < HUD_RES_PLAYERS ? v->nmon : HUD_RES_PLAYERS;   /* (8 with dev8) */
                     for (int p = 0; p < r.num_players; p++) {
                         for (int c = 0; c < 7; c++) {
                             r.points[p][c] = game_points(v->game, p, c);
@@ -4145,6 +4147,8 @@ static void game_step(Viewer *v, float dt)
                     r.allow_save = v->prof.allow_save && v->prof_write;
                     r.loaded = v->prof.loaded;
                     hud_results(v->hud, e->a, &r);
+                    if (getenv("RAMPAGE_RESULTS_SHOTS"))
+                        results_shot_t = 0.001f;
                 }
                 break;
             case GE_REVIVE:                          /* cancelRespawn: full HP where it is */
@@ -8710,6 +8714,22 @@ static int lightning_pick(Viewer *v, unsigned seed)
 }
 
 /* the x-ray flicker running out (and with RAMPAGE_ZAP_TEST an autoplay's --ap-shots a picture of it, on) */
+/* (testing: RAMPAGE_RESULTS_SHOTS with --autoplay --ap-shots) the results screen's shots, 3, 7 and 11 s after it
+ * opens: autoplay's own is taken as it starts, before its items are in */
+static float results_shot_t;
+static void results_shots(Viewer *v, float dt)
+{
+    if (results_shot_t <= 0 || !v->ap)
+        return;
+    float t0 = results_shot_t;
+    results_shot_t += dt;
+    for (float m = 3; m < 12; m += 4)
+        if (t0 < m && results_shot_t >= m)
+            ap_want_shot(v->ap, "results");
+    if (results_shot_t > 12)
+        results_shot_t = 0;
+}
+
 static void lightning_step(Viewer *v, float dt)
 {
     static int shots;
@@ -9482,6 +9502,7 @@ static int viewer_main(int argc, char **argv)
                 if (playing && weather_update(wdt, &wx, &wseed))   /* (onto a monster now and then: lightning_pick) */
                     netgame_weather_strike(wx, wseed, lightning_pick(&v, wseed));
                 lightning_step(&v, wdt);
+                results_shots(&v, dt);
             }
             netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */
             pose_monsters(&v, shot && !v.ap ? shot_time : world_t);   /* the clips at the states' times (clip_at),

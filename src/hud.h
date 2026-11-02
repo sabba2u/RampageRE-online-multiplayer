@@ -157,11 +157,12 @@ enum {
     HUD_SCREEN_KING_BLOCK = 4, HUD_SCREEN_KING_CITY = 5, HUD_SCREEN_KING_WORLD = 6, HUD_SCREEN_TIMED_RUN = 7
 };
 enum { HUD_RESULT_NONE = 0, HUD_RESULT_DONE = 1, HUD_RESULT_CONTINUE = 2, HUD_RESULT_SELECT = 3, HUD_RESULT_QUIT = 4 };
+#define HUD_RES_PLAYERS 8           /* (the results hold 8: RAMPAGE_MAX_PLAYERS' dev8; 4 in the game's own) */
 typedef struct {
     int play_type;           /* HUD_PLAY_* */
     int num_players;
-    int points[4][7];        /* Player.getPoints(cat) per player, game.h GPT_* (game_points): this block's */
-    int kills[4][7];         /* Player.getKills(cat) (game_kills) */
+    int points[HUD_RES_PLAYERS][7];        /* Player.getPoints(cat) per player, game.h GPT_* (game_points): this block's */
+    int kills[HUD_RES_PLAYERS][7];         /* Player.getKills(cat) (game_kills) */
     const char *block_played;    /* gWorld.getBlockName(0) (game_block_name(g, 0)): a .loc key, "LV01_Casino1" */
     const char *block_current;   /* getBlockName(1): the next block; the same on the city's last block */
     const char *results_text;    /* the current block's "ResultsNIText" (a .loc key), NULL none */
@@ -176,14 +177,14 @@ typedef struct {
     unsigned city_flags;     /* getCityFlags() (game_city_flags): a star each for 1 all blocks, 2 par, 4 challenges,
                               * 8 monsters revealed */
     int show_victory;        /* gCommon.getShowVictory(): no "Change Monster" / "Quit" */
-    /* the King screens (KingBlockResults, KingCityResults, KingWorldResults), per player slot 0 .. 3 */
-    const char *monsters[4]; /* gCommon.getGameStatus().getMonsterName(i): a .loc key ("George", "Boosy") */
+    /* the King screens (KingBlockResults, KingCityResults, KingWorldResults), per player slot 0 .. 3 (7) */
+    const char *monsters[HUD_RES_PLAYERS]; /* gCommon.getGameStatus().getMonsterName(i): a .loc key ("George", "Boosy") */
     const char *monster_none;    /* getMonsterName(-1), asked for a King that is none (a tie): the status's +0x14 - 4,
                                   * its start block (+0x10, game_start_block), taken as a roster index [R 0x2C4B18] */
     int king_block, king_city, king_world;   /* gCommon.getKingOfBlock / City / World (game_king(g, 0 / 1 / 2)): a
                                               * player slot, -1 none (a tie) */
-    int blocks_won[4];       /* Player.getNumBlocksWon (game_blocks_won) */
-    int cities_won[4];       /* Player.getNumCitiesWon (game_cities_won) */
+    int blocks_won[HUD_RES_PLAYERS];       /* Player.getNumBlocksWon (game_blocks_won) */
+    int cities_won[HUD_RES_PLAYERS];       /* Player.getNumCitiesWon (game_cities_won) */
     int blocks_to_win;       /* gCommon.getNumBlocksToWin (game_blocks_to_win) */
     int cities_to_win;       /* gCommon.getNumCitiesToWin (game_cities_to_win) */
     const char *next_city;   /* gCommon.getCityName(getGameStatus().getCityIdx() + 1): the King of the World's next

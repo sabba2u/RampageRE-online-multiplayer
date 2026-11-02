@@ -21,7 +21,8 @@ Ideas the owner wants, not started. Newest at the bottom.
   monsters (--players 8 --monster5 .. --monster8) played three campaign blocks with no problem; online a host and 5
   guests on one PC passed every net4_test check (-Exe RampageRE-dev8.exe). The HUD (2026-11-02): with more than 4 players
   every panel is made smaller, all in one row across the top, the clock under it (hud.c hud_quads, row_place); --players 5+
-  without --monsterN takes monsters not taken yet (it crashed). Not done: the results screens (the first 4), the menus (Monster Select's 4 cards), the launcher; the host's
+  without --monsterN takes monsters not taken yet (it crashed). The results screens (2026-11-02): every player counted and listed (the King screens' lists grown to 8 rows, P5 .. P8; the
+  blocks to win 2 from 4 players on: 6 - players was none with 6). Not done: the menus (Monster Select's 4 cards), the launcher; the host's
   upload with 5 guests about 880 KB/s (7 Mbit/s).
 - (done 2026-11-02: docs/MODELS.md) **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
   textures. Re-skinning a monster on its own skeleton keeps all its moves; a new skeleton needs new animations and a

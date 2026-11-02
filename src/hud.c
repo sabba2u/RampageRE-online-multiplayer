@@ -28,7 +28,8 @@
 #include "hud.h"
 
 #define HUD_PI 3.14159265f
-#define MAX_NODES 160                                    /* (Pause: 79, and its Graphics page's 39) */
+#define MAX_NODES 224                                    /* (Pause: 79, and its Graphics page's 39; the King
+                                                          * screens' lists grown for 8 players, kr_rows) */
 /* the Pause menu's Graphics page (pause_graphics_build) */
 #define GFX_ROWS 7
 #define LANG_PITCH 40.0f                                 /* the Options' rows' pitch (Sound, Music, Vibration) */
@@ -1567,8 +1568,8 @@ typedef struct {
     Intro intro[MAX_INTRO], walk[MAX_WALK];
     int nintro, nwalk;
     /* WorldResults, KingBlockResults, KingCityResults, KingWorldResults, TimedRunResults */
-    char monsters[4][32], monster_none[32], next_city[64];
-    int ids[4];                                          /* KingBlockResults' aPlayerIds: the players by points */
+    char monsters[HUD_RES_PLAYERS][32], monster_none[32], next_city[64];
+    int ids[HUD_RES_PLAYERS];                                          /* KingBlockResults' aPlayerIds: the players by points */
     int do_rank, alt_walkout;                            /* bDoRank, bUseAltWalkout */
     Intro rank[MAX_WALK], alt[MAX_WALK];                 /* rankItems, altWalkoutItems */
     int nrank, nalt;
@@ -2933,7 +2934,7 @@ static void results_count(Hud *h, Screen *s, float dt)
         Node *cnt = layout_find(it->child, "count");
         s->cu_item = layout_find(it->child, "points");
         s->cu_value = 0;
-        int kills = 0, np = r->num_players > 0 && r->num_players <= 4 ? r->num_players : 1;
+        int kills = 0, np = r->num_players > 0 && r->num_players <= HUD_RES_PLAYERS ? r->num_players : 1;
         for (int i = 0; i < np; i++) {
             s->cu_value += r->points[i][s->cu_index < 7 ? s->cu_index : 6];
             kills += r->kills[i][s->cu_index < 7 ? s->cu_index : 6];
@@ -3365,7 +3366,7 @@ static void kr_moving_on(Hud *h, Screen *s, const char *key)
 
 static int kr_players(const Screen *s)
 {
-    return s->r.num_players > 0 && s->r.num_players <= 4 ? s->r.num_players : 1;
+    return s->r.num_players > 0 && s->r.num_players <= HUD_RES_PLAYERS ? s->r.num_players : 1;
 }
 /* localizeString(getGameStatus().getMonsterName(slot)) (a missing key: "" [R 0x28B470]). getMonsterName (0x2C4B18)
  * reads the status's +0x14 + 4 slot as a roster index (0x2C36A0: gCommon +0x10, 12 bytes each, the name at +8)
@@ -3375,16 +3376,23 @@ static const char *kr_monster(const Hud *h, const Screen *s, int slot)
 {
     if (slot == -1)
         return loc_app(&h->gui, s->monster_none);
-    if (slot < 0 || slot > 3)
+    if (slot < 0 || slot >= HUD_RES_PLAYERS)
         return "";
     return loc_app(&h->gui, s->monsters[slot]);
+}
+/* localizeString("P" + (slot + 1)); the strings have P1 .. P4: P5 .. P8 (dev8) as written */
+static const char *kr_ptag(Hud *h, int slot, char key[16])
+{
+    snprintf(key, 16, "P%d", slot + 1);
+    const char *t = loc_find(&h->gui, key);
+    return t ? t : key;
 }
 /* the winner's line: localizeString("P" + (slot + 1)) + ": " + the monster's name ("P1: Lizzie") */
 static void kr_winner(Hud *h, Screen *s, Node *t, int slot)
 {
     char key[16], buf[MAX_TEXT];
     snprintf(key, sizeof key, "P%d", slot + 1);
-    snprintf(buf, sizeof buf, "%s: %s", loc_app(&h->gui, key), kr_monster(h, s, slot));
+    snprintf(buf, sizeof buf, "%s: %s", slot >= 4 ? kr_ptag(h, slot, key) : loc_app(&h->gui, key), kr_monster(h, s, slot));
     node_text(t, buf);
 }
 /* one row of a standings list: the item localized "P<slot + 1>", its "name" ": <monster>", its child `value_of`
@@ -3394,12 +3402,43 @@ static void kr_row(Hud *h, Screen *s, Node *item, int slot, const char *value_of
     if (!item)
         return;
     char key[16], buf[MAX_TEXT];
-    snprintf(key, sizeof key, "P%d", slot + 1);
-    node_localize(&h->gui, item, key);
+    if (slot >= 4)                                   /* (P5 .. P8: kr_ptag) */
+        node_text(item, kr_ptag(h, slot, key));
+    else {
+        snprintf(key, sizeof key, "P%d", slot + 1);
+        node_localize(&h->gui, item, key);
+    }
     snprintf(buf, sizeof buf, ": %s", kr_monster(h, s, slot));
     node_text(layout_find(item->child, "name"), buf);
     if (value_of)
         node_text(layout_find(item->child, value_of), value);
+}
+/* (port extra: more than 4 players, dev8) a standings list's items: its .ifc has four, one under another; for players
+ * 5 .. n its last item is copied on down at the same step, and from 7 players on the list made a little smaller so
+ * the eighth stays clear of the buttons and the street */
+static void kr_rows(Screen *s, Node *list, int n)
+{
+    int have = list_count(list);
+    if (!list || n <= have || have < 2)
+        return;
+    Node *a = list_item(list, have - 2), *b = list_item(list, have - 1);
+    float step[3] = { b->p[0] - a->p[0], b->p[1] - a->p[1], b->p[2] - a->p[2] };
+    for (int i = have; i < n; i++) {
+        Node *last = list_item(list, i - 1), *c = node_copy(s->L, last, list);
+        if (!c)
+            break;
+        for (int k = 0; k < 3; k++)
+            c->p[k] = last->p[k] + step[k];
+    }
+    if (n > 6) {                                     /* (the list's own scale is the intro's: its items instead) */
+        Node *first = list_item(list, 0);
+        int i = 0;
+        for (Node *c = first; c; c = c->next, i++) {
+            for (int k = 0; k < 3; k++)
+                c->p[k] = first->p[k] + step[k] * 0.85f * (float)i;
+            c->m *= 0.85f;
+        }
+    }
 }
 /* orderPlayers' exchange sort over the first n, most first, as written (not stable) */
 static void kr_sort(int *ids, int *scores, int n)
@@ -3412,10 +3451,10 @@ static void kr_sort(int *ids, int *scores, int n)
             }
 }
 /* the players by blocks won (KingBlockResults' br_list, KingCityResults, KingWorldResults) */
-static void kr_rank_by_blocks(const Screen *s, int rank[4])
+static void kr_rank_by_blocks(const Screen *s, int rank[HUD_RES_PLAYERS])
 {
-    int scores[4] = { 0, 0, 0, 0 }, np = kr_players(s);
-    for (int i = 0; i < 4; i++) {
+    int scores[HUD_RES_PLAYERS] = { 0 }, np = kr_players(s);
+    for (int i = 0; i < HUD_RES_PLAYERS; i++) {
         rank[i] = i;
         scores[i] = i < np ? s->r.blocks_won[i] : 0;
     }
@@ -3459,7 +3498,7 @@ static void kb_start(Hud *h, Screen *s)
 {
     Node *root = s->L->root;
     const HudResults *r = &s->r;
-    int np = kr_players(s), scores[4], rank[4];
+    int np = kr_players(s), scores[HUD_RES_PLAYERS], rank[HUD_RES_PLAYERS];
     char msg[MAX_TEXT];
     s->do_intro = 1;
     s->cu_index = -1;
@@ -3482,20 +3521,22 @@ static void kb_start(Hud *h, Screen *s)
     loc_format(&h->gui, msg, sizeof msg, "Results_CompletlyDestroyed", s->played);
     kr_title(h, s, msg);
     /* orderPlayers: the points list by points (category 6), the block standings by blocks won */
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < HUD_RES_PLAYERS; i++) {
         s->ids[i] = i;
         scores[i] = r->points[i][6];
     }
     kr_sort(s->ids, scores, np);
+    kr_rows(s, s->list, np);
     for (int i = 0; i < np; i++)
         kr_row(h, s, list_item(s->list, i), s->ids[i], NULL, NULL);
     kr_rank_by_blocks(s, rank);
     Node *bl = layout_find(root, "br_list");
+    kr_rows(s, bl, np);
     for (int i = 0; i < np; i++) {
         snprintf(msg, sizeof msg, "%d/%d", r->blocks_won[rank[i]], r->blocks_to_win);
         kr_row(h, s, list_item(bl, i), rank[i], "points", msg);
     }
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < list_count(bl); i++)
         show(list_item(bl, i), i < np);
     if (r->city_destroyed || r->king_city != -1)
         show(layout_find(root, "quit"), 0);
@@ -3582,7 +3623,7 @@ static void kc_start(Hud *h, Screen *s)
 {
     Node *root = s->L->root;
     const HudResults *r = &s->r;
-    int np = kr_players(s), rank[4], world = r->play_type == HUD_PLAY_KING_WORLD;
+    int np = kr_players(s), rank[HUD_RES_PLAYERS], world = r->play_type == HUD_PLAY_KING_WORLD;
     char msg[MAX_TEXT];
     s->do_intro = 1;
     root->fade = 1;
@@ -3600,12 +3641,13 @@ static void kc_start(Hud *h, Screen *s)
     kr_rank_by_blocks(s, rank);
     node_localize(&h->gui, layout_find(root, "standings_type"), world ? "Results_WorldStandings" :
                                                                          "Results_CityStandings");
+    kr_rows(s, s->list, np);
     for (int i = 0; i < np; i++) {
         snprintf(msg, sizeof msg, "%d/%d", world ? r->cities_won[rank[i]] : r->blocks_won[rank[i]],
                  world ? r->cities_to_win : r->blocks_to_win);
         kr_row(h, s, list_item(s->list, i), rank[i], "wins", msg);
     }
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < list_count(s->list); i++)
         show(list_item(s->list, i), i < np);
     kr_buttons(h, s);
     kr_news_intro(s);
@@ -3633,7 +3675,7 @@ static void kw_start(Hud *h, Screen *s)
 {
     Node *root = s->L->root;
     const HudResults *r = &s->r;
-    int np = kr_players(s), rank[4];
+    int np = kr_players(s), rank[HUD_RES_PLAYERS];
     char msg[MAX_TEXT];
     s->do_intro = 1;
     root->fade = 1;
@@ -3643,11 +3685,12 @@ static void kw_start(Hud *h, Screen *s)
     kr_title(h, s, wd ? wd : "Results_WorldDestroyed");
     kr_rank_by_blocks(s, rank);                              /* by blocks won, showing the cities won */
     Node *pl = layout_find(root, "pointsList");
+    kr_rows(s, pl, np);
     for (int i = 0; i < np; i++) {
         snprintf(msg, sizeof msg, "%d/%d", r->cities_won[rank[i]], r->cities_to_win);
         kr_row(h, s, list_item(pl, i), rank[i], "wins", msg);
     }
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < list_count(pl); i++)
         show(list_item(pl, i), i < np);
     kr_buttons(h, s);                                        /* the quit button still counted */
     kr_news_intro(s);
@@ -4668,7 +4711,7 @@ void hud_results(Hud *h, int screen, const HudResults *r)
         snprintf(s->results_text, sizeof s->results_text, "%s", r->results_text ? r->results_text : "");
         snprintf(s->city, sizeof s->city, "%s", r->city ? r->city : "");
         snprintf(s->next_city, sizeof s->next_city, "%s", r->next_city ? r->next_city : "");
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < HUD_RES_PLAYERS; i++)
             snprintf(s->monsters[i], sizeof s->monsters[i], "%s", r->monsters[i] ? r->monsters[i] : "");
         snprintf(s->monster_none, sizeof s->monster_none, "%s", r->monster_none ? r->monster_none : "");
     } else {
@@ -4680,7 +4723,7 @@ void hud_results(Hud *h, int screen, const HudResults *r)
     s->r.results_text = s->results_text;
     s->r.city = s->city;
     s->r.next_city = s->next_city;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < HUD_RES_PLAYERS; i++)
         s->r.monsters[i] = s->monsters[i];
     s->r.monster_none = s->monster_none;
     h->result = HUD_RESULT_NONE;                         /* nResultState = 0 */

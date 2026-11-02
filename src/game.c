@@ -1339,7 +1339,11 @@ int game_city_score(const Game *g, int slot) { return g && slot >= 0 && slot < G
 int game_city_total(const Game *g) { return g ? g->city_total : 0; }
 int game_blocks_won(const Game *g, int slot) { return g && slot >= 0 && slot < GAME_PLAYERS ? g->p[slot].blocks_won : 0; }
 int game_cities_won(const Game *g, int slot) { return g && slot >= 0 && slot < GAME_PLAYERS ? g->p[slot].cities_won : 0; }
-int game_blocks_to_win(const Game *g) { return g ? 6 - np(g) : 5; }   /* 0x33DAE0 [R] */
+int game_blocks_to_win(const Game *g)                /* 0x33DAE0 [R]: 6 less the players */
+{
+    int n = g ? 6 - np(g) : 5;
+    return n < 2 ? 2 : n;                            /* (more than 4, dev8: 2 as with 4; 6 - 6 was none at all) */
+}
 int game_cities_to_win(const Game *g)                /* 0x33DAB0 [R] */
 {
     return g ? (g->cfg.num_cities - 1) / np(g) + 1 : 7;
