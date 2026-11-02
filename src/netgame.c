@@ -2250,6 +2250,13 @@ static int ng_idle(const Viewer *v, int k)           /* nobody plays slot k's mo
            (net_slot_joining(k) && !(net_role() == NET_GUEST && k == ng_me()));   /* (connected, still loading) */
 }
 
+/* a monster nobody plays (a kept or open seat online): the army picks it no more (main.c army_monsters) */
+static int netgame_idle(const Mon *mo)
+{
+    const Viewer *v = g_ngv;
+    return v && mo && mo->v == v && ng_idle(v, mo->slot);
+}
+
 static int netgame_shielded(const Mon *mo)
 {
     const Viewer *v = g_ngv;
@@ -2685,8 +2692,15 @@ static int ng_head_screen(const Viewer *v, const Window *w, int k, float *sx, fl
 {
     float f = 1.0f / tanf(ng_cam.fov * 3.14159265f / 360.0f), aspect = (float)w->width / w->height;
     const Mon *mo = &v->mon[k];
-    float p[3] = { mo->mx - ng_cam.pos[0], mo->my - ng_cam.pos[1], mo->mz + 9 * (mo->scale > 0 ? mo->scale : 1) -
-                   ng_cam.pos[2] };
+    float at[3] = { mo->mx, mo->my, mo->mz + 9 * (mo->scale > 0 ? mo->scale : 1) };
+    const Person *pp = mo->human && mo->streaker >= 0 && v->scene.folk ? people_get(v->scene.folk, mo->streaker) : NULL;
+    if (pp) {                                        /* turned human: over the little person it is now */
+        at[0] = pp->pos[0];
+        at[1] = pp->pos[1];
+        at[2] = pp->pos[2] + 3;
+    } else if (mo->defeated)                         /* knocked down: lower, over where it lies */
+        at[2] = mo->mz + 4;
+    float p[3] = { at[0] - ng_cam.pos[0], at[1] - ng_cam.pos[1], at[2] - ng_cam.pos[2] };
     float x = p[0] * ng_cam.rows[0][0] + p[1] * ng_cam.rows[0][1] + p[2] * ng_cam.rows[0][2];
     float d = p[0] * ng_cam.rows[1][0] + p[1] * ng_cam.rows[1][1] + p[2] * ng_cam.rows[1][2];
     float y = p[0] * ng_cam.rows[2][0] + p[1] * ng_cam.rows[2][1] + p[2] * ng_cam.rows[2][2];
@@ -2696,13 +2710,18 @@ static int ng_head_screen(const Viewer *v, const Window *w, int k, float *sx, fl
     *sy = (1 - f * y / d) * 0.5f * w->height;
     if (*sy < 40)                                    /* (a monster high up: the label kept on the screen) */
         *sy = 40;
+    float edge = 150;                                /* (and at the sides: a big label is about 300 wide) */
+    if (*sx < edge)
+        *sx = edge;
+    if (*sx > w->width - edge)
+        *sx = w->width - edge;
     return 1;
 }
 
 /* the player slots nobody plays, over their monsters' heads on every screen, big for a stream to read: DISCONNECTED
  * (red) with the minute its player has to come back, WAITING FOR PLAYER (yellow) once the slot is open to anyone,
- * PLAYER JOINING (teal) while a guest that took it is still loading the host's world. A
- * guest's own monster never has one */
+ * PLAYER JOINING (teal) while a guest that took it is still loading the host's world. Knocked down or turned human
+ * too (over where it lies, or over the person). A guest's own monster never has one */
 static void ng_slot_labels(const Viewer *v, const Window *w)
 {
     if (net_role() == NET_OFF || !ng_cam.set || !v->play || !w->width || !w->height || v->shell)
@@ -2715,7 +2734,9 @@ static void ng_slot_labels(const Viewer *v, const Window *w)
         const Mon *mo = &v->mon[k];
         const Instance *in = mon_in(mo);
         float sx, sy;
-        if ((in && in->hidden) || !ng_head_screen(v, w, k, &sx, &sy))
+        /* (shown over a monster knocked down or turned human too, where it lies or the person it is; not over one
+         * hidden for another reason: dropping in, a scene's) */
+        if ((in && in->hidden && !mo->human && !mo->defeated) || !ng_head_screen(v, w, k, &sx, &sy))
             continue;
         double left = 0;
         if (net_slot_joining(k))

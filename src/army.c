@@ -372,6 +372,8 @@ static int nearest_monster(const Army *a, const float pos[3])
     int best = -1;
     float bd = 1000;
     for (int i = 0; i < a->nm; i++) {
+        if (a->m[i].ignore)                          /* (NET: a monster nobody plays) */
+            continue;
         float e[3] = { a->m[i].pos[0] - pos[0], a->m[i].pos[1] - pos[1], a->m[i].pos[2] - pos[2] };
         float d = sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
         if (d < bd) {
@@ -382,6 +384,22 @@ static int nearest_monster(const Army *a, const float pos[3])
     return best;
 }
 
+/* a monster at random (frand once, as the game's pick of any): of those a unit may pick (NET: not one nobody
+ * plays); offline every one, the same pick as before */
+static int random_monster(Army *a)
+{
+    int n = 0;
+    for (int i = 0; i < a->nm; i++)
+        n += !a->m[i].ignore;
+    if (n <= 0)
+        return a->nm > 0 ? (frand(a), -1) : -1;
+    int pick = (int)(frand(a) * (float)n);
+    for (int i = 0; i < a->nm; i++)
+        if (!a->m[i].ignore && pick-- == 0)
+            return i;
+    return -1;
+}
+
 /* the mover's target (flag 8; LineMover.getTarget, +0x8C) [R 0x316060]: given none (+0x84), the nearest player monster
  * by squared 3D distance with no limit (from FLT_MAX); -1 none */
 static int mover_target(const Army *a, const float pos[3])
@@ -389,6 +407,8 @@ static int mover_target(const Army *a, const float pos[3])
     int best = -1;
     float bd = 3.4028235e38f;
     for (int i = 0; i < a->nm; i++) {
+        if (a->m[i].ignore)
+            continue;
         float d = dist3(a->m[i].pos, pos);
         if (d < bd) {
             bd = d;
@@ -2452,6 +2472,8 @@ static int heli_pulse(Army *a, ArmyUnit *u)
         }
         for (int i = 0; i < a->nm; i++) {
             const float *mp = a->m[i].pos;
+            if (a->m[i].ignore)
+                continue;
             if (dist3(mp, u->pos) <= u->aux[2] || fabsf(mp[0] - u->pos[0]) <= u->aux[3]) {
                 u->state = 2;
                 u->state_time = 0;
@@ -2666,7 +2688,7 @@ static int truck_pulse(Army *a, ArmyUnit *u)
         }
         if (u->sub < u->count) {
             if (u->troop_i < u->troops_left[u->sub]) {
-                int mi = a->nm > 0 ? (int)(frand(a) * (float)a->nm) : -1;
+                int mi = random_monster(a);
                 float tp[3] = { 0, 0, 0 };
                 if (mi >= 0)
                     memcpy(tp, a->m[mi].pos, sizeof tp);
@@ -3175,7 +3197,7 @@ static void turret_init(Army *a, ArmyUnit *u)
 
 static void turret_select(Army *a, ArmyUnit *u)      /* selectTarget */
 {
-    int m = a->nm > 0 ? (int)(frand(a) * (float)a->nm) : -1;
+    int m = random_monster(a);
     if (m >= 0) {
         u->target = m;
         u->sub = 2;
@@ -3726,13 +3748,14 @@ static void attack_step(Army *a, ArmyUnit *u, float dt)
     float bd = 1e30f;
     for (int i = 0; i < a->nm; i++) {
         float dx = a->m[i].pos[0] - u->pos[0];
-        if (dx * u->am.sign > 0 && fabsf(dx) < bd) {
+        if (!a->m[i].ignore && dx * u->am.sign > 0 && fabsf(dx) < bd) {
             bd = fabsf(dx);
             best = i;
         }
     }
     if (best < 0)
-        best = u->am.target >= 0 && u->am.target < a->nm ? u->am.target : a->nm > 0 ? 0 : -1;
+        best = u->am.target >= 0 && u->am.target < a->nm && !a->m[u->am.target].ignore ? u->am.target :
+               a->nm > 0 && !a->m[0].ignore ? 0 : -1;
     u->am.target = best;
     u->target = best;
     if (u->pos[2] >= 0.1f || best < 0)
@@ -4120,6 +4143,14 @@ static void frame_inputs(Army *a, const ArmyMonster *m, int nm, const ArmyBox *b
     a->nm = m ? (nm < ARMY_MONSTERS ? nm : ARMY_MONSTERS) : 0;
     a->b = b;
     a->nb = b ? nb : 0;
+    for (int i = 0; i < a->n; i++) {                 /* NET: a unit's monster nobody plays now: no target (it picks
+                                                      * again, of the others) */
+        ArmyUnit *u = &a->u[i];
+        if (u->target >= 0 && u->target < a->nm && a->m[u->target].ignore)
+            u->target = -1;
+        if (u->am.target >= 0 && u->am.target < a->nm && a->m[u->am.target].ignore)
+            u->am.target = -1;
+    }
 }
 
 int army_spawn(Army *a, const char *tmpl_name, const float pos[3], float facing)

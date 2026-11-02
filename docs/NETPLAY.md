@@ -120,9 +120,9 @@ Four players (2026-11-01, docs/superpowers/specs/2026-11-01-four-player-online-d
 lives in the snapshot, every monster in the digests, a guest's menu presses as its own seat's pad, replies to one
 guest's ask sent to it alone (`net_send_msg_to`), players on the host's PC taking the next free seat, and a player
 joining mid-block added on every copy with nothing started again (`mon_add_player`, `ng_join_midblock`: the world id
-leaves the players out). Not done: a kept slot's monster not being targeted by
-the army (it only takes no damage), and the label over a kept monster that is lying defeated or turned human (the
-label is shown only while its model is).
+leaves the players out). A monster nobody plays (a kept or open seat) is no unit's target (army.c `ArmyMonster.ignore`: not picked, and a
+unit's target that becomes one is dropped), and its label shows knocked down too (lower) or turned human (over the
+person), kept inside the screen.
 
 ## Re-synchronizing
 

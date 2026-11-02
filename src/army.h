@@ -63,6 +63,7 @@ typedef struct {
     float box_min[3], box_max[3];                    /* its collision box in the world (0x2E2C50): used without spheres */
     float target[3];                                 /* the weapons' target point (0x2DB030): its `Bip01 Spine1`'s world
                                                       * x and y (0x2E6000), its feet's z + 6 */
+    int ignore;                                      /* NET: nobody plays it (a guest dropped out): no unit picks it */
 } ArmyMonster;
 
 /* a building as the units see it: its box in the world, its grid (columns of 5 along x, storeys of 3 above 6) */

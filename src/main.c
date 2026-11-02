@@ -5179,6 +5179,7 @@ static void street_step(Viewer *v, float dt)
 
 /* what the modules see of the monsters this frame (army.h's ArmyMonster, index = the monster's slot): their places,
  * moves and collision spheres, which the frame's world follows too */
+static int netgame_idle(const Mon *mo);              /* NET: netgame.c */
 static int army_monsters(Viewer *v, ArmyMonster *m)
 {
     static float spheres[MONSTERS][64][4];
@@ -5205,6 +5206,7 @@ static int army_monsters(Viewer *v, ArmyMonster *m)
         m[k].mode = mo->mode;
         m[k].spheres = (const float (*)[4])spheres[k];
         m[k].nspheres = ns;
+        m[k].ignore = netgame_idle(mo);              /* (NET: nobody plays it: no unit picks it) */
         float hw = mo->graph.box[0] > 0 ? mo->graph.box[0] : 3, hh = mo->graph.box[1] > 0 ? mo->graph.box[1] : 4.25f;
         m[k].box_min[0] = mo->mx - hw; m[k].box_min[1] = mo->my - hw; m[k].box_min[2] = mo->mz;
         m[k].box_max[0] = mo->mx + hw; m[k].box_max[1] = mo->my + hw; m[k].box_max[2] = mo->mz + 2 * hh;
