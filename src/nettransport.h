@@ -14,7 +14,7 @@ enum { NT_NONE, NT_CONNECT, NT_DISCONNECT, NT_DATA };
 
 /* the host takes up to NT_PEERS connections at once (each a guest's, or one being told the game is full); a guest has
  * the one, to the host, peer 0. Which player slot a peer plays is the session's (net.c), not the transport's. Over
- * Steam (netsteam.c) there is one peer, 0, still: one guest at a time there */
+ * Steam (netsteam.c) the host's guests are peers too, by their Steam ids (up to NT_PEERS) */
 #define NT_PEERS 6
 
 typedef struct {
@@ -61,10 +61,16 @@ void nts_command_line(int argc, char **argv);
 uint64_t nts_take_pending(void);                     /* a lobby to join (an invite, Join Game, +connect_lobby), 0 */
 int nts_poll(NtEvent *ev, double now);
 int nts_send(int reliable, const void *data, int len);
+int nts_send_to(int peer, int reliable, const void *data, int len);   /* -1: every peer */
+void nts_drop(int peer);
 int nts_connected(void);
 unsigned nts_bytes_out(void);
 unsigned nts_bytes_in(void);
 void nts_shutdown(void);
+/* the friends list's line for this player (rich presence): Spacewar's own "#StatusWithScore" ("{#Status_%gamestatus%}:
+ * %score%"), gamestatus one of its AtMainMenu / WaitingForMatch / Winning, score our free text; "status" (the game
+ * info dialog) the whole line. Nothing while Steam is not running here */
+void nts_set_status(const char *gamestatus, const char *text);
 
 #ifdef __cplusplus
 }

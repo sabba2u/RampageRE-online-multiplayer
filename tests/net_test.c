@@ -235,7 +235,7 @@ static void test_slot_pick(void)
 static void test_four_seats(void)
 {
     CHECK(net_game_slots(0) == 4);
-    CHECK(net_game_slots(1) == 2);
+    CHECK(net_game_slots(1) == 4);                              /* (Steam too) */
     NetSlotPick s[NET_SLOTS] = { { NSL_HOST, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 } };
     double wait = -1;
     for (int k = 1; k < 4; k++) {                                /* guests in join order: seats 1, 2, 3 */

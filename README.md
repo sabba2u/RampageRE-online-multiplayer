@@ -112,7 +112,7 @@ cars appear at the edges.
 
 This is early. Expect issues.
 
-- **Up to 4 players** (the host and three guests). Over Steam a host takes one guest at a time. With three guests the
+- **Up to 4 players** (the host and three guests). Host on Steam takes 4 as well (not yet tried with real Steam accounts). With three guests the
   host sends each about 200 KB/s (4.8 Mbit/s of upload in all on average, 6.6 at peak).
 - **Tested only on one PC**, up to four copies talking over localhost, including with simulated lag and packet loss.
   It has **not** been played between two real PCs over the internet yet.

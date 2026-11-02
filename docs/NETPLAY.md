@@ -67,8 +67,8 @@ The host's game has **player slots** (net.c, NET_PROTO 3): slot 0 is the host's 
 monster k. The session is built for up to 4 (`NET_SLOTS`: a transport peer per slot, nettransport.c taking up to
 `NT_PEERS` connections; each slot its own pad, pad acks, digest runs; the slot in NM_WELCOME, every slot's pad ack and
 menu bit in NM_SNAP); a hosted game has all 4 (`NET_GAME_SLOTS`, netwire.c `net_game_slots`), tested with three guests
-on one PC (tools
-et4_test.ps1). Over Steam there is one peer: one guest at a time, 2 seats.
+on one PC (tools\net4_test.ps1). Over Steam too: the lobby takes 4, and each guest is a transport peer of its own by
+its Steam id (netsteam.c `peer[]`, `nts_send_to`, `nts_drop`); not yet played with three Steam accounts.
 
 A slot is **open** (nobody plays it), **online** (a guest does), **kept** (its guest dropped out), **local** (a player
 on the host's PC took it) or the host's. The guests are told every slot's state (NM_SLOTS, on change and each second

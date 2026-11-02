@@ -178,7 +178,7 @@ void net_r_digest(NetBuf *b, NetDigest *d)
 void net_w_u64(NetBuf *b, uint64_t v) { net_w_u32(b, (uint32_t)v); net_w_u32(b, (uint32_t)(v >> 32)); }
 uint64_t net_r_u64(NetBuf *b) { uint64_t lo = net_r_u32(b); return lo | (uint64_t)net_r_u32(b) << 32; }
 
-int net_game_slots(int steam) { return steam ? 2 : NET_SLOTS; }
+int net_game_slots(int steam) { (void)steam; return NET_SLOTS; }   /* (Steam too: a peer per guest) */
 
 int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, double *wait)
 {

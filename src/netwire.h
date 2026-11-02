@@ -57,7 +57,7 @@ typedef struct { uint8_t state; uint64_t token; double until; } NetSlotPick;
  * NET_PICK_FULL when every one is played */
 enum { NET_PICK_FULL = -1, NET_PICK_RESERVED = -2 };
 int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, double *wait);
-/* the seats a hosted game has: 4 (the host and up to three guests); over Steam 2 (one Steam peer) */
+/* the seats a hosted game has: 4 (the host and up to three guests), over the network and over Steam */
 int net_game_slots(int steam);
 
 /* NM_HELLO after its type byte */

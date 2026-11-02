@@ -2148,6 +2148,31 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
         printf("net: the panel (Dear ImGui) did not start\n");
 }
 
+/* the friends list's line (Steam rich presence, while Steam runs here): "RampageRE · Hosting · 2/4 · Chicago 1",
+ * "RampageRE · Playing online · Las Vegas 3", "RampageRE · in the menus"; Spacewar's status word before it (waiting
+ * for a match while hosting alone, at the main menu in the menus, else playing) */
+static void ng_steam_status(const Viewer *v)
+{
+    if (!nts_available())
+        return;
+    char text[96], where[40] = "";
+    int role = net_role(), in_game = v->play && v->game && !v->shell;
+    if (in_game && v->city_index >= 0 && v->city_index < NCITIES)
+        snprintf(where, sizeof where, " \xC2\xB7 %s %d", CITIES[v->city_index], (int)v->block + 1);
+    int players = 1 + net_slot_count(NSL_ONLINE) + net_slot_count(NSL_LOCAL);
+    const char *word = !in_game ? "AtMainMenu" : "Winning";
+    if (role == NET_HOST) {
+        snprintf(text, sizeof text, "RampageRE \xC2\xB7 Hosting \xC2\xB7 %d/%d%s", players, net_slots(),
+                 in_game ? where : " \xC2\xB7 in the menus");
+        if (players == 1)
+            word = "WaitingForMatch";
+    } else if (role == NET_GUEST)
+        snprintf(text, sizeof text, "RampageRE \xC2\xB7 Playing online%s", in_game ? where : " \xC2\xB7 in the menus");
+    else
+        snprintf(text, sizeof text, "RampageRE%s", in_game ? where : " \xC2\xB7 in the menus");
+    nts_set_status(word, text);
+}
+
 /* once a frame, before the input: the connection, the world, the guest following the host */
 static void netgame_plain_title(const Viewer *v, Window *w);
 
@@ -2179,6 +2204,7 @@ static void netgame_frame(Viewer *v, Window *w, double now)
                                                       * player for us yet (a 1 player game: ng_dropin) */
         net_set_wanted_monster(v->nmon > 0 && v->mon[0].monster >= 0 ? v->mon[0].monster : -1);
     ng_set_world(v);
+    ng_steam_status(v);
     ng_chat_frame(v);                                /* the chat: Enter, the lines, joins, leaves, defeats */
     net_world_paused = ngm_host_paused();             /* the host's Pause menu: the guest's world stops too */
     edible_net_no_spawn = ng_guest();                /* the guest's edibles: the host's alone (netrep_people.c) */

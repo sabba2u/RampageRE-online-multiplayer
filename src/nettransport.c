@@ -305,11 +305,11 @@ int nt_send_to(int peer, int reliable, const void *data, int len)
     if (!g_steam)
         return nte_send(peer, reliable, data, len);
     if (g_lag_ms <= 0)
-        return nts_send(reliable, data, len);        /* (Steam's one peer) */
+        return nts_send_to(peer, reliable, data, len);
     return nte_send(peer, reliable, data, len);      /* (the lag's queue: held, then sent by nt_poll's) */
 }
 int nt_send(int reliable, const void *data, int len) { return nt_send_to(-1, reliable, data, len); }
-void nt_drop(int peer) { if (!g_steam) nte_drop(peer); }
+void nt_drop(int peer) { if (g_steam) nts_drop(peer); else nte_drop(peer); }
 int nt_poll(NtEvent *ev, double now)
 {
     if (!g_steam)
@@ -321,10 +321,10 @@ int nt_poll(NtEvent *ev, double now)
         if (!g_held)
             g_held_tail = &g_held;
         if (h->reliable || g_loss <= 0 || rand() % 100 >= g_loss)
-            nts_send(h->reliable, h->data, h->len);
+            nts_send_to(h->peer, h->reliable, h->data, h->len);
         free(h);
     }
-    ev->peer = 0;                                    /* (Steam's one peer) */
+    ev->peer = 0;
     return nts_poll(ev, now);
 }
 void nt_flush(void) { if (!g_steam) nte_flush(); }

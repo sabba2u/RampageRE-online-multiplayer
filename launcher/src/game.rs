@@ -48,13 +48,13 @@ pub fn args(s: &Start) -> Vec<String> {
     let v: Vec<&str> = match s {
         Start::Offline { four_players: true } => vec!["--four-players"],
         Start::Offline { four_players: false } => vec!["--no-four-players"],
-        // online over the network: up to 4 players (the host and three guests, or players on the host's PC), so 3 and
-        // 4 Player in the menus; over Steam 2 (one Steam peer)
+        // online, over the network and over Steam: up to 4 players (the host and three guests, or players on the
+        // host's PC), so 3 and 4 Player in the menus
         // --steam: sign in to Steam and wait for a friend's Join Game (the game touches Steam only when asked)
-        Start::SteamWait => vec!["--no-four-players", "--steam"],
+        Start::SteamWait => vec!["--four-players", "--steam"],
         Start::Host { lobby } => vec!["--four-players", "--host", "--lobby", lobby],
         Start::HostLan => vec!["--four-players", "--host"],
-        Start::SteamHost => vec!["--no-four-players", "--steam-host"],
+        Start::SteamHost => vec!["--four-players", "--steam-host"],
         Start::Join { target, lobby: Some(l) } => vec!["--four-players", "--lobby", l, "--join", target],
         Start::Join { target, lobby: None } => vec!["--four-players", "--join", target],
     };

@@ -72,10 +72,13 @@ static struct {
     HSteamPipe pipe;
     void *msgs, *mm, *friends, *user;
     int role;                                        /* NET_HOST / NET_GUEST, 0 not in a Steam session */
-    uint64_t lobby, peer, me;
-    int connected, announced;
+    uint64_t lobby, me;
+    /* the other players: the host's guests (up to NT_PEERS, by Steam id; 0 a free one), or a guest's host in [0] */
+    uint64_t peer[NT_PEERS];
+    double heard[NT_PEERS];                          /* when each was last heard (10 s silent: gone) */
+    int connected, announced;                        /* (a guest: its host's session open) */
     SteamAPICall_t create_call, join_call;
-    double last_heard, now;
+    double now;
     SteamNetworkingMessage *held;                    /* the message the last NT_DATA points into */
     unsigned out, in;
     char why[128];
@@ -164,6 +167,16 @@ static void identity(SteamNetworkingIdentity *id, uint64_t steam_id)
     p_IdSet64(id, steam_id);
 }
 
+static char status_was[160];                         /* nts_set_status's last line (cleared with the presence) */
+
+static int find_peer(uint64_t who)
+{
+    for (int i = 0; who && i < NT_PEERS; i++)
+        if (s.peer[i] == who)
+            return i;
+    return -1;
+}
+
 static void leave(void)
 {
     if (s.held) {
@@ -172,16 +185,19 @@ static void leave(void)
     }
     if (!s.running)
         return;
-    if (s.peer) {
-        SteamNetworkingIdentity id;
-        identity(&id, s.peer);
-        p_CloseSession(s.msgs, &id);
-    }
+    for (int i = 0; i < NT_PEERS; i++)
+        if (s.peer[i]) {
+            SteamNetworkingIdentity id;
+            identity(&id, s.peer[i]);
+            p_CloseSession(s.msgs, &id);
+        }
     if (s.lobby)
         p_LeaveLobby(s.mm, s.lobby);
     p_ClearRichPresence(s.friends);
+    status_was[0] = 0;
     s.role = 0;
-    s.lobby = s.peer = 0;
+    s.lobby = 0;
+    memset(s.peer, 0, sizeof s.peer);
     s.connected = s.announced = 0;
     s.create_call = s.join_call = 0;
 }
@@ -192,7 +208,7 @@ int nts_host(void)
         return -1;
     leave();
     s.role = NET_HOST;
-    s.create_call = p_CreateLobby(s.mm, 1 /* friends only */, 2);
+    s.create_call = p_CreateLobby(s.mm, 1 /* friends only */, 4);   /* (4 players: the host and three guests) */
     net_log("Steam: making a lobby");
     return 0;
 }
@@ -240,14 +256,14 @@ static void lobby_entered(uint64_t lobby)
     snprintf(conn, sizeof conn, "+connect_lobby %llu", (unsigned long long)lobby);
     p_SetRichPresence(s.friends, "connect", conn);
     if (s.role == NET_GUEST) {
-        s.peer = p_LobbyOwner(s.mm, lobby);
-        if (!s.peer || s.peer == s.me) {
+        s.peer[0] = p_LobbyOwner(s.mm, lobby);
+        if (!s.peer[0] || s.peer[0] == s.me) {
             net_log("Steam: the lobby has no host");
             s.role = 0;
             return;
         }
         s.connected = 1;                             /* the messages' session opens with the first one sent */
-        s.last_heard = s.now;
+        s.heard[0] = s.now;
     }
 }
 
@@ -309,26 +325,41 @@ static int callbacks(NtEvent *ev)
             SteamNetworkingIdentity id;
             memcpy(&id, m.param, sizeof id);
             uint64_t who = p_IdGet64(&id);
-            if (s.role == NET_HOST && (!s.peer || s.peer == who)) {
-                p_Accept(s.msgs, &id);
-                if (!s.peer) {
-                    s.peer = who;
-                    s.connected = 1;
-                    s.last_heard = s.now;
-                    ev->type = NT_CONNECT;
-                    got = 1;
+            if (s.role == NET_HOST) {                /* (each guest a peer of its own, up to NT_PEERS) */
+                int i = find_peer(who);
+                for (int k = 0; i < 0 && k < NT_PEERS; k++)
+                    if (!s.peer[k])
+                        i = k;
+                if (i >= 0) {
+                    p_Accept(s.msgs, &id);
+                    if (s.peer[i] != who) {
+                        s.peer[i] = who;
+                        s.heard[i] = s.now;
+                        ev->type = NT_CONNECT;
+                        ev->peer = i;
+                        got = 1;
+                    }
                 }
             }
             break;
         }
-        case CB_SESSION_FAILED:
-            if (s.connected) {
-                s.connected = 0;
-                s.peer = s.role == NET_HOST ? 0 : s.peer;
+        case CB_SESSION_FAILED: {                    /* (its info's first field: the other side's identity) */
+            SteamNetworkingIdentity id;
+            memcpy(&id, m.param, sizeof id);
+            int i = find_peer(p_IdGet64(&id));
+            if (i >= 0 && s.role == NET_HOST) {
+                s.peer[i] = 0;
                 ev->type = NT_DISCONNECT;
+                ev->peer = i;
+                got = 1;
+            } else if (i == 0 && s.connected) {
+                s.connected = 0;
+                ev->type = NT_DISCONNECT;
+                ev->peer = 0;
                 got = 1;
             }
             break;
+        }
         }
         p_MD_FreeLast(s.pipe);
     }
@@ -347,44 +378,92 @@ int nts_poll(NtEvent *ev, double now)
         return 0;
     if (callbacks(ev))
         return 1;
-    if (s.connected && s.peer) {
+    if (s.role == NET_HOST || s.connected) {
         SteamNetworkingMessage *m[1];
         if (p_Receive(s.msgs, 0, m, 1) == 1) {
-            if (p_IdGet64(&m[0]->peer) != s.peer) {  /* someone else: not ours */
+            int i = find_peer(p_IdGet64(&m[0]->peer));
+            if (i < 0 || (s.role == NET_GUEST && i != 0)) {   /* someone else: not ours */
                 p_MsgRelease(m[0]);
                 return 0;
             }
             s.held = m[0];
             s.in += (unsigned)m[0]->size;
-            s.last_heard = now;
+            s.heard[i] = now;
             ev->type = NT_DATA;
+            ev->peer = i;
             ev->data = (const unsigned char *)m[0]->data;
             ev->len = m[0]->size;
             return 1;
         }
-        if (now - s.last_heard > 10.0) {             /* nothing for 10 s (the snapshots and pads never stop) */
-            s.connected = 0;
-            if (s.role == NET_HOST)
-                s.peer = 0;
-            ev->type = NT_DISCONNECT;
-            return 1;
-        }
+        for (int i = 0; i < NT_PEERS; i++)          /* nothing for 10 s (the snapshots and pads never stop): gone */
+            if (s.peer[i] && now - s.heard[i] > 10.0 && (s.role == NET_HOST || s.connected)) {
+                if (s.role == NET_HOST)
+                    s.peer[i] = 0;
+                else
+                    s.connected = 0;
+                ev->type = NT_DISCONNECT;
+                ev->peer = i;
+                return 1;
+            }
     }
     return 0;
 }
 
-int nts_send(int reliable, const void *data, int len)
+void nts_set_status(const char *gamestatus, const char *text)
 {
-    if (!s.running || !s.connected || !s.peer)
-        return -1;
-    SteamNetworkingIdentity id;
-    identity(&id, s.peer);
-    s.out += (unsigned)len;
-    return p_SendToUser(s.msgs, &id, data, (uint32_t)len,
-                        (reliable ? SEND_RELIABLE : SEND_UNRELIABLE_NO_NAGLE) | SEND_AUTO_RESTART, 0) == 1 ? 0 : -1;
+    if (!s.running)
+        return;
+    char now[160];
+    snprintf(now, sizeof now, "%s|%s", gamestatus, text);
+    if (!strcmp(now, status_was))
+        return;
+    snprintf(status_was, sizeof status_was, "%s", now);
+    p_SetRichPresence(s.friends, "status", text);
+    p_SetRichPresence(s.friends, "gamestatus", gamestatus);
+    p_SetRichPresence(s.friends, "score", text);
+    p_SetRichPresence(s.friends, "steam_display", "#StatusWithScore");
 }
 
-int nts_connected(void) { return s.connected; }
+/* to peer (-1: every one: a guest's host, or all the host's guests) */
+int nts_send_to(int peer, int reliable, const void *data, int len)
+{
+    if (!s.running || (s.role == NET_GUEST && !s.connected))
+        return -1;
+    int sent = 0;
+    for (int i = 0; i < NT_PEERS; i++) {
+        if (!s.peer[i] || (peer >= 0 && i != peer))
+            continue;
+        SteamNetworkingIdentity id;
+        identity(&id, s.peer[i]);
+        s.out += (unsigned)len;
+        sent += p_SendToUser(s.msgs, &id, data, (uint32_t)len,
+                             (reliable ? SEND_RELIABLE : SEND_UNRELIABLE_NO_NAGLE) | SEND_AUTO_RESTART, 0) == 1;
+    }
+    return sent ? 0 : -1;
+}
+
+int nts_send(int reliable, const void *data, int len) { return nts_send_to(-1, reliable, data, len); }
+
+/* the host lets one go (a refused guest, one kicked): its session closed, its peer free; no NT_DISCONNECT */
+void nts_drop(int peer)
+{
+    if (!s.running || peer < 0 || peer >= NT_PEERS || !s.peer[peer])
+        return;
+    SteamNetworkingIdentity id;
+    identity(&id, s.peer[peer]);
+    p_CloseSession(s.msgs, &id);
+    s.peer[peer] = 0;
+}
+
+int nts_connected(void)
+{
+    if (s.role == NET_GUEST)
+        return s.connected;
+    for (int i = 0; i < NT_PEERS; i++)
+        if (s.peer[i])
+            return 1;
+    return 0;
+}
 unsigned nts_bytes_out(void) { return s.out; }
 unsigned nts_bytes_in(void) { return s.in; }
 
@@ -410,8 +489,11 @@ void nts_command_line(int argc, char **argv) { (void)argc; (void)argv; }
 uint64_t nts_take_pending(void) { return 0; }
 int nts_poll(NtEvent *ev, double now) { (void)now; ev->type = NT_NONE; return 0; }
 int nts_send(int reliable, const void *data, int len) { (void)reliable; (void)data; (void)len; return -1; }
+int nts_send_to(int peer, int reliable, const void *data, int len) { (void)peer; return nts_send(reliable, data, len); }
+void nts_drop(int peer) { (void)peer; }
 int nts_connected(void) { return 0; }
 unsigned nts_bytes_out(void) { return 0; }
 unsigned nts_bytes_in(void) { return 0; }
 void nts_shutdown(void) {}
+void nts_set_status(const char *gamestatus, const char *text) { (void)gamestatus; (void)text; }
 #endif

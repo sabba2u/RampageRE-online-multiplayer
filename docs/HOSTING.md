@@ -73,7 +73,7 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 | UDP 27960 | the game host (RampageRE.exe) | every hosted game not on Steam |
 | TCP 19980 | the room server (launcher or Node) | room codes and links from outside your home |
 
-Online play is up to 4 players: the host and three friends (Host on Steam: 2). More: [NETPLAY.md](NETPLAY.md).
+Online play is up to 4 players: the host and three friends (Host on Steam too). More: [NETPLAY.md](NETPLAY.md).
 
 ## An always-on room server (a VPS)
 

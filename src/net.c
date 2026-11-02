@@ -26,7 +26,7 @@
 
 #define LOG_LINES 200
 #define DIGESTS 256                                  /* the host's own, at most 30 a second: eight seconds */
-#define NET_GAME_SLOTS net_game_slots(nt_is_steam())   /* 4 seats; over Steam 2 (netwire.c) */
+#define NET_GAME_SLOTS net_game_slots(nt_is_steam())   /* 4 seats, Steam too (netwire.c) */
 #define REJOIN_FILE "netrejoin.cfg"
 #define REJOIN_KEEP_S 3600                           /* a token older than this in the file is not offered */
 
