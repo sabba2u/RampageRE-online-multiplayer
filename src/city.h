@@ -312,6 +312,9 @@ typedef struct {
 
 typedef struct City City;
 City *city_open(const Vol *vol, const char *name);   /* NULL if the city's bundles are not in the archive */
+/* port extra: random blocks: with a seed (not 0) each building is one of the city's templates of the same width and
+ * depth and as tall or taller, picked by the seed (the same on every copy); 0 the city as built */
+void city_set_random(City *c, unsigned seed);
 void city_close(City *c);
 uint32_t city_blocks(City *c, const char **names, uint32_t max);   /* the block list, without repeats */
 int city_build(City *c, const char *block, int night, Scene *s);    /* 0 = ok */

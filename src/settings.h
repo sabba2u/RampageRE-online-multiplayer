@@ -30,6 +30,9 @@ typedef struct {
     int time_of_day;
     /* weather= (port extra, weather.h): clear (the default), rain, storm (rain, lightning and thunder); --weather */
     int weather;
+    /* random_blocks= (port extra, city.c city_set_random): 0 (the default) the cities as built, else the seed every
+     * building's template is picked by (the same width, as tall or taller); --random-blocks SEED */
+    unsigned random_blocks;
     /* wii_data= (port extra, docs/WII_PLAN.md): the player's own extracted Wii disc (Dolphin's Extract Entire Disc: the
      * folder holding DATA, or its DATA/files), whose ten monsters and Dallas the port adds; "" (the default) none, on
      * the Switch, the Vita and Android the home folder's wii when there is one (main.c) */

@@ -170,6 +170,12 @@ impl App {
                 {
                     self.settings = Settings::update(|s| s.unlock_all = unlock);
                 }
+                let mut shuffle = self.settings.shuffle_buildings;
+                if ui.checkbox(&mut shuffle, RichText::new("Shuffle the city's buildings").strong())
+                    .on_hover_text("Every game a new street: each lot gets another of the city's buildings of its size.").changed()
+                {
+                    self.settings = Settings::update(|s| s.shuffle_buildings = shuffle);
+                }
                 // the time of day and smoother edges, passed at each start (the game's own settings when left alone)
                 let mut tod = self.settings.time_of_day.clone();
                 let mut smooth = self.settings.smoothing.clone();

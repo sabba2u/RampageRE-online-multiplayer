@@ -14,10 +14,10 @@ Ideas the owner wants, not started. Newest at the bottom.
   sounds a moment after. Look at how it was done for Emberville first:
   `I:\programming.projects\claude.code\multiplayer.litenetlib.spacewar.steamworks\spike\BetterWeather\` (`Weather.cs`,
   `Plugin.cs`). Online: the host decides when the lightning strikes so everyone sees the same flash.
-- **Random city blocks** (offered, not decided): shuffle a city's real building templates into new block layouts from a
+- (done 2026-11-02: --random-blocks SEED / random_blocks=, launcher Shuffle the city's buildings; the blocks' own decorations stay where they were, so a banner can hang on another building) **Random city blocks** (offered, not decided): shuffle a city's real building templates into new block layouts from a
   seed (`--random-city <seed>`); online, the host sends the seed.
 - **More than 4 players** (offered, not decided): after four-player online; a prototype first.
-- **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
+- (done 2026-11-02: docs/MODELS.md) **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
   textures. Re-skinning a monster on its own skeleton keeps all its moves; a new skeleton needs new animations and a
   move graph. Export already works (`tools/anim.py`, `tools/city.py`, `tools/mesh.py`).
 - (done 2026-11-02: launcher Smooth edges, tools/upscale_textures.py; AI needs Real-ESRGAN installed) **Graphics upgrades** (suggested): anti-aliasing (multisampling or 2x supersampling) and AI-upscaled textures as a

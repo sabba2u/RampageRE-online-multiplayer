@@ -163,4 +163,11 @@ fn game_options_passed() {
     assert_eq!(f.look, "normal");
     f.look = "film".into();
     assert_eq!(game_options(&f), vec!["--film"]);
+    let mut r = Settings::default();
+    assert!(!r.shuffle_buildings);
+    r.shuffle_buildings = true;
+    let o = game_options(&r);
+    assert_eq!(o[0], "--random-blocks");
+    let seed: u32 = o[1].parse().unwrap();
+    assert!(seed > 0 && seed < 0x8000_0000, "a seed the game takes (31 bits, not 0)");
 }

@@ -38,6 +38,8 @@ struct City {
     char (*model_key)[64];                           /* per city entry: model name of a mesh entry ("model|object") */
     int create_crowd;                                /* Traffic.bsf's bCreateCrowd (city_new_world) */
     Group runners[16]; int nrunners;                 /* Traffic.bsf's runners: the first activated block's, the world's */
+    unsigned random_seed;                            /* port extra (city_set_random): 0 the city as built */
+    Group tmpl[256]; int ntmpl, tmpl_read;           /* its building templates (inst_template), read once */
 };
 
 /* ---------------------------------------------------------------- matrices */
@@ -2286,6 +2288,61 @@ static int attachment_where(Group e, const SceneBuilding *sb, int nst, Adornment
     return a->record >= 0 && a->record <= nst;
 }
 
+/* port extra: random blocks (city_set_random). A building template: one with a width, a ground floor and storeys */
+static int is_building_template(Group g)
+{
+    return group_num(g, "width", 0) > 0 && group_sub(g, "ShapeSet|GroundFloorShapes").at != 0;
+}
+
+static int storeys_of(Group g)
+{
+    static Record r[MAX_REC];
+    return (int)group_all(g, "Floor|", r, MAX_REC);
+}
+
+static void read_templates(City *c)
+{
+    c->tmpl_read = 1;
+    for (int i = 0; i < c->ntemplate_books; i++) {
+        LoadedBook *lb = load_book(c, c->template_books[i]);
+        if (!lb || !lb->book.d)
+            continue;
+        const Book *bk = &lb->book;
+        uint32_t count = rd32(bk->d + 0x1C), table = rd32(bk->d + 0x24);
+        for (uint32_t k = 0; k < count && c->ntmpl < 256; k++) {
+            Group g = { bk, rd32(bk->d + table + 4 * k) };
+            if (is_building_template(g))
+                c->tmpl[c->ntmpl++] = g;
+        }
+    }
+}
+
+/* the template a building instance is built from: its own; with a random seed, one of the city's of the same width
+ * and depth and at least as many storeys (so the block's ground and the signs placed by the instance still fit), the
+ * same for the same seed and instance on every copy (the instance's place in its book, hashed with the seed) */
+static Group inst_template(City *c, Group inst)
+{
+    Group t = template_of(c, group_str(inst, "TemplateName"));
+    if (!c->random_seed || !t.at)
+        return t;
+    if (!c->tmpl_read)
+        read_templates(c);
+    int w = (int)group_num(t, "width", 1), d = (int)group_num(t, "depth", 2), st = storeys_of(t), n = 0;
+    Group pick[256];
+    for (int i = 0; i < c->ntmpl; i++) {
+        Group g = c->tmpl[i];
+        if ((int)group_num(g, "width", 1) == w && (int)group_num(g, "depth", 2) == d && storeys_of(g) >= st)
+            pick[n++] = g;
+    }
+    if (n <= 1)
+        return t;
+    uint32_t h = c->random_seed * 2654435761u ^ inst.at * 2246822519u;
+    h ^= h >> 15; h *= 2654435761u; h ^= h >> 13;
+    return pick[h % (uint32_t)n];
+}
+
+void city_set_random(City *c, unsigned seed) { if (c) c->random_seed = seed; }
+
 static void adornments(City *c, Scene *s, SceneBuilding *sb, Group from, int nst)
 {
     static Record r[MAX_REC];
@@ -2623,7 +2680,7 @@ static void building(City *c, Scene *s, Group inst, float row_offset, float y0, 
 {
     SceneBuilding **list = scenery ? &s->scenery : &s->buildings;
     uint32_t *count = scenery ? &s->nscenery : &s->nbuildings;
-    Group t = template_of(c, group_str(inst, "TemplateName")), where;
+    Group t = inst_template(c, inst), where;
     if (!t.at) {
         s->missing++;
         return;
@@ -3918,7 +3975,7 @@ void city_build_left(City *c, const char *block_name, Scene *s)
     static Record r[MAX_REC];
     uint32_t n = group_values(b, "BuildingInstance|", &where, r, MAX_REC);
     for (uint32_t i = 0; i < n; i++) {
-        Group inst = record_group(where, r[i]), t = template_of(c, group_str(inst, "TemplateName"));
+        Group inst = record_group(where, r[i]), t = inst_template(c, inst);
         float left = group_num(inst, "LeftEdgeXPos", 0);
         if (!t.at || left < -50.0f || !(left < 50.0f))   /* [R 0x303EB4 .. 0x303EF0] */
             continue;

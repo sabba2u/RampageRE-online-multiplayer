@@ -87,6 +87,7 @@ static void ng_pad_in(const NetPad *n, Pad *p, int with_pressed)
 typedef struct {
     uint8_t city, block, play_type, nmon, bots, night;
     uint8_t weather;                                 /* the host's (weather.c): every guest's too */
+    uint32_t random_blocks;                          /* the host's buildings' seed (city.c): a world of its own */
     int16_t monster[MONSTERS];
     uint32_t seed[2], bot_seed;
 } NgWorld;
@@ -113,6 +114,7 @@ static int ng_world_of(const Viewer *v, NgWorld *w)
     w->bots = (uint8_t)v->num_bots;
     w->night = (uint8_t)v->night;
     w->weather = (uint8_t)weather_get();
+    w->random_blocks = v->random_blocks;
     for (int k = 0; k < MONSTERS; k++)
         w->monster[k] = (int16_t)(k < v->nmon ? v->mon[k].monster : -1);
     w->seed[0] = v->prof.current.seed[0];
@@ -232,6 +234,7 @@ static void ng_follow(Viewer *v)
     v->bot_seed = w->bot_seed;
     v->play_type = w->play_type;
     v->night = w->night;
+    v->random_blocks = w->random_blocks;             /* (the host's buildings, before its city opens here) */
     game_free(v->game);
     v->game = NULL;
     v->game_built = 0;

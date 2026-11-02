@@ -25,6 +25,7 @@ static void defaults(Settings *s)
     s->four_players = 1;
     s->time_of_day = 0;
     s->weather = 0;
+    s->random_blocks = 0;
     s->wii_data[0] = 0;
 }
 
@@ -32,6 +33,7 @@ void settings_unset(Settings *f)
 {
     f->width = f->height = f->fullscreen = f->vsync = f->ao = f->aniso = f->mips = f->smaa = f->msaa = UNSET;
     f->profile_autoload = f->language = f->four_players = f->time_of_day = f->weather = UNSET;
+    f->random_blocks = 0;
     f->ao_radius = UNSET;
     f->wii_data[0] = 0;
 }
@@ -102,6 +104,7 @@ static int set(Settings *s, const char *key, const char *v)
     else if (!_stricmp(key, "four_players")) s->four_players = atoi(v) != 0;
     else if (!_stricmp(key, "time_of_day")) s->time_of_day = tod_of(v);
     else if (!_stricmp(key, "weather")) s->weather = weather_of_name(v);
+    else if (!_stricmp(key, "random_blocks")) s->random_blocks = (unsigned)strtoul(v, NULL, 10);
     else if (!_stricmp(key, "wii_data")) snprintf(s->wii_data, sizeof s->wii_data, "%s", v);
     else if (!_stricmp(key, "language")) {
         int l = language_of(v);
@@ -168,6 +171,7 @@ int settings_arg(Settings *f, int argc, char **argv, int *i)
     else if (!strcmp(a, "--no-four-players")) f->four_players = 0;
     else if (v && !strcmp(a, "--time-of-day")) { f->time_of_day = tod_of(v); ++*i; }
     else if (v && !strcmp(a, "--weather")) { f->weather = weather_of_name(v); ++*i; }
+    else if (v && !strcmp(a, "--random-blocks")) { f->random_blocks = (unsigned)strtoul(v, NULL, 10) | 0x80000000u; ++*i; }
     else if (v && !strcmp(a, "--ao-radius")) { float r = (float)atof(v); if (r > 0) f->ao_radius = r; ++*i; }
     else if (v && !strcmp(a, "--smaa")) { f->smaa = smaa_of(v); ++*i; }
     else if (v && !strcmp(a, "--msaa")) { f->msaa = clamp_msaa(atoi(v)); ++*i; }
@@ -206,6 +210,7 @@ void settings_resolve(Settings *s, const Settings *f, int use_cfg)
     if (f->four_players != UNSET) s->four_players = f->four_players;
     if (f->time_of_day != UNSET) s->time_of_day = f->time_of_day;
     if (f->weather != UNSET) s->weather = f->weather;
+    if (f->random_blocks & 0x80000000u) s->random_blocks = f->random_blocks & 0x7FFFFFFFu;   /* (bit 31: given) */
     if (f->wii_data[0]) snprintf(s->wii_data, sizeof s->wii_data, "%s", f->wii_data);
 }
 

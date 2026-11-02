@@ -242,6 +242,7 @@ typedef struct Viewer {
     int profile_autoload;                            /* rampage.cfg profile_autoload (port extra, settings.h) */
     int four_players;                                /* rampage.cfg four_players (port extra, settings.h) */
     int time_of_day;                                 /* rampage.cfg time_of_day: 0 the game's, 1 day, 2 night */
+    unsigned random_blocks;                          /* rampage.cfg random_blocks: the seed (0 the cities as built) */
     int game_block;                                  /* a block the game moved on to, to build after the frame; -1 */
     int left_block;                                  /* the block the game left, laid at -41 by that build; -1 */
     int game_built;                                  /* this build is the game's: keep the game going */
@@ -1621,6 +1622,7 @@ static int open_city(Viewer *v, int index, uint32_t block, int game_block)
     City *c = city_open(&v->vol, CITIES[index]);
     if (!c)
         return -1;
+    city_set_random(c, v->random_blocks);            /* port extra: the buildings shuffled by a seed (0 none) */
     if (v->have_scene) {
         scene_free(&v->scene);
         v->have_scene = 0;
@@ -8933,6 +8935,7 @@ static int viewer_main(int argc, char **argv)
     v.profile_autoload = gfx.profile_autoload;
     v.four_players = gfx.four_players;
     v.time_of_day = gfx.time_of_day;
+    v.random_blocks = gfx.random_blocks;
     weather_set(gfx.weather);                        /* port extra: rain, a storm (weather.c) */
     int prof_read = !newprofile && v.prof_write ? profile_read(&v.prof, v.prof_path) : -1;
     if (prof_read > 0) {

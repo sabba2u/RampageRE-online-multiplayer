@@ -99,12 +99,19 @@ pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
     if s.look == "film" {
         a.push("--film");
     }
+    let mut out: Vec<String> = Vec::new();
+    if s.shuffle_buildings {                         // a new street every game (the host's: its guests take it)
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(1);
+        let seed = ((t ^ (t >> 31)) as u32 & 0x7FFF_FFFF).max(1);
+        out.extend(["--random-blocks".to_string(), seed.to_string()]);
+    }
     match s.smoothing.as_str() {
         "medium" => a.extend(["--smaa", "medium"]),
         "high" => a.extend(["--smaa", "high", "--msaa", "4"]),
         _ => {}
     }
-    a.into_iter().map(String::from).collect()
+    out.extend(a.into_iter().map(String::from));
+    out
 }
 
 /// Started from its own folder (it finds its data there). Anything but Offline needs a game with online play.
