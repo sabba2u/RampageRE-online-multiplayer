@@ -999,7 +999,11 @@ static void transition(Game *g)
         clock_reset(g);
         if (pt == GP_TIMED_RUN)
             g->start_block = 0;
-        else
+        else if (pt == GP_BOSS_RUMBLE) {             /* (port extra) the run again: its block, three lives each */
+            g->start_block = g->cfg.start_block;
+            for (int i = 0; i < np(g); i++)
+                g->lives[i] = 3;
+        } else
             checkpoint_restore(g);                   /* three lives, the checkpoint's block */
         status_reset(g);                             /* the points */
         g->game_over = 0;

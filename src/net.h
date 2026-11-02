@@ -55,6 +55,9 @@ const void *net_host_world_info(int *len);           /* the guest: the host's in
  * token; then the slot is open to anyone, who takes over its monster as it is. The guests hear every slot's state
  * (NM_SLOTS). Slots in use today: 2 (net_slots) */
 int net_slots(void);
+/* (port extra) the host: seats from this one on are given to no new guest (0: no limit; Boss Rumble's run under way:
+ * its players' seats alone, a kept seat's guest still back) */
+void net_set_seat_limit(int n);
 int net_slot_state(int k, double *left);             /* NSL_*; *left a kept one's seconds (host and guests) */
 int net_slot_monster(int k);                         /* host: the monster k's guest asked for in its hello (-1 any) */
 int net_slot_joining(int k);                         /* slot k's guest is connected but plays nothing yet (loading) */

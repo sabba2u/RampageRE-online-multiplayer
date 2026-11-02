@@ -253,6 +253,8 @@ static void slot_set(int k, int state)
     host_state();
 }
 
+static int g_seat_limit;
+void net_set_seat_limit(int n) { g_seat_limit = n > 0 ? n : 0; }
 int net_slots(void) { return g.role == NET_GUEST ? (g.told.n ? g.told.n : NET_GAME_SLOTS) : NET_GAME_SLOTS; }
 int net_my_slot(void) { return g.role == NET_GUEST ? g.my_slot : 0; }
 int net_msg_slot(void) { return g.msg_slot; }
@@ -668,7 +670,8 @@ static void on_hello(int peer, NetBuf *b)
             pk[i].until = g.slot[i].until;
         }
         double wait = 0;
-        k = net_slot_pick(pk, NET_GAME_SLOTS, h.token, g.now, &wait);
+        k = net_slot_pick(pk, g_seat_limit && g_seat_limit < NET_GAME_SLOTS ? g_seat_limit : NET_GAME_SLOTS, h.token,
+                          g.now, &wait);
         if (k == NET_PICK_RESERVED)
             snprintf(why, sizeof why, "A player who dropped out has their place kept for %d:%02d more; try again then",
                      (int)(wait + 0.99) / 60, (int)(wait + 0.99) % 60);

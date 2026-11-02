@@ -171,6 +171,8 @@ static void ng_set_world(Viewer *v)
     netlobby_set_game(v->monsters[v->mon[0].monster], where);
     if (net_role() == NET_HOST)
         w.bot_seed = v->bot_seed;
+    /* (Boss Rumble under way: its bosses have the slots after the players, no new guest takes one) */
+    net_set_seat_limit(net_role() == NET_HOST && v->play_type == GP_BOSS_RUMBLE ? v->rumble.players : 0);
     uint32_t id = ng_world_id(&w);
     static uint32_t was_id;
     static int was_block = -1;
@@ -2455,7 +2457,7 @@ static void ng_slots_pads(Viewer *v, const Window *w)
             rest[s] = 1;                             /* (at rest: a push from here counts) */
         if (k || !(press || (rest[s] && push > 0.6f)))
             continue;
-        for (int j = 1; j < v->nmon && j < net_slots(); j++) {   /* the next free seat */
+        for (int j = 1; j < ng_players(v) && j < net_slots(); j++) {   /* the next free seat (no boss's) */
             int st = net_slot_state(j, NULL);
             int taken = 0;
             for (int o = 1; o < 4; o++)
@@ -2473,7 +2475,7 @@ static void ng_slots_pads(Viewer *v, const Window *w)
      * gets its monster too, waiting for a player as a kept seat's does); not while a scene runs (the intro, a
      * Continue, the results: they wait for every player's move), a frame later then */
     for (int k = 1; k < net_slots() && k < MONSTERS; k++)
-        if (k >= v->nmon && net_slot_state(k, NULL) == NSL_ONLINE && !game_ni_on(v->game)) {
+        if (k >= v->nmon && net_slot_state(k, NULL) == NSL_ONLINE && !game_ni_on(v->game) && !v->rumble.players) {
             while (v->nmon < k && v->nmon < MONSTERS && ng_join_midblock(v, v->nmon) == 0)
                 ;
             ng_join_midblock(v, k);
@@ -2481,7 +2483,8 @@ static void ng_slots_pads(Viewer *v, const Window *w)
     ng_guest_menu = 0;
     ng_guest_typing = 0;
     for (int k = 1; k < v->nmon && k < net_slots(); k++)   /* a guest in a computer player's seat: theirs now */
-        if (v->mon[k].bot && k == v->nmon - v->num_bots && net_slot_state(k, NULL) == NSL_ONLINE) {
+        if (v->mon[k].bot && !v->mon[k].boss && k == ng_players(v) - v->num_bots &&
+            net_slot_state(k, NULL) == NSL_ONLINE) {
             Mon *mo = &v->mon[k];
             mo->bot = 0;
             mo->is_ai = 0;

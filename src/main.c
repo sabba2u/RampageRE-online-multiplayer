@@ -3999,6 +3999,8 @@ static void game_step(Viewer *v, float dt)
                 v->ntubes = reveal_block(&v->reveal, e->a, 1 << 30, v->tubes, REVEAL_LOCS);
                 if (k == (int)v->block)
                     add_tubes(v);
+                if (e->b)                            /* (Boss Rumble: the run again, from its first wave) */
+                    rumble_reset(v);
                 if (k >= 0 && k != (int)v->block && e->b) {
                     /* [R 0x2B66C0, 0x302AF0] in the game the block left is torn down and the new one laid out at
                      * once, as the results start: built at slot 0 once this frame is over (the monsters and the
@@ -4011,7 +4013,6 @@ static void game_step(Viewer *v, float dt)
                 } else if (k >= 0 && e->b) {           /* the same block again in the game (a tied King block
                                                       * 0x325054, Game Over's Continue 0x325258): torn down and
                                                       * loaded fresh at once */
-                    rumble_reset(v);                 /* (Boss Rumble: the run again, from its first wave) */
                     v->next_block = -1;
                     v->block_shift = 0;
                     v->game_block = k;
@@ -8797,8 +8798,20 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
         return -1;
     Mon *mo = &v->mon[k];
     int reuse = k < v->nmon;
-    if (reuse)
+    if (reuse) {                                     /* (the last boss's: what it held let go, its state cleared) */
+        if (mo->have_graph)
+            let_go(mo, 0);
         mon_fx_stop_all(mo);
+        dir_ai_clear(&mo->ai);
+    }
+    mo->held = mo->held_unit = -1;
+    edible_power_init(&mo->power);
+    mo->mode = MODE_GROUND;
+    memset(&mo->mount, 0, sizeof mo->mount);
+    mo->sph_prev_n = 0;
+    memset(mo->atk, 0, sizeof mo->atk);
+    if (mon_in(mo))
+        mon_in(mo)->xray = 0;
     mo->v = v;
     mo->slot = k;
     mo->monster = monster;
@@ -8906,6 +8919,8 @@ static void rumble_driver_step(Viewer *v, float dt)
         }
         mo->boss_down += dt;
         if (mo->boss_down >= RUMBLE_DOWN) {          /* out for good */
+            if (mo->have_graph)
+                let_go(mo, 0);                       /* (what it held, dropped) */
             mo->boss_beaten = mo->defeated = 1;
             if (mon_in(mo))
                 mon_in(mo)->hidden = 1;
