@@ -795,7 +795,7 @@ static void ng_digest(const Viewer *v, NetDigest *d)
     if (v->game)
         game_net_get(v->game, &gs);
     s->h = ng_h(ng_h(H0, v->game ? game_state(v->game) : 0), v->block);
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < v->nmon && k < GAME_PLAYERS; k++) {   /* (every player: were the first 2) */
         s->h = ng_h(s->h, gs.lives[k]);
         for (int c = 0; c < 7; c++)
             s->h = ng_h(ng_h(s->h, gs.points[k][c]), gs.kills[k][c]);
@@ -806,11 +806,11 @@ static void ng_digest(const Viewer *v, NetDigest *d)
     for (int k = 0; k < v->nmon; k++) {
         const Mon *mo = &v->mon[k];
         s->h = ng_h(ng_h(s->h, mo->defeated), mo->power.rage);
-        if (k < 2) {
+        if (k < 4) {                                 /* (NET_DVALS 16: x, y, z of each in 0..11, the HPs in 12..15) */
             s->v[3 * k] = mo->mx;
             s->v[3 * k + 1] = mo->my;
             s->v[3 * k + 2] = mo->mz;
-            s->v[6 + k] = mo->hp;
+            s->v[12 + k] = mo->hp;
         }
     }
     s = &d->s[NDS_BUILDINGS];                        /* the buildings: state, HP, storeys, roof, cells, floors */
@@ -1051,7 +1051,9 @@ static void ng_send_snap(Viewer *v)
     game_net_get(v->game, &gs);
     net_w_u8(&b, (uint32_t)gs.running);
     net_w_f32(&b, gs.elapsed);
-    for (int k = 0; k < 2; k++) {
+    int np = v->nmon < GAME_PLAYERS ? v->nmon : GAME_PLAYERS;   /* every player's score and lives (were 2) */
+    net_w_u8(&b, (uint32_t)np);
+    for (int k = 0; k < np; k++) {
         for (int c = 0; c < 7; c++) {
             net_w_u32(&b, (uint32_t)gs.points[k][c]);
             net_w_u32(&b, (uint32_t)gs.kills[k][c]);
@@ -1075,6 +1077,7 @@ static void ng_send_snap(Viewer *v)
 
 typedef struct {
     int n; NgMon m[MONSTERS]; NetPad pad[MONSTERS]; int game_state, block; float clock; GameNetSync gs;
+    int np;                                          /* the players in gs (the host's nmon, up to GAME_PLAYERS) */
     GameNetFlow flow; int hud, results_up;
     uint32_t acks[NET_SLOTS];                        /* each slot's pad frame the host took last (its prediction) */
     uint32_t ack;                                    /* (ours, of acks) */
@@ -1136,7 +1139,10 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
     o->clock = net_r_f32(&b);
     o->gs.running = (int)net_r_u8(&b);
     o->gs.elapsed = net_r_f32(&b);
-    for (int k = 0; k < 2; k++) {
+    o->np = (int)net_r_u8(&b);
+    if (o->np > GAME_PLAYERS)
+        return 0;
+    for (int k = 0; k < o->np; k++) {
         for (int c = 0; c < 7; c++) {
             o->gs.points[k][c] = (int)net_r_u32(&b);
             o->gs.kills[k][c] = (int)net_r_u32(&b);
@@ -1508,6 +1514,13 @@ static void ng_apply_snap(Viewer *v)
             if (mo->run.state != hi->state) {
                 moves_force(&mo->run, hi->state);
                 mo->run.time = hi->time;
+                /* entered as the game enters a state (play_state: the clip, the tail springs' weight, the mirror and
+                 * mode it starts with, then the snapshot's below), blending in over the state's time: forced alone,
+                 * a monster the guest's own step did not move (the host's computer players, monsters 3 and 4) kept
+                 * its tail's springs off and cut from clip to clip */
+                scene_monster_blend(&v->scene, k, mo->graph.states[hi->state].blend);
+                play_state(mo);
+                mo->run.time = hi->time;
             } else if (fabsf(mo->run.time - hi->time) > 0.25f)
                 mo->run.time = hi->time;
         }
@@ -1553,7 +1566,7 @@ static void ng_apply_snap(Viewer *v)
         const NgSnap *at = r == 2 ? &sa : &sb;
         double t = r == 2 ? a->t : b->t;
         ng_flow_from_snap(v, at, t);
-        game_net_put(v->game, &sb.gs, v->nmon < 2 ? v->nmon : 2);
+        game_net_put(v->game, &sb.gs, v->nmon < sb.np ? v->nmon : sb.np);
     }
     if (ng_have_last && ng_last.block != v->block) {
         static int warned = -1;
@@ -2108,14 +2121,20 @@ static void netgame_plain_title(const Viewer *v, Window *w);
 static void netgame_frame(Viewer *v, Window *w, double now)
 {
     net_update(now);
-    static double tail_trace;
-    if (getenv("RAMPAGE_NET_TAILS") && now - tail_trace > 1) {   /* the tails' springs, each monster's (a test) */
-        tail_trace = now;
+    static long long tail_trace;
+    /* each monster's tail springs, state, points and lives (a test), once a second of the PC's clock: the copies on
+     * one PC (tools/net4_test.ps1) compare the same seconds, in the same block */
+    if (getenv("RAMPAGE_NET_TAILS") && (long long)time(NULL) != tail_trace) {
+        tail_trace = (long long)time(NULL);
+        (void)now;
         for (int k = 0; k < v->nmon; k++)
-            printf("net: tail %d: links %d weight %.2f target %.2f state %s points %d lives %d\n", k,
-                   v->mon[k].tail.n, v->mon[k].tail.weight, v->mon[k].tail.target,
+            printf("net: tail %d: links %d weight %.2f target %.2f state %s points %d lives %d wall %lld block %d\n",
+                   k, v->mon[k].tail.n, v->mon[k].tail.weight, v->mon[k].tail.target,
                    v->mon[k].have_graph ? v->mon[k].graph.states[v->mon[k].run.state].name : "-",
-                   v->game ? game_points(v->game, k, GPT_TOTAL) : -1, v->game ? game_lives(v->game, k) : -1);
+                   v->game ? game_points(v->game, k, GPT_TOTAL) : -1, v->game ? game_lives(v->game, k) : -1,
+                   tail_trace, v->block);
+        NetStats st = net_stats();
+        printf("net: rate: snapshot %d bytes, %.1f KB/s out\n", st.snap_bytes, st.kb_out_per_s);
     }
     if (!DEBUG_TITLE)                                /* (the developer build's title says it every half second) */
         netgame_plain_title(v, w);
@@ -2414,7 +2433,7 @@ static void netgame_pads(Viewer *v, const Window *w)
 /* the game's flow as this copy has it, logged as it changes (both sides: build\nettest\host.out / guest.out) */
 static void ng_flow_log(Viewer *v)
 {
-    static int was_state = -1, was_results = -1, was_result = -1, was_lives[2] = { -1, -1 };
+    static int was_state = -1, was_results = -1, was_result = -1, was_lives[GAME_PLAYERS] = { -1, -1, -1, -1 };
     static int was_def[MONSTERS], was_human[MONSTERS], was_streaker[MONSTERS], was_hidden[MONSTERS];
     if (!v->game)
         return;
@@ -2441,7 +2460,7 @@ static void ng_flow_log(Viewer *v)
         was_human[k] = mo->human;
         was_streaker[k] = mo->streaker >= 0;
         was_hidden[k] = hidden;
-        if (k < 2 && game_lives(v->game, k) != was_lives[k]) {
+        if (k < GAME_PLAYERS && game_lives(v->game, k) != was_lives[k]) {
             net_log("flow: player %d lives %d", k + 1, game_lives(v->game, k));
             was_lives[k] = game_lives(v->game, k);
         }
@@ -2490,7 +2509,7 @@ static void ng_test_end(Viewer *v)
         game_net_get(v->game, &gs);
         gs.elapsed = 100000;
         net_log("test: the clock run out");
-        game_net_put(v->game, &gs, v->nmon < 2 ? v->nmon : 2);
+        game_net_put(v->game, &gs, v->nmon < GAME_PLAYERS ? v->nmon : GAME_PLAYERS);
     }
 }
 
@@ -2514,9 +2533,9 @@ static void ng_test_die(Viewer *v)
     if (!lives_set && c) {
         GameNetSync s;
         game_net_get(v->game, &s);
-        for (int k = 0; k < 2; k++)
+        for (int k = 0; k < GAME_PLAYERS; k++)
             s.lives[k] = atoi(c + 1);
-        game_net_put(v->game, &s, 2);
+        game_net_put(v->game, &s, v->nmon < GAME_PLAYERS ? v->nmon : GAME_PLAYERS);
         lives_set = 1;
         net_log("test: lives %d each", atoi(c + 1));
     }
@@ -2525,7 +2544,7 @@ static void ng_test_die(Viewer *v)
     if (net_now() < next)
         return;
     next = net_now() + period;
-    for (int k = 0; k < v->nmon && k < 2; k++) {
+    for (int k = 0; k < v->nmon; k++) {
         Mon *mo = &v->mon[k];
         if (mo->defeated || mo->human || mo->dropping || mo->hp <= 0)
             continue;

@@ -73,11 +73,12 @@ function Report([string]$name, [bool]$ok, [string]$why) {
     if ($ok) { "PASS $name" } else { "FAIL $name : $why"; $script:fail++ }
 }
 function Read-Tails([string]$file) {
-    $rx = 'net: tail (\d+): links (\d+) weight ([\d.]+) target ([\d.]+) state (\S+) points (-?\d+) lives (-?\d+)'
+    $rx = 'net: tail (\d+): links (\d+) weight ([\d.]+) target ([\d.]+) state (\S+) points (-?\d+) lives (-?\d+) wall (\d+) block (\d+)'
     Get-Content $file -ErrorAction SilentlyContinue | ForEach-Object {
         if ($_ -match $rx) {
             [pscustomobject]@{ k = [int]$Matches[1]; links = [int]$Matches[2]; weight = [double]$Matches[3]
-                state = $Matches[5]; points = [int]$Matches[6]; lives = [int]$Matches[7] }
+                state = $Matches[5]; points = [int]$Matches[6]; lives = [int]$Matches[7]; wall = [long]$Matches[8]
+                block = [int]$Matches[9] }
         }
     }
 }
@@ -92,7 +93,7 @@ Report "digests" ($mm.Count -eq 0) "$($mm.Count) MISMATCH lines, first: $($mm | 
 
 $ht = @(Read-Tails "$out\host.out")
 $hn = if ($ht) { ($ht | Measure-Object k -Maximum).Maximum + 1 } else { 0 }
-$hLast = @{}; foreach ($r in $ht) { $hLast[$r.k] = $r }
+$hAt = @{}; foreach ($r in $ht) { $hAt["$($r.wall)/$($r.k)"] = $r }   # (the host's sample of each second)
 for ($k = 1; $k -le $Guests; $k++) {
     $file = if ($Rejoin -eq $k) { "$out\guest${k}b.out" } else { "$out\guest$k.out" }
     $gt = @(Read-Tails $file)
@@ -102,16 +103,30 @@ for ($k = 1; $k -le $Guests; $k++) {
     $stiff = @($walks | Where-Object { $_.weight -le 0 })
     Report "tails (guest $k)" ($walks.Count -gt 0 -and $stiff.Count -le [math]::Floor($walks.Count / 10)) `
         "$($stiff.Count) of $($walks.Count) walking samples with the springs off (monsters $((@($stiff | ForEach-Object k) | Sort-Object -Unique) -join ', '))"
-    $gLast = @{}; foreach ($r in $gt) { $gLast[$r.k] = $r }
-    $bad = @()
-    foreach ($m in $hLast.Keys) {
-        $a = $hLast[$m]; $b = $gLast[$m]
-        if (-not $b) { $bad += "monster $m missing"; continue }
-        if ([math]::Abs($a.points - $b.points) -gt 600) { $bad += "monster $m points host $($a.points) guest $($b.points)" }
-        if ($a.lives -ne $b.lives) { $bad += "monster $m lives host $($a.lives) guest $($b.lives)" }
+    # the same second of the PC's clock, both in the same block: points within 600 (the guest shows the host a moment
+    # late), lives equal; up to 1 in 10 such samples may differ (a block's end or a life lost inside that moment)
+    $same = 0; $bad = @()
+    foreach ($b in $gt) {
+        $a = $hAt["$($b.wall)/$($b.k)"]
+        if (-not $a -or $a.block -ne $b.block) { continue }
+        $same++
+        if ([math]::Abs($a.points - $b.points) -gt 600 -or $a.lives -ne $b.lives) {
+            $bad += "monster $($b.k) at $($b.wall): points host $($a.points) guest $($b.points), lives $($a.lives) / $($b.lives)"
+        }
     }
-    Report "scores (guest $k)" ($bad.Count -eq 0) ($bad -join '; ')
+    Report "scores (guest $k)" ($same -ge 10 -and $bad.Count -le [math]::Floor($same / 10)) `
+        "$($bad.Count) of $same samples differ (first: $($bad | Select-Object -First 1))"
 }
+# the host's upload per guest, on average: a 2 player game's one guest costs 136 KB/s, a 4 player one's 199 (measured
+# 2026-11-01: the snapshot carries 4 monsters, and 4 smash more); 230 allowed. Most of it is the world's puppets (people,
+# army, traffic) sent to each guest; fewer updates a second or deltas would cut it (docs/TODO.md).
+$rates = @($hostLog | ForEach-Object { if ($_ -match 'net: rate: snapshot (\d+) bytes, ([\d.]+) KB/s out') {
+    [pscustomobject]@{ bytes = [int]$Matches[1]; kb = [double]$Matches[2] } } } | Where-Object { $_.kb -gt 0 })
+$avg = if ($rates) { [math]::Round(($rates | Measure-Object kb -Average).Average, 1) } else { -1 }
+$top = if ($rates) { ($rates | Measure-Object kb -Maximum).Maximum } else { -1 }
+$big = if ($rates) { ($rates | Measure-Object bytes -Maximum).Maximum } else { -1 }
+Report "upload" ($avg -ge 0 -and $avg / [math]::Max(1, $Guests) -le 230) "the host sent $avg KB/s on average to $Guests guest(s)"
+"  (the host: $avg KB/s on average, $top at most; snapshots up to $big bytes)"
 if ($Rejoin -gt 0) {
     $back = @($hostLog | Select-String -SimpleMatch "slot ${Rejoin}: online").Count
     Report "rejoin (seat $Rejoin)" ($back -ge 2) "seat $Rejoin went online $back time(s)"

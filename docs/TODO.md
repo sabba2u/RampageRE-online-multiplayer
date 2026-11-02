@@ -22,3 +22,7 @@ Ideas the owner wants, not started. Newest at the bottom.
   move graph. Export already works (`tools/anim.py`, `tools/city.py`, `tools/mesh.py`).
 - **Graphics upgrades** (suggested): anti-aliasing (multisampling or 2x supersampling) and AI-upscaled textures as a
   texture pack. DLSS does not fit (OpenGL renderer, and the game is light enough to render at full resolution).
+- **Online upload with 3 guests** (measured 2026-11-01): the host sends about 199 KB/s to each guest of a 4 player game
+  (136 to a 2 player game's guest), 4.8 Mbit/s on average and 6.6 at peak with three guests. Most is the people, army
+  and traffic copied to each guest at 60 updates a second. Fewer updates a second for the world's puppets, or sending
+  only what changed, would cut it.

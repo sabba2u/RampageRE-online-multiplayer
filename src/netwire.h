@@ -100,7 +100,7 @@ int net_unpack(NetBuf *in, void *dst, int n);
  * values compared within a tolerance (places that the guest's delay and blending move a little) */
 enum { NDS_GAME, NDS_MONSTERS, NDS_BUILDINGS, NDS_PEOPLE, NDS_ARMY, NDS_BOSS, NDS_TRAFFIC, NDS_STREET, NDS_EDIBLES,
        NDS_CHALLENGE, NET_DSYS };
-#define NET_DVALS 8
+#define NET_DVALS 16                                 /* (4 monsters: x, y, z each, then the 4 HPs) */
 typedef struct { uint32_t h; float v[NET_DVALS]; } NetDSys;
 typedef struct { NetDSys s[NET_DSYS]; } NetDigest;
 extern const char *const NET_DSYS_NAME[NET_DSYS];   /* "game", "monsters", ... */

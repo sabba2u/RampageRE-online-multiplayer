@@ -145,6 +145,29 @@ static void test_pack_round_trip(void)
     CHECK(net_pack(&tiny, src, 1000) != 0 && tiny.err);
 }
 
+/* four monsters in the monsters' digest: x, y, z of each in v[0..11], their HP in v[12..15] */
+static void test_digest_four(void)
+{
+    CHECK(NET_DVALS >= 16);
+    NetDSys a, b;
+    memset(&a, 0, sizeof a);
+    for (int k = 0; k < NET_DVALS; k++)
+        a.v[k] = (float)k;
+    b = a;
+    CHECK(net_dsys_same(&a, &b, 3.0f));
+    b.v[15] += 10;                                               /* monster 4's HP differs */
+    CHECK(!net_dsys_same(&a, &b, 3.0f));
+    uint8_t m[2048];
+    NetDigest d, e;
+    memset(&d, 0, sizeof d);
+    d.s[NDS_MONSTERS] = a;
+    NetBuf w = netbuf(m, sizeof m);
+    net_w_digest(&w, &d);
+    NetBuf r = netbuf(m, w.len);
+    net_r_digest(&r, &e);
+    CHECK(!r.err && e.s[NDS_MONSTERS].v[15] == 15.0f);
+}
+
 static void test_digest(void)
 {
     NetDigest a, b;
@@ -437,6 +460,7 @@ int main(void)
     test_snap_wraps();
     test_pack_round_trip();
     test_digest();
+    test_digest_four();
     test_lobby_url();
     test_lobby_join_kind();
     test_lobby_games_txt();

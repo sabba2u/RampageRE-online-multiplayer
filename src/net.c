@@ -720,8 +720,10 @@ static int digest_matches(int s, double t, const NetDSys *guest, int *nearby)
 
 static void trace_dsys(const char *who, const NetDSys *d)
 {
-    net_log("  %s %08X %.1f %.1f %.1f %.1f %.1f %.1f %.1f %.1f", who, d->h, d->v[0], d->v[1], d->v[2], d->v[3], d->v[4],
-            d->v[5], d->v[6], d->v[7]);
+    char vals[NET_DVALS * 12] = "";
+    for (int k = 0, at = 0; k < NET_DVALS; k++)
+        at += snprintf(vals + at, sizeof vals - at, " %.1f", d->v[k]);
+    net_log("  %s %08X%s", who, d->h, vals);
 }
 
 static void on_digest(Slot *sl, NetBuf *b)
