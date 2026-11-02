@@ -166,6 +166,11 @@ static uint8_t *read_file(const PathC *path, int *size)
     if (d && fread(d, 1, (size_t)n, f) != (size_t)n) { free(d); d = NULL; }
     fclose(f); *size = (int)n; return d;
 }
+uint8_t *tp_decode_png(const void *png, int bytes, int *w, int *h)
+{
+    int ch;
+    return stbi_load_from_memory((const stbi_uc *)png, bytes, w, h, &ch, 4);
+}
 uint8_t *tp_pixels(uint64_t hash, int alpha_mode, int *pw, int *ph)
 {
     if (!T.scanned) scan();

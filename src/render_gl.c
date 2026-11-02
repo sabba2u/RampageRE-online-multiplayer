@@ -257,6 +257,7 @@ struct Renderer {
     uint32_t drawn;
     const uint8_t *video; int video_w, video_h, video_new;   /* rnd_video */
     GLuint video_tex;
+    GLuint art_tex[HUD_ART_N];     /* the port's own pictures (art_texture), 0 until first drawn */
     int tex_gen;                                     /* the texture settings the cache was made with */
     int hold;                                        /* draw_mesh holds the blended parts back (gtao_active) */
     int grey;                                        /* NET: the instance drawn now is greyed (Instance.net_grey) */
@@ -538,6 +539,30 @@ static GLuint video_texture(Renderer *r)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, r->video_w, r->video_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, r->video);
     r->video_new = 0;
     return r->video_tex;
+}
+
+/* the port's own pictures (hud.h HUD_TEX_ART: the main menu's Boss Rumble icon), decoded from menu_art.h the first
+ * time one is drawn */
+#include "menu_art.h"
+static GLuint art_texture(Renderer *r, uint32_t k)
+{
+    static const struct { const unsigned char *png; int bytes; } ART[HUD_ART_N] = {
+        { MENU_ART_RUMBLE, (int)sizeof MENU_ART_RUMBLE }, { MENU_ART_RUMBLE_GLOW, (int)sizeof MENU_ART_RUMBLE_GLOW } };
+    if (k >= HUD_ART_N)
+        return 0;
+    if (!r->art_tex[k]) {
+        int w, h;
+        uint8_t *px = tp_decode_png(ART[k].png, ART[k].bytes, &w, &h);
+        if (!px)
+            return 0;
+        glGenTextures(1, &r->art_tex[k]);
+        glBindTexture(GL_TEXTURE_2D, r->art_tex[k]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        free(px);
+    }
+    return r->art_tex[k];
 }
 
 uint32_t rnd_triangles(const Renderer *r) { return r->drawn; }
@@ -1476,7 +1501,8 @@ static void draw_hud(Renderer *r, const Scene *s, int width, int height, double 
             layer++;
             continue;
         }
-        GLuint id = q->b ? texture(r, q->b, q->tex) : q->tex == HUD_TEX_VIDEO ? video_texture(r) : 0;
+        GLuint id = q->b ? texture(r, q->b, q->tex) : q->tex == HUD_TEX_VIDEO ? video_texture(r) :
+                    q->tex >= HUD_TEX_ART && q->tex < HUD_TEX_ART + HUD_ART_N ? art_texture(r, q->tex - HUD_TEX_ART) : 0;
         if (q->b && !id)
             continue;
         static const float black[4] = { 0, 0, 0, 1 };

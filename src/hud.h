@@ -27,6 +27,9 @@
 #define HUD_TEX_VIDEO 0xFFFFFFFFu   /* HudQuad.tex with no bundle: the movie's picture (rnd_video) */
 #define HUD_TEX_3D 0xFFFFFFFEu      /* HudQuad.tex with no bundle: the next 3D layer is drawn here (the shell's globe and
                                      * effects, shell_3d; its corners mean nothing) */
+#define HUD_TEX_ART 0xFFFFFFF0u     /* HudQuad.tex with no bundle, + HUD_ART_*: the port's own pictures (render_gl.c art_texture,
+                                     * src/menu_art.h) */
+enum { HUD_ART_RUMBLE, HUD_ART_RUMBLE_GLOW, HUD_ART_N };   /* the main menu's Boss Rumble icon: its art, its glow */
 
 /* gCommon.getPlayType() as the scripts test it [R Hud.scr, ChallengeStatus.scr, KingCityResults.scr] (game.h GP_*) */
 enum {

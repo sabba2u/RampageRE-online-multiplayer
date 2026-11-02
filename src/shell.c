@@ -1987,7 +1987,7 @@ typedef struct {
 
 typedef struct {
     Node *icons, *numplayers, *numbots, *retro, *cheat, *playtype, *lb_players, *lb_bots;
-    Node *qicons[4], *retro_rects[3], *cheat_nums[6];
+    Node *qicons[5], *retro_rects[3], *cheat_nums[6];
     int state, play_mode, retro_game, start_retro, num_players, num_bots, ntsc;
     int code[6], code_index;
     float glow_time, retro_delay;
@@ -3495,11 +3495,43 @@ static void mm_retro_selection(Shell *s)               /* handleRetroGameSelecti
         show(m->retro_rects[i], m->retro_game == i);
 }
 
+/* (port extra) the fifth play mode icon, Boss Rumble's: a copy of the Timed Run's (its glow, the art over it) with the
+ * owner's picture (hud.h HUD_ART_*, tools/make_menu_art.py), the five spread over the four's row a little wider. Made
+ * once: the layout keeps it */
+static void art_ref(Node *nd, uint32_t art, float w, float h)
+{
+    if (!nd)
+        return;
+    nd->tex = (TexRef){ NULL, HUD_TEX_ART + art, w, h, 1, 1 };
+    nd->has_tex = 1;
+    nd->has_d = 0;
+}
+static Node *mm_rumble_icon(Shell *s, Node *icons, Node *timed)
+{
+    Node *br = find(icons, "bossrush");
+    if (br || !timed)
+        return br;
+    br = node_copy(s->ifc[IF_MAINMENU], timed, icons);
+    if (!br)
+        return NULL;
+    snprintf(br->name, sizeof br->name, "bossrush");
+    art_ref(br, HUD_ART_RUMBLE_GLOW, 128, 128);
+    art_ref(br->child, HUD_ART_RUMBLE, 129, 129);   /* 94 x 94 at its 0.73, as the others' 160 x 129 art is tall */
+    if (br->child)
+        set_pos(br->child, 0, 0, br->child->p[2]);
+    for (int i = 0; i < 5; i++) {                    /* the four's -5 .. 405 (136.7 apart): -45 .. 445 */
+        Node *q = i < 4 ? child_at(icons, i) : br;
+        if (q)
+            set_pos(q, -45.0f + 122.5f * (float)i, q->p[1], q->p[2]);
+    }
+    return br;
+}
+
 static void mm_icons(Shell *s, float dt)               /* updateIconSelection */
 {
     MainMenu *m = &s->mm;
     m->glow_time += dt * 6.0f;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         Node *q = m->qicons[i];
         if (!q) continue;
         float sc = q->m;
@@ -3802,6 +3834,7 @@ static void mm_event(Shell *s, int ev, int button, int pad, float dt)
         if (m->lb_bots) m->lb_bots->pulse = 1;
         for (int i = 0; i < 4; i++)
             m->qicons[i] = child_at(m->icons, i);
+        m->qicons[4] = mm_rumble_icon(s, m->icons, m->qicons[3]);
         Node *nums = find(r, "cmNumbers");
         m->code_index = 0;
         for (int i = 0; i < 6; i++) {

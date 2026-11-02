@@ -21,5 +21,6 @@ int tp_replace(uint64_t hash, int alpha_mode);
  * then, with a texture bound, px uploaded with all its mip levels and trilinear filtering (px is overwritten) */
 uint8_t *tp_pixels(uint64_t hash, int alpha_mode, int *w, int *h);
 void tp_upload(uint8_t *px, int w, int h, int alpha_mode);
+uint8_t *tp_decode_png(const void *png, int bytes, int *w, int *h);   /* PNG bytes to RGBA (free() it), NULL if not one */
 void tp_dump(uint64_t hash, const uint8_t *rgba, int w, int h);   /* --dumptex: writes the original as the game shows it (RGBA, top row = GL row 0) */
 #endif
