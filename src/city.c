@@ -4372,8 +4372,11 @@ int scene_monster_face(Scene *s, int k, const char *clip, int head)
             for (size_t k = 0; k < sizeof WIDE / sizeof *WIDE; k++)
                 wide |= ends_with(bdp_name(mb, mb->entries[i].name), WIDE[k]);
     if (wide) {
+        /* two nodes above (Neck, Spine): the lips and cheeks hang on the Spine, the brows and eyes (added below by
+         * name) on the Pelvis. Three (the Pelvis) took in the six tentacles, which hang on it too: the face clip's
+         * rest pose held them, never stretched, curled or planted (Cal's below the street) */
         int top = hd;
-        for (int k = 0; k < 3 && in->tree.nodes[top].parent >= 0; k++)
+        for (int k = 0; k < 2 && in->tree.nodes[top].parent >= 0; k++)
             top = in->tree.nodes[top].parent;
         mark_subtree(&in->tree, top, in->face_mask);
         static const char *const NAMED[] = { "Bip01 L Brow", "Bip01 R Brow", "Bip01 L Eye", "Bip01 R Eye" };
