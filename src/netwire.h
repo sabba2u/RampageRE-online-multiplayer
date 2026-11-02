@@ -33,6 +33,9 @@ enum NetMsg {
     NM_WEATHER,      /* host -> guests, reliable: a lightning strike (weather.c): its place across the screen, its
                       * bolt's seed, the monster it strikes (255 none: main.c lightning_zap; the weather itself comes
                       * with the world, NgWorld) */
+    NM_RUMBLE_PICKUP, /* host -> guests, reliable (port extra, Boss Rumble): a power-up out in the city: op (0 out, 1
+                      * taken, 2 gone untaken), the host's id, its kind, its place, who took it (main.c rumble_pu_*;
+                      * the waves' bosses come with the world, NgWorld) */
 };
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it

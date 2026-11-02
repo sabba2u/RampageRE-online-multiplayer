@@ -90,7 +90,15 @@ typedef struct {
     uint32_t random_blocks;                          /* the host's buildings' seed (city.c): a world of its own */
     int16_t monster[MONSTERS];
     uint32_t seed[2], bot_seed;
+    uint8_t rumble_wave;                             /* (port extra) Boss Rumble: the wave on now, its bosses' monsters
+                                                      * (-1 none) in the slots after the players (nmon: the players) */
+    int8_t rumble_boss[RUMBLE_MAX_BOSSES];
 } NgWorld;
+
+static int ng_players(const Viewer *v)               /* the players' monsters: Boss Rumble's bosses after them */
+{
+    return v->rumble.players ? v->rumble.players : v->nmon;
+}
 
 static int ng_world_of(const Viewer *v, NgWorld *w)
 {
@@ -110,13 +118,18 @@ static int ng_world_of(const Viewer *v, NgWorld *w)
     w->city = (uint8_t)v->city_index;
     w->block = (uint8_t)v->block;
     w->play_type = (uint8_t)v->play_type;
-    w->nmon = (uint8_t)v->nmon;
+    w->nmon = (uint8_t)ng_players(v);
     w->bots = (uint8_t)v->num_bots;
     w->night = (uint8_t)v->night;
     w->weather = (uint8_t)weather_get();
     w->random_blocks = v->random_blocks;
     for (int k = 0; k < MONSTERS; k++)
-        w->monster[k] = (int16_t)(k < v->nmon ? v->mon[k].monster : -1);
+        w->monster[k] = (int16_t)(k < w->nmon ? v->mon[k].monster : -1);
+    w->rumble_wave = (uint8_t)(v->play_type == GP_BOSS_RUMBLE ? v->rumble.wave : 0);
+    for (int i = 0; i < RUMBLE_MAX_BOSSES; i++) {
+        int k = v->rumble.players + i;
+        w->rumble_boss[i] = (int8_t)(w->rumble_wave && i < v->rumble.nboss && k < v->nmon ? v->mon[k].monster : -1);
+    }
     w->seed[0] = v->prof.current.seed[0];
     w->seed[1] = v->prof.current.seed[1];
     return 1;
@@ -124,6 +137,10 @@ static int ng_world_of(const Viewer *v, NgWorld *w)
 
 /* the id both compare: the world without its block (the game moves on to the next block by itself on both) and
  * without its players (one joining mid-block is added on every copy, mon_add_player: no copy loads the world again) */
+static void ng_on_rumble_pickup(Viewer *v, NetBuf *b);
+
+static void ng_on_rumble_pickup(Viewer *v, NetBuf *b);
+
 static uint32_t ng_world_id(const NgWorld *w)
 {
     NgWorld k = *w;
@@ -132,6 +149,8 @@ static uint32_t ng_world_id(const NgWorld *w)
     k.nmon = 0;
     k.bots = 0;                                      /* (a guest taking a computer player's seat: the same world) */
     k.weather = 0;                                   /* (the rain coming or going: the same world) */
+    k.rumble_wave = 0;                               /* (Boss Rumble's waves: the same world) */
+    memset(k.rumble_boss, 0, sizeof k.rumble_boss);
     memset(k.monster, 0, sizeof k.monster);
     uint32_t h = net_hash(&k, (int)sizeof k, 2166136261u);
     return h ? h : 1;
@@ -184,6 +203,27 @@ static void ng_cannot_follow(const char *what)
 
 /* the guest: the host's world loaded as the viewer's start would (--players, a city and block); from the front end,
  * the front end left first as a game's start leaves it (shell_start_game) */
+/* the guest: the host's Boss Rumble wave, once it moves on: its bosses made here in the same slots (their moves and
+ * health then come in the snapshots, as the players' do) */
+static void ng_rumble_follow(Viewer *v, const NgWorld *w)
+{
+    if (v->play_type != GP_BOSS_RUMBLE || !v->play || !v->game || net_role() != NET_GUEST)
+        return;
+    if (!v->rumble.players)
+        v->rumble.players = w->nmon;
+    if (w->rumble_wave == v->rumble.wave || v->nmon < v->rumble.players)
+        return;
+    int n = 0;
+    for (int i = 0; i < RUMBLE_MAX_BOSSES; i++)
+        if (w->rumble_boss[i] >= 0 && w->rumble_boss[i] < (int)v->nmonsters &&
+            mon_set_boss(v, v->rumble.players + i, w->rumble_boss[i], rumble_factor(w->rumble_wave), 0, -18, 180) >= 0)
+            n++;
+    net_log("Boss Rumble: wave %d, %d bosses (the host's)", w->rumble_wave, n);
+    printf("rumble: wave %d: %d bosses (the host's)\n", w->rumble_wave, n);
+    v->rumble.wave = w->rumble_wave;
+    v->rumble.nboss = n;
+}
+
 static void ng_follow(Viewer *v)
 {
     int len;
@@ -193,7 +233,9 @@ static void ng_follow(Viewer *v)
     weather_set(w->weather);                         /* the host's weather; its strikes come from it (NM_WEATHER) */
     weather_local(0);
     if (net_host_world() == ng_followed) {           /* the same world: a player who joined mid-block, added here too */
-        while (v->play && v->game && !game_ni_on(v->game) && v->nmon < w->nmon && v->nmon < MONSTERS) {
+        ng_rumble_follow(v, w);                      /* (Boss Rumble: the host's wave and its bosses) */
+        while (v->play && v->game && !game_ni_on(v->game) && ng_players(v) < w->nmon && v->nmon < MONSTERS &&
+               !v->rumble.players) {                 /* (no player joins a Boss Rumble run under way) */
             int m = w->monster[v->nmon];
             if (m < 0 || m >= (int)v->nmonsters || mon_add_player(v, m) < 0) {
                 net_log("cannot add the host's player %d", v->nmon + 1);
@@ -803,6 +845,8 @@ static void ng_handler(const uint8_t *data, int len)
         ng_on_flow(&b);
     else if (type == NM_CHAT && net_state() == NETS_CONNECTED)
         ng_on_chat(g_ngv, &b);
+    else if (type == NM_RUMBLE_PICKUP && net_role() == NET_GUEST && net_live())
+        ng_on_rumble_pickup(g_ngv, &b);
     else if (type == NM_WEATHER && net_role() == NET_GUEST && net_live()) {
         float x = net_r_f32(&b);
         unsigned seed = net_r_u32(&b);
@@ -1633,7 +1677,7 @@ static void ng_digest_send(Viewer *v)
     int len;                                         /* (a player who joined mid-block not added here yet: the host's
                                                       * world counts them already, so not compared till then) */
     const NgWorld *w = (const NgWorld *)net_host_world_info(&len);
-    if (w && len == (int)sizeof *w && w->nmon != v->nmon)
+    if (w && len == (int)sizeof *w && (w->nmon != ng_players(v) || w->rumble_wave != v->rumble.wave))
         return;
     ng_digest_at = net_now();
     NetDigest d;
@@ -2167,6 +2211,56 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 }
 
 /* main.c: a strike this copy picked (offline, or the host): the guests see it too */
+/* (port extra) Boss Rumble's power-up: out (op 0), taken by slot `taker` (1), gone untaken (2): to the guests */
+static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker)
+{
+    if (net_role() != NET_HOST || !net_live())
+        return;
+    uint8_t m[32];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_RUMBLE_PICKUP);
+    net_w_u8(&b, (uint32_t)op);
+    net_w_u16(&b, (uint32_t)id);
+    net_w_u8(&b, (uint32_t)(kind & 0xFF));
+    for (int i = 0; i < 3; i++)
+        net_w_f32(&b, pos ? pos[i] : 0);
+    net_w_u8(&b, (uint32_t)(taker >= 0 ? taker : 255));
+    if (!b.err)
+        net_send_msg(1, m, b.len);
+}
+
+/* the guest: the host's power-ups, its ids against this copy's edibles */
+static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
+{
+    static struct { int host, here; } map[16];
+    int op = (int)net_r_u8(b), id = (int)net_r_u16(b), kind = (int)net_r_u8(b), taker;
+    float pos[3];
+    for (int i = 0; i < 3; i++)
+        pos[i] = net_r_f32(b);
+    taker = (int)net_r_u8(b);
+    if (b->err || !v->edibles || v->play_type != GP_BOSS_RUMBLE)
+        return;
+    if (op == 0) {
+        int here = edible_outdoor_add(v->edibles, kind, pos);
+        for (int i = 0; here >= 0 && i < 16; i++)
+            if (!map[i].here || map[i].host == id) {     /* (here 0 never an outdoor one: the windows' come first) */
+                map[i].host = id;
+                map[i].here = here;
+                break;
+            }
+        printf("rumble: pickup %s (the host's)\n", here >= 0 ? edible_get(v->edibles, here)->name : "?");
+        return;
+    }
+    for (int i = 0; i < 16; i++)
+        if (map[i].here && map[i].host == id) {
+            if (op == 1)                                 /* (its stats are the host's: the look and sound here) */
+                edible_outdoor_take(v->edibles, map[i].here, taker == 255 ? -1 : taker);
+            else
+                edible_outdoor_remove(v->edibles, map[i].here);
+            map[i].here = 0;
+        }
+}
+
 static void netgame_weather_strike(float x, unsigned seed, int monster)
 {
     if (net_role() != NET_HOST || !net_live())

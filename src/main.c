@@ -4184,8 +4184,11 @@ static void game_step(Viewer *v, float dt)
                         profile_block_won(&v->prof, r.city_flags | PC_AVAILABLE, r.city_score, game_block(v->game, NULL),
                                           r.city_destroyed);
                     r.allow_save = v->prof.allow_save && v->prof_write;
-                    if (r.play_type == GP_BOSS_RUMBLE && v->rumble.players)   /* (its time, wave, best) */
+                    if (r.play_type == GP_BOSS_RUMBLE && v->rumble.players) {   /* (its time, wave, best) */
+                        if (e->a == GR_SCREEN_RESULTS)
+                            v->rumble.won = 1;       /* (the guest's: its results are the host's win) */
                         rumble_finish(v, &r.rumble_time, &r.rumble_wave, &r.rumble_best);
+                    }
                     r.loaded = v->prof.loaded;
                     hud_results(v->hud, e->a, &r);
                     if (getenv("RAMPAGE_RESULTS_SHOTS"))
@@ -5232,6 +5235,7 @@ static void street_step(Viewer *v, float dt)
 /* what the modules see of the monsters this frame (army.h's ArmyMonster, index = the monster's slot): their places,
  * moves and collision spheres, which the frame's world follows too */
 static int netgame_idle(const Mon *mo);              /* NET: netgame.c */
+static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker);   /* NET: netgame.c */
 static int army_monsters(Viewer *v, ArmyMonster *m)
 {
     static float spheres[MONSTERS][64][4];
@@ -8915,7 +8919,6 @@ static void rumble_driver_step(Viewer *v, float dt)
         return;
     if (v->rumble.wave >= RUMBLE_WAVES) {
         v->rumble.won = 1;
-        v->rumble.won_t = game_clock(v->game, NULL);
         game_set_won(v->game);
         printf("rumble: won at %.1f s\n", game_clock(v->game, NULL));
         return;
@@ -8993,6 +8996,7 @@ static void rumble_pu_place(Viewer *v)
     int id = edible_outdoor_add(v->edibles, kind, pos);
     if (id < 0)
         return;
+    netgame_rumble_pickup(0, id, kind, pos, -1);     /* (NET: to the guests) */
     v->rumble.pu[v->rumble.npu].id = id;
     v->rumble.pu[v->rumble.npu].age = 0;
     v->rumble.npu++;
@@ -9029,11 +9033,13 @@ static void rumble_pu_step(Viewer *v, float dt)
             float dx = c[0] - d->pos[0], dy = c[1] - d->pos[1];
             if (dx * dx + dy * dy < 25 && fabsf(mo->mz - d->pos[2]) < 8) {
                 printf("rumble: %d took %s\n", k + 1, d->name);
+                netgame_rumble_pickup(1, id, 0, NULL, k);
                 edible_outdoor_take(v->edibles, id, k);
                 gone = 1;
             }
         }
         if (!gone && v->rumble.pu[i].age >= RUMBLE_PICKUP_LIFE) {
+            netgame_rumble_pickup(2, id, 0, NULL, -1);
             edible_outdoor_remove(v->edibles, id);
             gone = 1;
         }
@@ -9049,7 +9055,7 @@ static void rumble_finish(Viewer *v, float *t_out, int *wave_out, float *best_ou
     static float t, best;
     if (!v->rumble.ended) {
         v->rumble.ended = 1;
-        t = v->rumble.won ? v->rumble.won_t : game_clock(v->game, NULL);
+        t = v->rumble.won_t;                         /* (the clock at the last frame of play) */
         best = 0;
         char path[512], dir[512] = ".";
         const char *pp = v->prof_path, *slash = pp ? strrchr(pp, '\\') : NULL, *slash2 = pp ? strrchr(pp, '/') : NULL;
@@ -9090,13 +9096,15 @@ static void rumble_hud(Viewer *v)
         return;
     if (v->rumble.end_shot > 0 && --v->rumble.end_shot == 0)
         ap_want_shot(v->ap, "end");
+    if (v->game && game_state(v->game) == GS_PLAY)  /* (the time survived: the clock's last in play) */
+        v->rumble.won_t = game_clock(v->game, NULL);
     const char *name[RUMBLE_MAX_BOSSES];
     float frac[RUMBLE_MAX_BOSSES];
     int n = 0;
     for (int k = 0; k < v->nmon && n < RUMBLE_MAX_BOSSES; k++) {
         const Mon *mo = &v->mon[k];
-        if (!mo->boss || mo->boss_beaten || mo->monster < 0)
-            continue;
+        if (!mo->boss || mo->boss_beaten || mo->monster < 0 || !mon_in(mo) || mon_in(mo)->hidden)
+            continue;                                /* (the guest's: hidden as the host's was beaten) */
         name[n] = v->monsters[mo->monster];
         frac[n++] = mo->hp / mon_hp_max(mo);
     }
