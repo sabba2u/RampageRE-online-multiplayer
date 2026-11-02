@@ -42,7 +42,6 @@ typedef struct {
     int have_remote;
     int sys_run[NET_DSYS];                           /* its digests' systems that differed in a row */
     char addr[64];                                   /* NSL_ONLINE: its guest's "ip:port" (the launcher's list) */
-    double heard;                                    /* NSL_ONLINE: when its guest's pad last came */
 } Slot;
 
 static struct {
@@ -643,18 +642,21 @@ static void on_hello(int peer, NetBuf *b)
         snprintf(why, sizeof why, "The host removed you from the game");
     int k = -1;
     if (!why[0]) {
-        /* its token on a seat still online whose guest has been silent 2 s: the same player back after a crash, before
-         * the old connection timed out (5 to 10 s): that one is let go, and the seat is its again (below). One still
-         * playing with that token is another copy sharing its folder's netrejoin.cfg: a seat of its own */
+        /* its token on a seat still online whose connection has been silent 2 s (not even ENet's pings: its game is
+         * gone): the same player back after a crash, before the old connection timed out (5 to 10 s): that one is let
+         * go, and the seat is its again (below). One whose connection still answers (in the menus too) is another copy
+         * sharing its folder's netrejoin.cfg: a seat of its own */
         for (int i = 1; h.token && i < NET_SLOTS; i++)
-            if (g.slot[i].state == NSL_ONLINE && g.slot[i].token == h.token && g.now - g.slot[i].heard > 2.0) {
+            if (g.slot[i].state == NSL_ONLINE && g.slot[i].token == h.token && g.slot[i].peer != peer &&
+                nt_peer_silent_ms(g.slot[i].peer) > 2000) {
                 int old = g.slot[i].peer;
                 if (old >= 0 && old < NT_PEERS && old != peer) {
                     nt_drop(old);
                     g.peer_on[old] = 0;
                     g.peer_slot[old] = -1;
                 }
-                net_log("the guest of slot %d is back (its old connection silent %.0f s: let go)", i, g.now - g.slot[i].heard);
+                net_log("the guest of slot %d is back (its old connection silent %d ms: let go)", i,
+                        nt_peer_silent_ms(g.slot[i].peer));
                 g.slot[i].until = g.now + NET_RESERVE_S;
                 g.slot[i].peer = -1;
                 slot_set(i, NSL_RESERVED);
@@ -689,7 +691,6 @@ static void on_hello(int peer, NetBuf *b)
     s->peer = peer;
     snprintf(s->addr, sizeof s->addr, "%s", addr);
     s->have_remote = 0;
-    s->heard = g.now;                               /* (just in: not a silent one) */
     s->remote_frame = 0;
     s->remote_pressed = 0;
     g.peer_slot[peer] = k;
@@ -721,7 +722,6 @@ static void on_pad(Slot *sl, NetBuf *b)
             sl->remote_pressed |= p[i].pressed;
     sl->remote = p[0];
     sl->remote_frame = frame;
-    sl->heard = g.now;
     if (!sl->have_remote)
         g.slots_dirty = 1;                           /* (its first: no longer joining, the guests told) */
     sl->have_remote = 1;
@@ -748,8 +748,8 @@ static int digest_matches(int s, double t, const NetDSys *guest, int *nearby)
 static void trace_dsys(const char *who, const NetDSys *d)
 {
     char vals[NET_DVALS * 12] = "";
-    for (int k = 0, at = 0; k < NET_DVALS; k++)
-        at += snprintf(vals + at, sizeof vals - at, " %.1f", d->v[k]);
+    for (int k = 0, at = 0; k < NET_DVALS && at < (int)sizeof vals - 1; k++)
+        at += snprintf(vals + at, sizeof vals - (size_t)at, " %.1f", d->v[k]);
     net_log("  %s %08X%s", who, d->h, vals);
 }
 

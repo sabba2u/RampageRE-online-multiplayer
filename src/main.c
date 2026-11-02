@@ -1090,25 +1090,27 @@ static void hud_open_player(Viewer *v, int k)
 }
 
 /* NET: one more player in the block as it is, mid-play (a guest joining online): its monster beside player 1, its
- * moves, its HUD, the game's player; nothing else starts again. The monster to reveal (the extra, in the slot after
- * the players) moves up a slot; with no slot after (three players and the extra: MONSTERS and SCENE_MONSTERS 4) it
- * leaves the block, hidden, and its scene slot is the new player's. Monster k's slot index, -1 when it cannot */
+ * moves, its HUD, the game's player; nothing else starts again. The monster to reveal (the extra, in the slot after the
+ * players) leaves the block, hidden, and its slot is the new player's (moving it up a slot would leave pointers into
+ * its Mon, its move runner's graph among them, at the wrong slot): a block whose monster to free is not freed yet
+ * shows it no more once someone joins. Monster k's slot index, -1 when it cannot */
 static int mon_add_player(Viewer *v, int monster)
 {
     int k = v->nmon;
     if (!v->have_scene || !v->city || k >= MONSTERS || monster < 0 || monster >= (int)v->nmonsters)
         return -1;
-    int ex = v->extra;
-    if (ex >= 0 && (ex != k || v->scene.nmon != k + 1 || k + 1 >= MONSTERS || k + 1 >= SCENE_MONSTERS)) {
+    if (v->extra >= 0) {
+        int ex = v->extra;
         if (mon_in(&v->mon[ex]))
             mon_in(&v->mon[ex])->hidden = 1;
         if (ex == k && v->scene.nmon == k + 1)
             v->scene.nmon = k;                       /* (its instance stays, hidden, till the block ends) */
-        v->extra = ex = -1;
+        v->extra = -1;
+        memset(&v->rwalk, 0, sizeof v->rwalk);       /* (its walk-on, if it was on: over) */
     }
-    int s = v->scene.nmon;                           /* the scene slot the new monster gets: k, or k + 1 past the extra */
-    if (s != (ex >= 0 ? k + 1 : k)) {
-        printf("mon_add_player: scene slot %d, players %d, extra %d\n", s, k, ex);
+    int s = v->scene.nmon;                           /* the scene slot the new monster gets: k */
+    if (s != k) {
+        printf("mon_add_player: scene slot %d, players %d\n", s, k);
         return -1;
     }
     Mon *mo = &v->mon[s];
@@ -1134,17 +1136,6 @@ static int mon_add_player(Viewer *v, int monster)
     mo->held_vehicle = mo->held_rail = mo->held_sobj = mo->held_parade = -1;
     mo->streaker = -1;
     shadow_monster_init(&mo->smon);
-    if (ex >= 0) {                                   /* the extra moves up: the new player in slot k */
-        Mon t = v->mon[k];
-        v->mon[k] = v->mon[k + 1];
-        v->mon[k + 1] = t;
-        v->mon[k].slot = k;
-        v->mon[k + 1].slot = k + 1;
-        SceneMonster sm = v->scene.mon[k];
-        v->scene.mon[k] = v->scene.mon[k + 1];
-        v->scene.mon[k + 1] = sm;
-        v->extra = k + 1;
-    }
     v->nmon++;
     if (v->game)
         game_add_player(v->game);

@@ -298,6 +298,14 @@ int game_add_player(Game *g)
     return k;
 }
 
+/* NET: the first of the computer players (the last num_bots are the computer's) played by a person from now on (a
+ * guest joining into its seat); the AI split at the next BeginBlockNI counts one fewer */
+void game_bot_to_player(Game *g)
+{
+    if (g && g->cfg.num_bots > 0)
+        g->cfg.num_bots--;
+}
+
 static void checkpoint_save(Game *g)                 /* 0x33E290: the campaign only [R] */
 {
     if (g->cfg.play_type != GP_CAMPAIGN)

@@ -235,6 +235,12 @@ static int nte_peer_rtt_ms(int peer)
 {
     return peer >= 0 && peer < NT_PEERS && g_peers[peer] ? (int)g_peers[peer]->roundTripTime : 0;
 }
+static int nte_peer_silent_ms(int peer)
+{
+    if (peer < 0 || peer >= NT_PEERS || !g_peers[peer])
+        return 1 << 30;
+    return (int)(enet_time_get() - g_peers[peer]->lastReceiveTime);
+}
 static int nte_rtt_ms(void)
 {
     for (int i = 0; i < NT_PEERS; i++)
@@ -325,6 +331,7 @@ void nt_flush(void) { if (!g_steam) nte_flush(); }
 int nt_connected(void) { return g_steam ? nts_connected() : nte_connected(); }
 int nt_rtt_ms(void) { return g_steam ? 0 : nte_rtt_ms(); }
 int nt_peer_rtt_ms(int peer) { return g_steam ? 0 : nte_peer_rtt_ms(peer); }
+int nt_peer_silent_ms(int peer) { return g_steam ? 0 : nte_peer_silent_ms(peer); }
 int nt_peer_addr(int peer, char *out, int cap)
 {
     if (cap > 0)

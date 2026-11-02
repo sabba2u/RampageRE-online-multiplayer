@@ -35,6 +35,7 @@ void nt_flush(void);
 int nt_connected(void);                              /* any peer */
 int nt_rtt_ms(void);                                 /* the first connected peer's */
 int nt_peer_rtt_ms(int peer);
+int nt_peer_silent_ms(int peer);   /* since anything came from it, ENet's pings too (Steam: 0, never silent) */
 int nt_peer_addr(int peer, char *out, int cap);       /* the host: peer's "ip:port" (Steam: "Steam"); 0 ok, -1 none */
 unsigned nt_bytes_out(void);                         /* sent so far (counters for the panel) */
 unsigned nt_bytes_in(void);

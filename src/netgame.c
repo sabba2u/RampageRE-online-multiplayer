@@ -126,6 +126,7 @@ static uint32_t ng_world_id(const NgWorld *w)
     k.block = 0;
     k.bot_seed = 0;
     k.nmon = 0;
+    k.bots = 0;                                      /* (a guest taking a computer player's seat: the same world) */
     memset(k.monster, 0, sizeof k.monster);
     uint32_t h = net_hash(&k, (int)sizeof k, 2166136261u);
     return h ? h : 1;
@@ -185,7 +186,7 @@ static void ng_follow(Viewer *v)
     if (!w || len != (int)sizeof *w)
         return;
     if (net_host_world() == ng_followed) {           /* the same world: a player who joined mid-block, added here too */
-        while (v->play && v->game && v->nmon < w->nmon && v->nmon < MONSTERS) {
+        while (v->play && v->game && !game_ni_on(v->game) && v->nmon < w->nmon && v->nmon < MONSTERS) {
             int m = w->monster[v->nmon];
             if (m < 0 || m >= (int)v->nmonsters || mon_add_player(v, m) < 0) {
                 net_log("cannot add the host's player %d", v->nmon + 1);
@@ -1520,7 +1521,7 @@ static void ng_apply_snap(Viewer *v)
             continue;
         }
         float pos[3], heading;
-        if (r == 2) {
+        if (r == 2 && k < sa.n) {                    /* (one new since the older sample: the newer alone) */
             const NgMon *lo = &sa.m[k];
             for (int i = 0; i < 3; i++)
                 pos[i] = lo->pos[i] + (hi->pos[i] - lo->pos[i]) * alpha;
@@ -1535,7 +1536,7 @@ static void ng_apply_snap(Viewer *v)
         /* the model too: mon_step placed it where the guest's own step had it (scene_monster_place at its end), and
          * drawn so the monster showed in two places by turns, the guest's step and the host's */
         scene_monster_place(&v->scene, k, mo->mx, mo->my, mo->mz, mo->heading);
-        ng_apply_look(v, mo, hi, r == 2 ? &sa.m[k] : NULL, alpha);
+        ng_apply_look(v, mo, hi, r == 2 && k < sa.n ? &sa.m[k] : NULL, alpha);
         memcpy(mo->vel, hi->vel, sizeof mo->vel);
         if (mo->have_graph && hi->state >= 0 && hi->state < mo->graph.n) {
             if (mo->run.state != hi->state) {
@@ -2262,7 +2263,7 @@ static int netgame_shielded(const Mon *mo)
     return 1;
 }
 
-static void ng_join_midblock(Viewer *v, int k);
+static int ng_join_midblock(Viewer *v, int k);
 
 /* the host's PC's other players: source s (1 the numpad and controller 1, 2 and 3 controllers 2 and 3) as a pad */
 static void ng_local_source(Viewer *v, const Window *w, int s, Pad *p)
@@ -2308,11 +2309,28 @@ static void ng_slots_pads(Viewer *v, const Window *w)
             }
         }
     }
-    for (int k = 1; k < net_slots() && k < MONSTERS; k++)   /* a guest in a seat the game has no player for: added */
-        if (k == v->nmon && net_slot_state(k, NULL) == NSL_ONLINE)
+    /* a guest in a seat the game has no player for: added (seat k plays monster k: a seat before it that nobody is in
+     * gets its monster too, waiting for a player as a kept seat's does); not while a scene runs (the intro, a
+     * Continue, the results: they wait for every player's move), a frame later then */
+    for (int k = 1; k < net_slots() && k < MONSTERS; k++)
+        if (k >= v->nmon && net_slot_state(k, NULL) == NSL_ONLINE && !game_ni_on(v->game)) {
+            while (v->nmon < k && v->nmon < MONSTERS && ng_join_midblock(v, v->nmon) == 0)
+                ;
             ng_join_midblock(v, k);
+        }
     ng_guest_menu = 0;
     ng_guest_typing = 0;
+    for (int k = 1; k < v->nmon && k < net_slots(); k++)   /* a guest in a computer player's seat: theirs now */
+        if (v->mon[k].bot && k == v->nmon - v->num_bots && net_slot_state(k, NULL) == NSL_ONLINE) {
+            Mon *mo = &v->mon[k];
+            mo->bot = 0;
+            mo->is_ai = 0;
+            mo->drive = DRIVE_KEYS2;
+            v->num_bots--;
+            game_bot_to_player(v->game);
+            net_log("player %d: a computer player's monster, a guest's now", k + 1);
+            ng_set_world(v);                         /* (the world's bots count: the guests' too) */
+        }
     for (int k = 1; k < v->nmon && k < net_slots(); k++) {
         Mon *mo = &v->mon[k];
         if (mo->bot)
@@ -2346,10 +2364,10 @@ static void ng_slots_pads(Viewer *v, const Window *w)
 /* a guest in seat k of a game with k players (seats fill in order): its monster added to the block as it is, on the
  * host here and on every guest (ng_follow: the world's players told again, the same world), nothing started again.
  * Its monster is the one its hello asked for (the monster it played last), else one nobody plays */
-static void ng_join_midblock(Viewer *v, int k)
+static int ng_join_midblock(Viewer *v, int k)
 {
     if (k != v->nmon || k < 1 || k >= MONSTERS || v->attract)
-        return;
+        return -1;
     int m = net_slot_monster(k), taken = 0;
     for (int i = 0; i < k; i++)
         taken |= m >= 0 && v->mon[i].monster == m;
@@ -2369,10 +2387,11 @@ static void ng_join_midblock(Viewer *v, int k)
     }
     if (mon_add_player(v, m) != k) {
         net_log("drop-in: cannot add %s as player %d", v->monsters[m], k + 1);
-        return;
+        return -1;
     }
     net_log("drop-in: %s joins as player %d (mid-block: nothing started again)", v->monsters[m], k + 1);
     ng_set_world(v);                                 /* (the guests are told the players: they add it too) */
+    return 0;
 }
 
 /* the players' pads are set (keys_pad / pad_to_pad): the host's player 2 is the guest's pad; the guest sends its own
