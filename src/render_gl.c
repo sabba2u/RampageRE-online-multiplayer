@@ -941,7 +941,7 @@ static void draw_held(Renderer *r, double t)
  * over itself, black at 85 %, the texture's alpha still cutting it out (GL_COMBINE: the colour the vertex
  * colour's, the alpha the texture's times it) and the depth equal, so it lies on the part it covers; the frame's
  * alpha is left as the part wrote it (the picture's later passes read it: written, the monster showed see-through); then
- * a red outline (teal while a player joins: net_grey 2), pulsing once a second: the part's back faces again as thick lines, so only their edges past the
+ * a light grey outline (teal while a player joins: net_grey 2; red is a boss's, docs/TODO.md), pulsing once a second: the part's back faces again as thick lines, so only their edges past the
  * silhouette show (the front faces hide the rest by depth). Its rage glow
  * (an effect) and its hit flashes (effects too) are drawn after the scene's items, over it, as before. Offline nothing
  * sets it, and nothing is drawn differently */
@@ -981,17 +981,17 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, 
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);   /* (the frame's alpha is the part's own: later passes read it) */
     glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    glDisable(GL_TEXTURE_2D);                        /* the red outline */
+    glDisable(GL_TEXTURE_2D);                        /* the grey outline */
     glDisable(GL_ALPHA_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
     glPolygonMode(GL_BACK, GL_LINE);
     glLineWidth(4.0f);
     float a = (float)(0.65 + 0.35 * sin(t * 6.2831853));
-    if (teal)                                        /* (a player joining: teal, not the red of nobody) */
+    if (teal)                                        /* (a player joining: teal, not the grey of nobody) */
         glColor4f(0.15f, 0.85f, 0.80f, a);
     else
-        glColor4f(1.0f, 0.12f, 0.08f, a);
+        glColor4f(0.72f, 0.72f, 0.72f, a);
     glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glLineWidth(1.0f);

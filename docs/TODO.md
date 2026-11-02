@@ -41,9 +41,9 @@ Ideas the owner wants, not started. Newest at the bottom.
   goal is to attack the players, not the buildings. Each boss gets a health bar at the top of the screen with its
   name, and the block's objective is to defeat it (all of them). Decided: any monster of the roster can be a boss,
   even one a player is playing (the same model twice); a boss has a glowing red outline around it so it is told from
-  the players' monsters (render_gl.c draw_grey already draws an outline, red, around an online seat nobody plays:
+  the players' monsters (render_gl.c draw_grey already draws an outline, now grey, around an online seat nobody plays:
   the same back-face line pass, with a soft glow around it). Decided 2026-11-02: the boss keeps red (steady, glowing:
-  danger), the empty online seat's outline turns grey (it is darkened already: out of the game, not a threat). The owner liked all the open points below as
+  danger), the empty online seat's outline is grey now (done 2026-11-02: it is darkened already, out of the game, not a threat). The owner liked all the open points below as
   suggestions. Things to settle: bigger and tougher (more HP, a scale-up), how it fights (the bots' AI with its target the
   nearest player instead of DestroyBuildings, director.c), what happens when the players lose (all defeated: Game
   Over or the block again), where its bars go with the players' HUD (the challenge's boss bar, ChallengeBoss2.ifc,
