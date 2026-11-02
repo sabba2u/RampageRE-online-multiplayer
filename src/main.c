@@ -8337,9 +8337,9 @@ static void autopilot_shell(Viewer *v, float dt)
     } else if (!strcmp(f, "AttractMode"))
         ev = v->ap_demos ? 0 : HUD_EV_ACCEPT;
     else if (!strcmp(f, "MainMenu")) {
-        int want = v->ap_type ? v->ap_type : GP_CAMPAIGN, most = v->four_players && want != GP_CAMPAIGN ? 4 : 2,
+        int want = v->ap_type ? v->ap_type : GP_CAMPAIGN, most = v->four_players ? 4 : 2,
             np = v->ap_players < 1 ? 1 : v->ap_players > most ? most : v->ap_players;   /* (the PS2's boxes offer 1
-                                                      * or 2; four_players 3 and 4 too, but not in the campaign) */
+                                                      * or 2; four_players 3 and 4 too, the campaign's as well) */
         if (v->ap_demos)
             ev = 0;
         else if (sv.mm_state == 0)

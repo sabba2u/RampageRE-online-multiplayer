@@ -3,7 +3,7 @@ net_local_test.ps1 - a hosted 2 player game's player 2 on the host's PC (docs/NE
   1. hosted, nobody joined: WAITING FOR PLAYER over Lizzie, grey              -> build\nettest\local_1_waiting.png
   2. the host's player 2 keys (numpad 6) pressed: "Local controller took over Player 2", the label and grey gone
                                                                               -> local_2_taken.png
-  3. a guest tries to join: "The game is full" (build\nettest\guest.out)      -> local_3_full.png
+  3. a guest joins: rooms have four seats, so it plays player 3 (host.out "slot 2: online") -> local_3_full.png
   .\tools\net_local_test.ps1 -Seat2Online   a hosted 3 player game, a guest in player 2's seat, then the numpad
                                              pressed on the host's PC: it takes the next free seat (player 3), not
                                              player 2's -> PASS / FAIL, local_4_seat3.png

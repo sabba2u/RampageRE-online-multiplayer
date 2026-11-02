@@ -1023,6 +1023,14 @@ void net_send_msg(int reliable, const void *data, int len)
         nt_send(reliable, data, len);
 }
 
+int net_send_msg_to(int slot, int reliable, const void *data, int len)
+{
+    if (g.role != NET_HOST || slot < 1 || slot >= NET_SLOTS || g.slot[slot].state != NSL_ONLINE)
+        return -1;
+    nt_send_to(g.slot[slot].peer, reliable, data, len);
+    return 0;
+}
+
 void net_send_msg_except(int slot, int reliable, const void *data, int len)
 {
     if (g.role == NET_HOST)

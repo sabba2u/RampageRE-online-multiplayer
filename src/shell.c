@@ -3634,10 +3634,12 @@ static void np_rows(MainMenu *m)
 static void mm_play_mode_select(Shell *s)              /* processPlayModeSelect */
 {
     MainMenu *m = &s->mm;
-    /* three and four players: not on the PS2 (2); [port extra, rampage.cfg four_players] as the other consoles */
+    /* three and four players: not on the PS2 (2); [port extra, rampage.cfg four_players] as the other consoles, which
+     * leave them out of the campaign (2); with four_players the campaign has them too [port extra: a campaign block
+     * plays with four, each player 3 lives, the game's rules counting every player] */
     if (s->platform & (1 | 8 | 4) || s->prof.four_players) {
-        show(find(m->lb_players, "3 Player"), m->play_mode != 2);
-        show(find(m->lb_players, "4 Player"), m->play_mode != 2);
+        show(find(m->lb_players, "3 Player"), m->play_mode != 2 || s->prof.four_players);
+        show(find(m->lb_players, "4 Player"), m->play_mode != 2 || s->prof.four_players);
     }
     show(find(m->lb_players, "1 Player"), m->play_mode == 2 || m->play_mode == 5);
     if (s->prof.four_players && m->lb_players)          /* [port extra] the PS2's layout has 3 Player and 4 Player on

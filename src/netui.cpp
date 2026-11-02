@@ -357,7 +357,7 @@ static void panel(void)
     ImGui::Text("You are:");
     ImGui::SameLine();
     ImGui::TextColored(role == NET_OFF ? OFF : ON, "%s",
-                       role == NET_HOST ? "the host (player 1)" : role == NET_GUEST ? "the guest (player 2)" : "offline");
+                       role == NET_HOST ? "the host (player 1)" : role == NET_GUEST ? (net_my_slot() == 2 ? "a guest (player 3)" : net_my_slot() == 3 ? "a guest (player 4)" : "a guest (player 2)") : "offline");
     status_line();
     ImGui::Separator();
     if (role == NET_OFF || net_state() == NETS_FAILED) {
@@ -532,11 +532,18 @@ static void hosting_badge(void)
 {
     if (net_role() != NET_HOST || net_state() == NETS_FAILED)
         return;
-    char line[160], who[64];
-    int friends = net_slot_count(NSL_ONLINE);
-    const char *name = netgame_slot_name(1);
+    char line[256], who[160] = "";
+    int friends = net_slot_count(NSL_ONLINE), len = 0;
+    for (int k = 1; k < net_slots(); k++)            /* everyone in: "Lizzie (P2), Ralph (P3)" */
+        if (net_slot_state(k, NULL) == NSL_ONLINE) {
+            const char *name = netgame_slot_name(k);
+            len += snprintf(who + len, sizeof who - (size_t)len, "%s%s (P%d)", len ? ", " : "",
+                            name[0] ? name : "A friend", k + 1);
+            if (len >= (int)sizeof who)
+                break;
+        }
     if (friends > 0)
-        snprintf(who, sizeof who, "%s is in (P2)", name[0] ? name : "Your friend");
+        snprintf(who + strlen(who), sizeof who - strlen(who), friends > 1 ? " are in" : " is in");
     else
         snprintf(who, sizeof who, "waiting for a friend");
     if (net_is_steam())

@@ -92,7 +92,8 @@ void net_snaps_clear(void);
 /* other messages of netgame.c's own (NM_BUILDING, NM_EVENT): sent as they are, the whole message, first byte the
  * type; received through the handler */
 void net_send_msg(int reliable, const void *data, int len);   /* (the host: to every guest) */
-void net_send_msg_except(int slot, int reliable, const void *data, int len);   /* the host: every guest but slot's */
+void net_send_msg_except(int slot, int reliable, const void *data, int len);
+int net_send_msg_to(int slot, int reliable, const void *data, int len);   /* the host: slot's guest only (-1: none) */   /* the host: every guest but slot's */
 void net_set_handler(void (*fn)(const uint8_t *data, int len));
 
 /* the desync check: the guest sends its fingerprint of what it shows (netwire.h NetDigest, a part a system) with

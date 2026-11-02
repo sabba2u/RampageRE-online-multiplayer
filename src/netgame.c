@@ -346,6 +346,15 @@ enum { NST_ASK, NST_BUILDING, NST_EDIBLES, NST_CHALLENGE, NST_DONE,
 static void ng_resync_message(Viewer *v, int kind);
 static int ng_resyncing;                             /* guest: a resync's state is coming */
 static int ng_state_due = -1;                        /* host: the block the guest asked for */
+static unsigned ng_state_to;                         /* host: the seats that asked (bit k: seat k): only they are sent it,
+                                                      * so the others' buildings are not put back */
+
+static void ng_state_out(const uint8_t *m, int len)
+{
+    for (int k = 1; k < NET_SLOTS; k++)
+        if (ng_state_to >> k & 1)
+            net_send_msg_to(k, 1, m, len);
+}
 static double ng_state_asked;                        /* guest: when it last asked */
 
 static void ng_state_ask(Viewer *v)                  /* guest, every frame */
@@ -432,6 +441,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     if (ng_state_due != v->block) {
         net_log("the guest asked for block %d's state, we are in %d", ng_state_due, v->block);
         ng_state_due = -1;
+        ng_state_to = 0;
         return;
     }
     ng_state_due = -1;
@@ -450,7 +460,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
             net_log("building %u's state does not fit", i);
             continue;
         }
-        net_send_msg(1, m, b.len);
+        ng_state_out(m, b.len);
         total += b.len;
         biggest = b.len > biggest ? b.len : biggest;
     }
@@ -461,7 +471,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_u8(&b, (uint32_t)v->block);
     ng_edibles_w(v, &b);
     if (!b.err) {
-        net_send_msg(1, m, b.len);
+        ng_state_out(m, b.len);
         total += b.len;
     }
     const Challenge *c = &v->challenge;
@@ -475,14 +485,14 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_f32(&b, c->up_pulse);
     net_w_u32(&b, c->upgrade);
     net_w_u32(&b, c->up_taken);
-    net_send_msg(1, m, b.len);
+    ng_state_out(m, b.len);
     ngt_street_lasting(v);                           /* the street objects' lasting effects (the searchlights) */
     b = netbuf(m, sizeof m);
     net_w_u8(&b, NM_STATE);
     net_w_u8(&b, NST_DONE);
     net_w_u8(&b, (uint32_t)v->block);
     net_w_u32(&b, ng_bseq);
-    net_send_msg(1, m, b.len);
+    ng_state_out(m, b.len);
     char line[400];                                  /* each building's state, HP and storeys standing, for the log */
     int len = 0;
     for (uint32_t i = 0; i < v->scene.nbuildings && len < (int)sizeof line - 32; i++) {
@@ -492,6 +502,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_log("buildings (state/HP/storeys):%s", line);
     net_log("sent block %d's state: %u buildings (%d bytes each unpacked, %d packed at most), %d edible slots, %d bytes",
             v->block, v->scene.nbuildings, (int)sizeof(Building), biggest, ns, total);
+    ng_state_to = 0;
 }
 
 /* guest: building i as the host's. Its drawing follows (dirty: the facade, the interiors, the light; building_place
@@ -579,8 +590,10 @@ static void ng_on_state(Viewer *v, NetBuf *b)
         return;
     }
     if (net_role() == NET_HOST) {
-        if (kind == NST_ASK)
+        if (kind == NST_ASK && net_msg_slot() >= 1 && net_msg_slot() < NET_SLOTS) {
             ng_state_due = block;
+            ng_state_to |= 1u << net_msg_slot();
+        }
         return;
     }
     if (block != v->block) {

@@ -37,15 +37,15 @@ enum { NGM_INPUT = 1, NGM_STATE = 2, NGM_RESULTS = 3, NGM_RESEND = 4, NGM_PROGRE
 typedef struct {
     uint8_t where;                                   /* 0 neither, 1 the front end, 2 a game */
     uint8_t mm_state, mm_players, ms_players, ms_ready, cs_locked;
-    uint8_t paused;                                  /* 0 no, 1 by the host, 2 by the guest (its Start) */
+    uint8_t paused;                                  /* 0 no, else 1 + the seat whose Start paused it (1 the host) */
     uint8_t results, world;                          /* a results screen is up; the host's game counts (2 players) */
-    char focus[16], mon[2][24], city[24];
+    char focus[16], mon[4][24], city[24];
     ShellNetView view;                               /* the front end, for the guest's own (shell_net_mirror) */
 } NgMenuState;
 
 static NgMenuState ngm_host;                         /* guest: the host's, as last told */
 static int ngm_have_host;
-static int ngm_pause_by_guest;                       /* host: the Pause menu up is pad 1's */
+static int ngm_pause_by_guest;                       /* host: the seat whose Start opened the Pause menu (0 ours) */
 static int ngm_in_host_game;                         /* guest: in a game ng_follow loaded */
 static int ngm_auto;                                 /* guest: its HUD's results answer by themselves */
 static Profile ngm_prof;                             /* guest: its own profile, the online game's earnings in it */
@@ -153,20 +153,20 @@ static int netgame_game_input(Viewer *v, const Window *w, float dt)
 /* the guest's own pad in play: still while the host's Pause menu is up */
 static int ngm_host_paused(void) { return ngm_guest_on() && ngm_have_host && ngm_host.where == 2 && ngm_host.paused; }
 
-/* the host: one of the guest's presses, pad 1's */
-static void ngm_apply(Viewer *v, int ev, int button)
+/* the host: one of a guest's presses, as its seat's pad (seat k plays player k + 1: Monster Select's card k) */
+static void ngm_apply(Viewer *v, int ev, int button, int seat)
 {
     if (v->shell) {
-        shell_input_pad(v->shell, ev, button, 1);
+        shell_input_pad(v->shell, ev, button, seat);
         return;
     }
     if (!v->hud || !v->game)
         return;
     if (hud_pause_showing(v->hud) || hud_results_showing(v->hud)) {
         if (!shell_popup_active(v->popup))           /* (the SaveGame popup answers player 1) */
-            hud_input_pad(v->hud, ev, button, 1);
-    } else if (ev == HUD_EV_START && v->play && !v->attract && pause_open(v, 1))
-        ngm_pause_by_guest = 1;
+            hud_input_pad(v->hud, ev, button, seat);
+    } else if (ev == HUD_EV_START && v->play && !v->attract && pause_open(v, seat))
+        ngm_pause_by_guest = seat;
 }
 
 /* ---- the host's state */
@@ -184,7 +184,7 @@ static void ngm_state_of(Viewer *v, NgMenuState *s)
         s->ms_ready = (uint8_t)av.ms_ready;
         s->cs_locked = (uint8_t)av.cs_locked;
         if (!strcmp(s->focus, "MonsterSelect") || !strcmp(s->focus, "MonsterSheet"))
-            for (int k = 0; k < 2; k++)
+            for (int k = 0; k < 4; k++)
                 snprintf(s->mon[k], sizeof s->mon[k], "%s", av.ms_name[k] ? av.ms_name[k] : "");
         if (!strcmp(s->focus, "CitySelect") && av.cs_index >= 0 && av.cs_index < v->prof.ncities &&
             v->prof.city_name[av.cs_index])
@@ -192,7 +192,7 @@ static void ngm_state_of(Viewer *v, NgMenuState *s)
         shell_net_view(v->shell, &s->view);
     } else if (v->game) {
         s->where = 2;
-        s->paused = (uint8_t)(v->hud && hud_pause_showing(v->hud) ? (ngm_pause_by_guest ? 2 : 1) : 0);
+        s->paused = (uint8_t)(v->hud && hud_pause_showing(v->hud) ? (uint8_t)(1 + ngm_pause_by_guest) : 0);
         s->results = (uint8_t)(v->hud && hud_results_showing(v->hud));
     }
     s->world = net_world() != 0;
@@ -219,6 +219,17 @@ static void ngm_send_state(Viewer *v, int again)
         net_send_msg(1, m, b.len);
 }
 
+/* the host's answer to one guest's ask (NGM_RESEND): to that guest alone, so the others' screens are not replayed */
+static int ngm_to = -1;
+
+static void ngm_send(const uint8_t *m, int len)
+{
+    if (ngm_to > 0)
+        net_send_msg_to(ngm_to, 1, m, len);
+    else
+        net_send_msg(1, m, len);
+}
+
 static void ngm_send_press(int ev, int button, int pad)
 {
     uint8_t m[8];
@@ -229,7 +240,7 @@ static void ngm_send_press(int ev, int button, int pad)
     net_w_u8(&b, (uint32_t)button);
     net_w_u8(&b, (uint32_t)pad);
     if (!b.err)
-        net_send_msg(1, m, b.len);
+        ngm_send(m, b.len);
 }
 
 /* the host: a press its results screen or Pause menu takes (hud_net_tap), for the guest's to take too */
@@ -288,14 +299,15 @@ static void ngm_progress_send(Viewer *v)
     net_w_u32(&b, (uint32_t)game_block(v->game, NULL));
     net_w_u8(&b, (uint32_t)(game_city_destroyed(v->game) != 0));
     if (!b.err)
-        net_send_msg(1, m, b.len);
+        ngm_send(m, b.len);
 }
 
 /* ---- the guest's profile: what it earned online, into its own (see the top) */
 static void ngm_keep(Viewer *v, const char *city, uint32_t flags, int next_block, int destroyed)
 {
     Profile *p = &ngm_prof;
-    int mine = v->nmon > 1 && v->mon[1].monster >= 0 ? profile_find_monster(&v->prof, v->monsters[v->mon[1].monster]) : -1;
+    int me = ng_me();                                /* (our own monster: our seat's) */
+    int mine = me < v->nmon && v->mon[me].monster >= 0 ? profile_find_monster(&v->prof, v->monsters[v->mon[me].monster]) : -1;
     int changed = 0;
     ProfileStatus *recs[3] = { &p->block.status, &p->checkpoint, &p->current };
     for (int m = 0; m < p->nmonsters && m < PROFILE_MONSTERS; m++) {
@@ -376,16 +388,20 @@ static void ngr_menu_message(Viewer *v, NetBuf *b)
         if (!ngm_res_len || !v->hud || !hud_results_showing(v->hud))
             return;
         if (!b->err && only_won) {
+            ngm_to = net_msg_slot();
             if (ngm_res_won)
                 ngm_progress_send(v);
+            ngm_to = -1;
             return;
         }
-        net_log("flow: the guest has no results screen: its event and %d presses again", ngm_res_n);
-        net_send_msg(1, ngm_res_msg, ngm_res_len);
+        ngm_to = net_msg_slot();                     /* (to the asking guest alone) */
+        net_log("flow: the guest of seat %d has no results screen: its event and %d presses again", ngm_to, ngm_res_n);
+        ngm_send(ngm_res_msg, ngm_res_len);
         if (ngm_res_won)                             /* (and the block won, for its profile) */
             ngm_progress_send(v);
         for (int i = 0; i < ngm_res_n; i++)
             ngm_send_press(ngm_res_press[i][0] | ngm_res_press[i][1] << 8, ngm_res_press[i][2], ngm_res_press[i][3]);
+        ngm_to = -1;
         return;
     }
     if (sub == NGM_PROGRESS && net_role() == NET_GUEST) {
@@ -404,17 +420,22 @@ static void ngr_menu_message(Viewer *v, NetBuf *b)
         return;
     }
     if (sub == NGM_INPUT && net_role() == NET_HOST) {
+        int seat = net_msg_slot();                   /* (the sender's: its presses are its player's) */
+        if (seat < 1 || seat >= 4)
+            seat = 1;
         int n = (int)net_r_u8(b);
         for (int i = 0; i < n && !b->err; i++) {
             int ev = (int)net_r_u16(b), button = (int)net_r_u8(b);
             if (!b->err)
-                ngm_apply(v, ev, button);
+                ngm_apply(v, ev, button, seat);
         }
     } else if (sub == NGM_STATE && net_role() == NET_GUEST) {
         NgMenuState s;
         net_r_bytes(b, &s, (int)sizeof s);
         if (!b->err) {
-            s.focus[sizeof s.focus - 1] = s.mon[0][sizeof s.mon[0] - 1] = s.mon[1][sizeof s.mon[1] - 1] = 0;
+            s.focus[sizeof s.focus - 1] = 0;
+            for (int k = 0; k < 4; k++)
+                s.mon[k][sizeof s.mon[k] - 1] = 0;
             s.city[sizeof s.city - 1] = 0;
             ngm_host = s;
             ngm_have_host = 1;
@@ -430,7 +451,7 @@ static void ngm_pause_follow(Viewer *v)
         return;
     int up = ngm_have_host && ngm_host.where == 2 && ngm_host.paused;
     if (up && !hud_pause_showing(v->hud) && !hud_results_showing(v->hud)) {
-        if (pause_open(v, ngm_host.paused == 2 ? 1 : 0))
+        if (pause_open(v, ngm_host.paused ? ngm_host.paused - 1 : 0))
             net_log("flow: the host's Pause menu: ours opened");
     } else if (!up && hud_pause_showing(v->hud)) {
         hud_pause_close(v->hud);
@@ -567,12 +588,16 @@ static void ngr_menu_draw(Viewer *v)
             const char *what = !strcmp(h->focus, "MonsterSelect") ?
                 "Online, the host's menus: pick your monster with Left / Right, Cross (Enter) to be ready." :
                 !strcmp(h->focus, "MainMenu") && !(h->mm_players >= 2 && (h->mm_state == 1 || h->mm_state == 2)) ?
-                "Online, the host's menus: waiting for the host to pick a 2 Player game." :
-                "Online: you see the host's menus; your keys and pad are its player 2.";
-            netui_notice(0, NULL, what);
+                "Online, the host's menus: waiting for the host to pick a game for 2 or more players." :
+                NULL;
+            char mine[96];
+            snprintf(mine, sizeof mine, "Online: you see the host's menus; your keys and pad are its player %d.",
+                     net_my_slot() + 1);
+            netui_notice(0, NULL, what ? what : mine);
             return;
         }
-        const char *title = "Online: you are player 2";
+        char title[40];
+        snprintf(title, sizeof title, "Online: you are player %d", net_my_slot() + 1);
         if (!ngm_have_host)
             snprintf(t, sizeof t, "Connected. Waiting for the host ...");
         else if (h->where == 2 && h->world)
@@ -588,13 +613,16 @@ static void ngr_menu_draw(Viewer *v)
         else
             snprintf(t, sizeof t, "The host is in the menus (%s).", h->focus[0] ? h->focus : "loading");
         size_t n = strlen(t);
-        snprintf(t + n, sizeof t - n, "\n\nYour keys and pad are the host's player 2.");
+        snprintf(t + n, sizeof t - n, "\n\nYour keys and pad are the host's player %d.", net_my_slot() + 1);
         netui_notice(1, title, t);
         return;
     }
     if (role == NET_GUEST && ngm_in_host_game && ngm_host_paused()) {
-        netui_notice(0, NULL, ngm_host.paused == 2 ? "You paused the host's game: your keys and pad work its Pause menu."
-                                                   : "The host paused the game.");
+        char who[48];                                /* (whoever pressed Start: the host, or player N) */
+        snprintf(who, sizeof who, ngm_host.paused <= 1 ? "The host paused the game." : "Player %d paused the game.",
+                 ngm_host.paused);
+        netui_notice(0, NULL, ngm_host.paused - 1 == net_my_slot() ? "You paused the host's game: your keys and pad work its Pause menu."
+                                                   : who);
         return;
     }
     if (v->shell && !strcmp(shell_focus(v->shell) ? shell_focus(v->shell) : "", "MainMenu")) {
@@ -602,12 +630,12 @@ static void ngr_menu_draw(Viewer *v)
         shell_auto_view(v->shell, &av);
         int two = (av.mm_state == 1 || av.mm_state == 2) && av.mm_players >= 1;
         if (role == NET_OFF && two)
-            netui_notice(0, NULL, "Player 2 on another PC? Press Insert: Host a game (or Host on Steam), then pick 2 Player.");
+            netui_notice(0, NULL, "Friends on other PCs? Press Insert: Host a game (or Host on Steam), then pick 2 to 4 players.");
         else if (role == NET_HOST && net_state() == NETS_WAITING)
-            netui_notice(0, NULL, "Hosting: waiting for player 2 to join (Insert: the panel).");
+            netui_notice(0, NULL, "Hosting: waiting for players to join (Insert: the panel).");
         else if (ngm_host_on())
-            netui_notice(0, NULL, two ? "Player 2 is online: they pick their monster on Monster Select with their own pad."
-                                      : "Player 2 is online: pick a 2 Player game.");
+            netui_notice(0, NULL, two ? "Players are online: each picks their monster on Monster Select with their own pad."
+                                      : "Players are online: pick a game for 2 or more players.");
     } else if (ngm_host_on() && v->shell && !strcmp(shell_focus(v->shell) ? shell_focus(v->shell) : "", "MonsterSelect"))
-        netui_notice(0, NULL, "Player 2 (online) picks their monster with their own pad.");
+        netui_notice(0, NULL, "The players online pick their monsters with their own pads.");
 }
