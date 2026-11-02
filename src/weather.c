@@ -11,6 +11,11 @@
 #define DROPS 700                                    /* streaks on screen at full rain */
 #define FADE_S 2.0f                                  /* the rain comes and goes over this */
 #define BOLT_PTS 48
+#define SPLASHES 220                                 /* drops landing on the street and the sidewalk at full rain */
+#define SPLASH_S 0.22f                               /* each one's life */
+/* the ground band of the game's side-on camera (0..1 down the screen): the sidewalk to the street's near edge */
+#define GROUND_TOP 0.80f
+#define GROUND_BOTTOM 0.99f
 
 static struct {
     int kind, local, visible;
@@ -21,10 +26,11 @@ static struct {
     float drop[DROPS][4];                            /* each streak: x, y (0..1 of the screen), speed, length */
     int seeded;
     /* the strike showing: its age, the bolt's points (0..1 of the screen), how many */
+    float splash[SPLASHES][3];                       /* each: x, y (0..1 of the screen), age (s; >= SPLASH_S: free) */
     float strike_age;
     float bolt[BOLT_PTS][2];
     int nbolt;
-} W = { 0, 1, 0, 0, 0, -1, 12345u, { { 0 } }, 0, 99, { { 0 } }, 0 };
+} W = { 0, 1, 0, 0, 0, -1, 12345u, { { 0 } }, 0, { { 0 } }, 99, { { 0 } }, 0 };
 
 /* the thunder, played by the mixer's thread: set here, read there (a new one starts over the old) */
 static volatile int thunder_go;                      /* frames left before it starts (the light first) */
@@ -68,6 +74,8 @@ static void seed_drops(void)
         W.drop[i][2] = 1.6f + frand(&W.rng) * 1.2f;  /* screens a second */
         W.drop[i][3] = 0.03f + frand(&W.rng) * 0.04f;
     }
+    for (int i = 0; i < SPLASHES; i++)
+        W.splash[i][2] = SPLASH_S + frand(&W.rng) * SPLASH_S;   /* (free, staggered) */
     W.seeded = 1;
 }
 
@@ -88,6 +96,14 @@ int weather_update(float dt, float *x, unsigned *seed)
         if (W.drop[i][1] > 1.05f || W.drop[i][0] < -0.1f) {
             W.drop[i][1] -= 1.1f;
             W.drop[i][0] = frand(&W.rng) * 1.2f;
+        }
+    }
+    for (int i = 0; i < SPLASHES; i++) {           /* drops landing: each free one comes back somewhere new */
+        W.splash[i][2] += dt;
+        if (W.splash[i][2] >= SPLASH_S * 2 && frand(&W.rng) < W.amount) {
+            W.splash[i][0] = frand(&W.rng);
+            W.splash[i][1] = GROUND_TOP + frand(&W.rng) * (GROUND_BOTTOM - GROUND_TOP);
+            W.splash[i][2] = 0;
         }
     }
     if (W.kind != WEATHER_STORM || W.amount < 0.8f || !W.local || dt <= 0) {
@@ -181,6 +197,35 @@ void weather_draw(int width, int height)
             glVertex2f(d[0] + len * 0.18f, d[1] - len);
             glColor4f(0.8f, 0.85f, 0.95f, 0.38f);
             glVertex2f(d[0], d[1] + px);
+        }
+        glEnd();
+        /* the ground wet: a faint cold sheen on the street band, brighter at its near edge */
+        glBegin(GL_QUADS);
+        glColor4f(0.55f, 0.65f, 0.8f, 0.0f);
+        glVertex2f(0, GROUND_TOP); glVertex2f(1, GROUND_TOP);
+        glColor4f(0.55f, 0.65f, 0.8f, 0.10f * a);
+        glVertex2f(1, 1); glVertex2f(0, 1);
+        glEnd();
+        /* the drops landing: a little crown (two short strokes up and out) and a ring spreading, both fading */
+        glLineWidth(height > 900 ? 2.0f : 1.0f);
+        glBegin(GL_LINES);
+        for (int i = 0; i < SPLASHES; i++) {
+            float age = W.splash[i][2];
+            if (age >= SPLASH_S)
+                continue;
+            float k = age / SPLASH_S, x = W.splash[i][0], y = W.splash[i][1];
+            float closer = (y - GROUND_TOP) / (GROUND_BOTTOM - GROUND_TOP);   /* (nearer the camera: bigger) */
+            float sz = (0.006f + 0.008f * closer) * (0.5f + k), al = 0.55f * (1 - k) * a;
+            glColor4f(0.85f, 0.9f, 1.0f, al);
+            glVertex2f(x, y); glVertex2f(x - sz, y - sz * 1.6f);
+            glVertex2f(x, y); glVertex2f(x + sz, y - sz * 1.6f);
+            float r = sz * 1.6f, rv = r * 0.3f;   /* the ring: flat, as on the ground seen from the side */
+            for (int s = 0; s < 8; s++) {
+                float a0 = s * 0.7853982f, a1 = (s + 1) * 0.7853982f;
+                glColor4f(0.8f, 0.85f, 0.95f, al * 0.6f);
+                glVertex2f(x + r * cosf(a0), y + rv * sinf(a0));
+                glVertex2f(x + r * cosf(a1), y + rv * sinf(a1));
+            }
         }
         glEnd();
     }
