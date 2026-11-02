@@ -55,3 +55,11 @@ The scope is the bundle's (`Bundle.scope`, set where it is loaded):
   materials with flag 0x100000: fog masks, skylines, signs, trees, by their alpha) as with the original.
 - Without a `mods/` folder (and without `--dumptex`) nothing is hashed or read and the game is drawn as before, so a
   `--shot` stays byte-identical.
+
+## 5. An upscaled pack in one go (tools/upscale_textures.py)
+After a `--dumptex` run, `python tools/upscale_textures.py [--scale 4] [--only Chicago]` writes every dumped texture
+upscaled into `mods/textures/<scope>/` under its own name, so the game loads it at the next start. With
+Real-ESRGAN's `realesrgan-ncnn-vulkan` (on PATH, `--esrgan PATH` or `REALESRGAN=`) it is the AI upscale (model
+realesrgan-x4plus); without it a Lanczos resize and a light sharpen (Pillow). Alpha is upscaled apart and a cut-out's
+edge kept hard. Checked: a Chicago dump (68 textures) x2 with Pillow, loaded back ("texture pack: 68 replacement
+textures"), the block drawn as before with the sharper textures.
