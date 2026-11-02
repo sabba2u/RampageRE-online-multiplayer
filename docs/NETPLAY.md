@@ -469,7 +469,8 @@ nothing to type but a code. Design: docs/superpowers/specs/2026-10-31-launcher-d
 - **Join by code** takes a code (through the group server the launcher remembers, newest first, 8 kept) or a pasted
   group link (its server is remembered). Before the game starts it asks the lobby for the host's build and compares it
   with its own sum of `RampageRE.exe` (FNV-1a, as `src/net.c` `build_id`): a different version is said plainly.
-- **Set up join links** registers `rampage://` under `HKCU\Software\Classesampage` with the launcher itself as the
+- **Set up join links** registers `rampage://` under `HKCU\Software\Classes
+ampage` with the launcher itself as the
   handler (no PowerShell, no admin). A link opens no window: the launcher checks it, remembers its server and starts
   the game joining. Forms: `rampage://join/<code>`, `rampage://join/<code>@<host[:port]>` (port 19980 when left out),
   `rampage://join/<host[:port]>` (a direct address must have a dot or a port); anything else is refused. The program
@@ -507,6 +508,8 @@ tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
                                              the game's frames at once, with no network: before "after" only
 ```
 
+`RAMPAGE_NET_TAILS=1` prints each monster's tail springs (links, weight, target) and move state once a second, on both
+copies: a tail or tentacle hanging stiff on one screen shows as weight 0 there.
 `RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents
 (`=2`, `-Trace -TraceLevel 2`: every building's, not only the damaged ones).
 Both copies log the game's flow (`net: flow: ...`: states, defeats, respawns, lives, results screens and their answers,

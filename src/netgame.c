@@ -2108,6 +2108,14 @@ static void netgame_plain_title(const Viewer *v, Window *w);
 static void netgame_frame(Viewer *v, Window *w, double now)
 {
     net_update(now);
+    static double tail_trace;
+    if (getenv("RAMPAGE_NET_TAILS") && now - tail_trace > 1) {   /* the tails' springs, each monster's (a test) */
+        tail_trace = now;
+        for (int k = 0; k < v->nmon; k++)
+            printf("net: tail %d: links %d weight %.2f target %.2f state %s\n", k, v->mon[k].tail.n,
+                   v->mon[k].tail.weight, v->mon[k].tail.target,
+                   v->mon[k].have_graph ? v->mon[k].graph.states[v->mon[k].run.state].name : "-");
+    }
     if (!DEBUG_TITLE)                                /* (the developer build's title says it every half second) */
         netgame_plain_title(v, w);
     if (net_role() == NET_OFF) {
