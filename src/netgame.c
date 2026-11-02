@@ -1160,9 +1160,10 @@ static void ng_send_snap(Viewer *v)
     net_w_u8(&b, NET_SLOTS);                         /* each slot's pad frame the host took last (its prediction) */
     for (int k = 0; k < NET_SLOTS; k++)
         net_w_u32(&b, net_remote_frame(k));
-    net_w_u8(&b, (uint32_t)(((netui_wants_input() && !netui_chat_open()) || (v->hud && hud_pause_showing(v->hud)) ?
-                             1 : 0) | (ng_guest_menu & ~1) |
-                            ((netui_chat_open() ? 1 : 0) | (ng_guest_typing & ~1)) << 4));   /* (bits 4-7: typing) */
+    net_w_u16(&b, (uint32_t)(((netui_wants_input() && !netui_chat_open()) || (v->hud && hud_pause_showing(v->hud)) ?
+                              1 : 0) | (ng_guest_menu & ~1) |
+                             ((netui_chat_open() ? 1 : 0) | (ng_guest_typing & ~1)) << 8));   /* (bits 8-15: typing;
+                                                      * 8 players: proto 5) */
     if (!b.err)
         net_send_snap(m, b.len);
 }
@@ -1250,7 +1251,7 @@ static int ng_read_snap(const NetSnapSample *s, NgSnap *o)
     for (int k = 0; k < na; k++)
         o->acks[k] = net_r_u32(&b);
     o->ack = o->acks[ng_me() % NET_SLOTS];
-    o->menu = (int)net_r_u8(&b);
+    o->menu = (int)net_r_u16(&b);
     return !b.err;
 }
 
@@ -2914,10 +2915,10 @@ static void ng_menu_labels(const Viewer *v, const Window *w)
     ng_slot_labels(v, w);
     if (!net_live() || !ng_cam.set || !v->play || !w->width || !w->height)
         return;
-    int bits = net_role() == NET_HOST ? ng_guest_menu | ng_guest_typing << 4 : ng_have_last ? ng_last.menu : 0;
+    int bits = net_role() == NET_HOST ? ng_guest_menu | ng_guest_typing << 8 : ng_have_last ? ng_last.menu : 0;
     if (net_role() == NET_GUEST)
-        bits &= ~(1 << ng_me() | 1 << (ng_me() + 4));   /* (never over our own) */
-    int menu = bits & 15, typing = bits >> 4 & 15;
+        bits &= ~(1 << ng_me() | 1 << (ng_me() + 8));   /* (never over our own) */
+    int menu = bits & 255, typing = bits >> 8 & 255;
     if (getenv("RAMPAGE_NET_TRACE")) {
         static int was = -1;
         if (menu != was) { net_log("menu bits %d", menu); was = menu; }

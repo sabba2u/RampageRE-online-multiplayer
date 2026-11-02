@@ -208,7 +208,8 @@ int nts_host(void)
         return -1;
     leave();
     s.role = NET_HOST;
-    s.create_call = p_CreateLobby(s.mm, 1 /* friends only */, 4);   /* (4 players: the host and three guests) */
+    s.create_call = p_CreateLobby(s.mm, 1 /* friends only */, RAMPAGE_MAX_PLAYERS);   /* (8 players: the host and
+                                                      * seven guests) */
     net_log("Steam: making a lobby");
     return 0;
 }

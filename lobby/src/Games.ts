@@ -71,9 +71,9 @@ export function parseFields(b: Record<string, unknown>, partial = false): Partia
   if (has("name") || !partial) out.name = clean(b.name, 24) || "Rampage host";
   if (has("monster") || !partial) out.monster = clean(b.monster, 24);
   if (has("city") || !partial) out.city = clean(b.city, 32);
-  if (has("players") || !partial) field("players", () => { out.players = int(b.players, 0, 4, 1); });
-  if (has("max") || !partial) field("max", () => { out.max = int(b.max, 1, 4, 2); });
-  if (has("reserved") || !partial) field("reserved", () => { out.reserved = int(b.reserved, 0, 3, 0); });
+  if (has("players") || !partial) field("players", () => { out.players = int(b.players, 0, 8, 1); });
+  if (has("max") || !partial) field("max", () => { out.max = int(b.max, 1, 8, 2); });
+  if (has("reserved") || !partial) field("reserved", () => { out.reserved = int(b.reserved, 0, 7, 0); });
   if (has("port") || !partial) field("port", () => { out.port = int(b.port, 1, 65535); });
   if (has("build") || !partial) field("build", () => {
     const s = String(b.build ?? "");

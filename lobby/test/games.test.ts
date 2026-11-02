@@ -27,6 +27,11 @@ describe("registration fields", () => {
     expect(parseFields({ ...base, name: "" }).name).toBe("Rampage host");
     expect(parseFields({ players: 2 }, true)).toEqual({ players: 2 });
   });
+  it("takes rooms of up to 8 players", () => {
+    expect(parseFields({ ...base, players: 8, max: 8 })).toMatchObject({ players: 8, max: 8 });
+    expect(parseFields({ ...base, players: 1, max: 8, reserved: 7 })).toMatchObject({ players: 1, max: 8, reserved: 7 });
+    expect(() => parseFields({ ...base, max: 9 })).toThrow(/max/);
+  });
 });
 
 describe("the registry", () => {

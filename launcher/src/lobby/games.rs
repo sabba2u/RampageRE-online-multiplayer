@@ -173,9 +173,9 @@ pub fn parse_fields(b: &Map<String, Value>, partial: bool) -> Result<Fields, Str
     }
     if has("monster") || !partial { out.monster = Some(clean(b.get("monster"), 24)); }
     if has("city") || !partial { out.city = Some(clean(b.get("city"), 32)); }
-    if has("players") || !partial { out.players = Some(field("players", int(b.get("players"), 0, 4, Some(1)))?); }
-    if has("max") || !partial { out.max = Some(field("max", int(b.get("max"), 1, 4, Some(2)))?); }
-    if has("reserved") || !partial { out.reserved = Some(field("reserved", int(b.get("reserved"), 0, 3, Some(0)))?); }
+    if has("players") || !partial { out.players = Some(field("players", int(b.get("players"), 0, 8, Some(1)))?); }
+    if has("max") || !partial { out.max = Some(field("max", int(b.get("max"), 1, 8, Some(2)))?); }
+    if has("reserved") || !partial { out.reserved = Some(field("reserved", int(b.get("reserved"), 0, 7, Some(0)))?); }
     if has("port") || !partial { out.port = Some(field("port", int(b.get("port"), 1, 65535, None))? as u16); }
     if has("build") || !partial {
         let s = js_string(b.get("build"));

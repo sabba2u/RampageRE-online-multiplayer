@@ -33,8 +33,8 @@
 #include <stdint.h>
 #include "data.h"
 
-#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
-#define RAMPAGE_MAX_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: 8 players (4 on the PS2; up to 4 controllers on one PC, the rest online guests) */
+#define RAMPAGE_MAX_PLAYERS 8
 #endif
 #define GAME_PLAYERS RAMPAGE_MAX_PLAYERS
 

@@ -124,6 +124,18 @@ leaves the players out). A monster nobody plays (a kept or open seat) is no unit
 unit's target that becomes one is dropped), and its label shows knocked down too (lower) or turned human (over the
 person), kept inside the screen.
 
+## Eight players
+
+Every build plays up to 8 (`RAMPAGE_MAX_PLAYERS` 8, `NET_PROTO` 5: older builds can't join). A PC takes four
+controllers, so players 5 .. 8 are online guests. The launcher passes `--menu-players 8` to every hosted game, so the
+host's main menu has 5 Player .. 8 Player; the guests' menus show the host's rows (ShellNetView `menu_players`). On
+Monster Select each guest's presses are its seat's pad on the host (netrep_menu.c: seats 1 .. 7), each steering its own
+card of the eight (docs/NATIVE.md "Eight players"). The "in a menu" / "typing" labels over the monsters are 8 bits each
+now (a u16 in NM_SNAP). Steam lobbies and the room servers (lobby/, the launcher's) take 8. Checked on one PC with
+`tools
+et8_menu_test.ps1` (eight copies through the menus into King of the City, and five); never yet on eight PCs.
+The host's upload grows with each guest (about 200 KB/s each with the city's people and traffic).
+
 ## Re-synchronizing
 
 A safety net for a difference the digest finds and nothing else mends: **Re-synchronize players** in the host's panel
@@ -490,6 +502,15 @@ ampage` with the launcher itself as the
 
 ```
 build.bat dev
+tools
+et8_menu_test.ps1                     8 players through the menus: a host and seven guests in the front
+                                             end; the host picks King of the City, 8 Player, no computer players;
+                                             each guest readies its own card by its own Enter; the city; PASS /
+                                             FAIL per check (each guest's press on its own seat, all in the game);
+                                             build
+et8test\ms.png and game.png (every window). -Guests 4: five.
+                                             Runs in build
+et8test with a copy of this folder's profile
 tests\build_net_test.bat                     unit tests: wire format, snapshot buffer, lobby, UPnP without a router
 tools\net_test.ps1 -TestPad -Shots 2         host + guest; the guest walks, climbs and punches by itself;
                                              build\nettest\shot_N.png shows both windows side by side

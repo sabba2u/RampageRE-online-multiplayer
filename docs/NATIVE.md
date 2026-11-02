@@ -518,6 +518,7 @@ picture is exactly the one without them (the same bytes in a `--shot`). `src/set
 | anisotropy | `aniso=1` | `--aniso N` | `RAMPAGE_ANISO` | F8 (cycles) | `GL_TEXTURE_MAX_ANISOTROPY` 1 (off), 2, 4, 8, 16 on the world's textures: streets and walls at a grazing angle stay sharp |
 | the profile at launch | `profile_autoload=1` | `--autoload`, `--noautoload` | `RAMPAGE_PROFILE_AUTOLOAD` | | not graphics, but read the same way: see "The profile at launch" below |
 | four players in the menu | `four_players=1` | `--four-players`, `--no-four-players` | `RAMPAGE_FOUR_PLAYERS` | | not graphics either: see "Four players in the menu" below |
+| five to eight players in the menu | `menu_players=4` | `--menu-players N` | `RAMPAGE_MENU_PLAYERS` | | 5 .. 8 adds 5 Player .. N Player: see "Eight players" below |
 | the Wii's extra content | `wii_data=` | `--wii DIR` | `RAMPAGE_WII_DATA` | | not graphics either: your own extracted Wii disc (Dolphin's Extract Entire Disc: the folder with `DATA`, or its `DATA/files`), for its ten monsters and Dallas; empty (the default) leaves the PS2 game as it is, except on the Switch, the Vita, Android and Linux, where a `wii` folder in the home folder is used when there is one (Linux: the current folder, beside its `rampage.cfg`; see each below; `wii_data=none` leaves it out, unsaid). `RampageRE.exe` (the player build, never `RampageRE-dev.exe` nor a `--shot` run) asks once when it is empty: a message (Yes / No), then the system's folder dialog, the folder checked for `Game` (in it, `DATA/files` or `files`); the answer, the folder or `none`, is written into `rampage.cfg` (`settings_put`: that line alone, the rest and its comment kept), so it asks no more; deleting the line asks again. Work in progress, docs/WII_PLAN.md |
 | language | `language=english` | `--language NAME` | `RAMPAGE_LANGUAGE` | | not graphics either: the console's language (`english`, `french`, `german`, `italian`, `spanish`; `japanese`, `dutch`, `portuguese` as the game takes them, English), which the PS2 game reads at start-up (sceScfGetLanguage, 0x10D300) for its texts and movies (the intro and Victory have French, German, Italian and Spanish cuts); `--lang N` picks a .loc column itself |
 | mips | `mips=0` | `--mips`, `--nomips` | `RAMPAGE_MIPS` | F9 | a 2×2 box mip chain (alpha-weighted, so cut-outs keep their colour) with trilinear filtering on the world's textures: no shimmer in the distance; anisotropy needs it to do much |
@@ -596,6 +597,20 @@ player in the menus). Players 3 and 4 play on the third and fourth controller ("
 layout puts 3 Player and 4 Player on one place (y 113.5, under 41.5 and 77.5), so with the option on the shown items
 are laid one under another a step apart (four of them a step higher, clear of the Cancel / Select bar). Autoplay's
 `--players` goes up to 4 there too.
+
+### Eight players
+A port extra: every build plays up to 8 (`RAMPAGE_MAX_PLAYERS`; a PC takes four controllers, so players 5 .. 8 are online
+guests: docs/NETPLAY.md). `menu_players=5` .. `8` in `rampage.cfg` (or `--menu-players N`; the launcher passes 8 to every
+hosted game) puts 5 Player .. N Player under the 4 Player row, the rows made smaller to fit the box; the bots' box then has
+as many choices, and the titles and the "P5" / "Bot5" names the strings lack are made from the 4's ("4 Player" with its
+digit changed, shell.c `localize_count`). Monster Select has no layout for more than four: "4 Player" is copied and a card
+and its name added for each player more (shell.c `ms_many_group`), in two rows of up to four (the second centred), at
+0.42 scale, each card's glow placed with it; players 5 .. 8 have the colours of 1 .. 4. With more than four players the
+starting picks skip locked monsters (with fewer unlocked monsters than players some repeat). The Card Sheet marks the other
+seven players' monsters. The HUD puts eight panels in one row (hud.c `hud_quads`) and the results screens list eight.
+`RAMPAGE_MS_TRACE=1` prints each menu press (`shell: in ev .. pad ..`) and each one Monster Select takes (`MSEV ..`):
+`tools
+et8_menu_test.ps1` reads them. `build.bat dev8` builds the same 8-player exe under its old name.
 
 ## Source
 | File | |

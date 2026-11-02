@@ -35,6 +35,15 @@ fn fields_clean_names_and_check_numbers() {
 }
 
 #[test]
+fn eight_player_rooms() {
+    let f = parse_fields(&base(json!({"players": 8, "max": 8})), false).unwrap();
+    assert_eq!((f.players, f.max), (Some(8), Some(8)));
+    let r = parse_fields(&base(json!({"players": 1, "max": 8, "reserved": 7})), false).unwrap();
+    assert_eq!(r.reserved, Some(7));
+    assert!(parse_fields(&base(json!({"max": 9})), false).unwrap_err().contains("max"));
+}
+
+#[test]
 fn codes_and_token() {
     let mut games = Games::new(None, Box::new(|| 1000));
     let g = games.register(&base(json!({})), "203.0.113.5").unwrap();

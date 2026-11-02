@@ -36,6 +36,8 @@
 #include "hud.h"
 
 #define SHELL_MONSTERS 40           /* room for MonsterData.Monster0 .. 29 of ShellData.bdp, 0 .. 39 of the Wii's */
+#define SHELL_PLAYERS 8             /* port extra: the front end's players (4 on the PS2: up to 4 controllers on one PC,
+                                     * the rest online guests), RAMPAGE_MAX_PLAYERS */
 #define SHELL_CITIES 8              /* room for CityData.City0 .. 6: LasVegas SanFrancisco London LosAngeles Chicago
                                      * HongKong NewYork (the campaign's order); the Wii's 0 .. 7, Dallas the fourth */
 #define SHELL_PROFILES 16           /* profiles on the "memory card" the popup lists */
@@ -57,6 +59,8 @@ typedef struct {
     int time_of_day;                /* port extra (rampage.cfg time_of_day): 0 the game's, 1 day, 2 night */
     int four_players;               /* port extra (rampage.cfg four_players): the main menu offers 3 Player and 4 Player
                                      * where the game's other consoles do */
+    int menu_players;               /* port extra (rampage.cfg menu_players): the most the main menu offers, 5 .. 8
+                                     * (online guests); 4 or less: as four_players says */
     char name[16];                  /* its name (the popup shows it) */
     /* gCommon.getMonsterFlags(player, monster): 0x80 unlocked, 1 2 4 8 the four upgrades (Charge Punch, Double Punch,
      * Roar Attack, Jump Smash); player 0 the profile, 1 .. 3 a buddy's profile when loaded, else the profile's [R
@@ -87,9 +91,10 @@ typedef struct {
 typedef struct {
     int play_type;                  /* game.h GP_*: 2 campaign, 3 King of the City, 4 King of the World, 5 Timed Run;
                                      * 0 the attract mode's demo (gShell.startAttractGame) */
-    int num_players, num_bots;      /* 1 .. 4; the last num_bots of the players are the computer's (the demo: all) */
-    int monster[4];                 /* MonsterData.Monster<n> per player */
-    char monster_name[4][16];       /* its Name ("George") */
+    int num_players, num_bots;      /* 1 .. 4 (8, SHELL_PLAYERS); the last num_bots of the players are the computer's
+                                     * (the demo: all) */
+    int monster[SHELL_PLAYERS];     /* MonsterData.Monster<n> per player */
+    char monster_name[SHELL_PLAYERS][16];   /* its Name ("George") */
     int city_index;                 /* CityData.City<n> (the campaign's order, above) */
     char city[16];                  /* its City ("LasVegas") */
     int start_block;                /* GameStatus +0x210: 0 = the city's BlockStart, else that block */
@@ -261,7 +266,7 @@ typedef struct {
     int cs_index, cs_locked;
     int mc_mode, mc_msg;
     int attract_state;
-    const char *ms_name[4];         /* NET: MonsterSelect's monster on each player's card (online play's guest is told) */
+    const char *ms_name[SHELL_PLAYERS];   /* NET: MonsterSelect's monster on each player's card (online play's guest is told) */
 } ShellAutoView;
 void shell_auto_view(const Shell *s, ShellAutoView *out);
 /* NET: online play, the guest's front end shows the host's (src/netshell.c, included by shell.c): where the host's
@@ -271,10 +276,11 @@ typedef struct {
                                      * the guest can show: the boot, the attract mode, loading, the Victory) */
     uint8_t mm_state, mm_play_mode, mm_players_sel, mm_bots_sel, mm_retro;
     uint8_t play_type, num_players, num_bots, ms_players, ms_ready, ms_back;   /* (bits: player n) */
-    int16_t ms_monster[4], sheet_monster;
+    int16_t ms_monster[SHELL_PLAYERS], sheet_monster;
     uint8_t sheet_player, cs_index, cs_night, cs_stats;
     uint8_t monster_flags[4][SHELL_MONSTERS], city_flags[SHELL_CITIES];
     uint32_t cheats;
+    uint8_t four_players, menu_players;   /* the host's menu: its 3 / 4 Player and 5 .. 8 Player rows */
 } ShellNetView;
 void shell_net_view(const Shell *s, ShellNetView *out);
 /* the guest's shell made the host's, each frame (1: done; 0: not now, its own popup or loading screen up); NULL: the

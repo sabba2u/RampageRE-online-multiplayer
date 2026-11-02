@@ -403,8 +403,8 @@ enum { AMW_START = 1, AMW_STOP = 2, AMW_BURST = 4 };
 int army_mon_weapon_step(ArmyMonWeapon *w, float dt, int weapons_on);   /* weapons_on: gp-0x772C (game.h) */
 
 /* ---- the score (gCommon.addStats, Player.addPoints) */
-#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
-#define RAMPAGE_MAX_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: 8 players (4 on the PS2; up to 4 controllers on one PC, the rest online guests) */
+#define RAMPAGE_MAX_PLAYERS 8
 #endif
 #ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
                                                       * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */

@@ -1,6 +1,6 @@
 # RampageRE: Online Multiplayer
 
-> **This fork adds online play for up to 4, a launcher, Boss Rumble and more to
+> **This fork adds online play for up to 8, a launcher, Boss Rumble and more to
 > [jjmhalew/RampageRE](https://github.com/jjmhalew/RampageRE).** Everything below the line is the original project's
 > README. All credit for the port itself goes to jjmhalew; this fork only adds what this first part describes (branch
 > `online-multiplayer`).
@@ -20,18 +20,20 @@ The zip holds `RampageRE.exe` (the game), `RampageRE-dev.exe` (the same game wit
 `RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), the `lobby/` room
 server, and the docs this README links to.
 
-## Online, up to 4 players (work in progress)
+## Online, up to 8 players (work in progress)
 
-Up to four players, each on their own PC (or some on the host's PC with extra controllers). The **host** is player 1
-and runs the game; each **guest** is player 2, 3 or 4 (in the order they join) and sees the host's world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
+Up to eight players, each on their own PC (or up to four on the host's PC with its controllers, the rest online). The
+**host** is player 1 and runs the game; each **guest** is player 2 to 8 (in the order they join) and sees the host's world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
 host. Each player needs their own copy of the game disc and the same build of this fork.
 
 ### The easy way: the launcher
 
 Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, nothing to set up.
 
-- **HOST A GAME (LAN)**: **Host Local (LAN)** starts the game already hosting; up to three friends join your address.
-  With 1, 3 or 4 players it's the normal game on this PC (**Play Local**). **Join Local (LAN)** joins a game hosted on
+- **HOST A GAME (LAN)**: pick **Players** under the big button. **2** or **5 to 8** players: **Host Local (LAN)** starts
+  the game already hosting, and up to seven friends join your address; in the game pick that many players (**5 Player** ..
+  **8 Player** are in the menu when hosting). **1, 3 or 4**: the normal game on this PC (**Play Local**), one controller
+  each (a PC takes four). **Join Local (LAN)** joins a game hosted on
   this PC (127.0.0.1).
 - **HOST AN INTERNET GAME**: **Run an Internet Multiplayer Server** shows a 5-letter room code and links to send your friends (the
   launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
@@ -67,13 +69,15 @@ Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-
 
 1. Both players start RampageRE.
 2. Press **Insert** at any time to open the online panel.
-3. **Host:** press **Insert** and click **Host a game**, then pick **2, 3 or 4 Player** in the main menu once your
-   friends are in (with the 3/4 player option on, the campaign has 3 and 4 Player too).
+3. **Host:** press **Insert** and click **Host a game**, then pick **2 to 8 Player** in the main menu (from the launcher,
+   or with `menu_players=8` in `rampage.cfg` / `--menu-players 8`, the menu has 5 to 8 Player too), and **0** computer
+   players for a game of friends only.
    The game uses UDP port **27960**: the game asks your router to forward it by itself (UPnP); the panel's
    **Port forward** line says whether it worked and the address friends join. If your router has no UPnP (or it is
    off), forward the port by hand, or use Steam, a LAN or a VPN like Tailscale or ZeroTier.
 4. **Guest:** press **Insert**, type the host's address and click **Join**. Your screen then shows the host's menus
-   (main menu, Monster Select with every player's card, City Select, and in the game its Pause menu and results); your
+   (main menu, Monster Select with every player's card (two rows of four with 5 to 8 players; players 5 to 8 have the
+   colours of 1 to 4), City Select, and in the game its Pause menu and results); your
    controller or keyboard picks your own card on the host's Monster Select, and you all end up in the same city.
    What you earn as the guest (monsters unlocked, your monster's upgrades, campaign blocks won) is kept in your own
    profile; the host's profile never overwrites yours.
@@ -162,8 +166,9 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 ### Other changes in this fork
 
 - **Outlines:** a boss glows red; an online seat nobody is playing (disconnected) is drawn grey.
-- **Up to 8 monsters on screen** (bosses in Boss Rumble). An experimental 8-player build (`build.bat dev8`) exists;
-  the release has the 4-player game.
+- **8 players online**: the host and seven guests, through the menus (5 to 8 Player, Monster Select's 8 cards), King
+  of the City and the other modes; the HUD puts the eight panels in one row. Up to 8 monsters on screen in Boss Rumble
+  too (players and bosses).
 - **Results screens** list 6 and 8 players.
 - **Fixed:** the tentacles of Cal, Eyegore, Venus, Natalie and Jill were frozen straight (the face animation
   overrode them; their tips sank into the street). They now curl, stretch and plant as on the console.
@@ -174,8 +179,11 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 
 This is early. Expect issues.
 
-- **Up to 4 players** (the host and three guests). Host on Steam takes 4 as well (not yet tried with real Steam accounts). With three guests the
-  host sends each about 200 KB/s (4.8 Mbit/s of upload in all on average, 6.6 at peak).
+- **Up to 8 players** (the host and seven guests). Eight players have been through the menus into a game on one PC
+  (`tools
+et8_menu_test.ps1`), never yet on eight PCs. Host on Steam takes 8 as well (not yet tried with real Steam
+  accounts). With three guests the host sends each about 200 KB/s (4.8 Mbit/s of upload in all on average, 6.6 at peak);
+  with seven, plan on about 1.4 MB/s (11 Mbit/s) of upload: hosting 8 needs a good connection.
 - **Tested only on one PC**, up to four copies talking over localhost, including with simulated lag and packet loss.
   It has **not** been played between two real PCs over the internet yet.
 - **Steam has not been tested.** The code is there (Host on Steam, Invite a friend, Join Game from the friends list,

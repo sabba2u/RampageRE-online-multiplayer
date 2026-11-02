@@ -100,8 +100,8 @@ typedef struct {
  * computer (the bots, and players 3 and 4 without a pad), or players 3 and 4's own pads (pad.h slot 2, 3) */
 enum { DRIVE_KEYS1 = 0, DRIVE_KEYS2 = 1, DRIVE_COMPUTER = 2, DRIVE_PAD = 3 };
 
-#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
-#define RAMPAGE_MAX_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: 8 players (4 on the PS2; up to 4 controllers on one PC, the rest online guests) */
+#define RAMPAGE_MAX_PLAYERS 8
 #endif
 #ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
                                                       * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
@@ -258,6 +258,7 @@ typedef struct Viewer {
     float play_now;                                  /* the world's play time (gWorld.curTime): the buildings' alarms */
     int profile_autoload;                            /* rampage.cfg profile_autoload (port extra, settings.h) */
     int four_players;                                /* rampage.cfg four_players (port extra, settings.h) */
+    int menu_players;                                /* rampage.cfg menu_players (port extra, settings.h): 5 .. 8 */
     int time_of_day;                                 /* rampage.cfg time_of_day: 0 the game's, 1 day, 2 night */
     unsigned random_blocks;                          /* rampage.cfg random_blocks: the seed (0 the cities as built) */
     int game_block;                                  /* a block the game moved on to, to build after the frame; -1 */
@@ -7431,6 +7432,7 @@ static void shell_profile(Viewer *v, ShellProfile *sp)
     sp->profile_shown = v->prof.profile_shown;
     sp->offer_create = v->profile_autoload && !v->prof_on_card && v->prof_write;
     sp->four_players = v->four_players;
+    sp->menu_players = v->menu_players;
     sp->time_of_day = v->time_of_day;
     snprintf(sp->name, sizeof sp->name, "%s", v->prof.block.name);
     for (int p = 0; p < 4; p++)
@@ -8491,7 +8493,7 @@ static void autopilot_shell(Viewer *v, float dt)
     } else if (!strcmp(f, "AttractMode"))
         ev = v->ap_demos ? 0 : HUD_EV_ACCEPT;
     else if (!strcmp(f, "MainMenu")) {
-        int want = v->ap_type ? v->ap_type : GP_CAMPAIGN, most = v->four_players ? 4 : 2,
+        int want = v->ap_type ? v->ap_type : GP_CAMPAIGN, most = v->menu_players > 4 ? v->menu_players : v->four_players ? 4 : 2,
             np = v->ap_players < 1 ? 1 : v->ap_players > most ? most : v->ap_players;   /* (the PS2's boxes offer 1
                                                       * or 2; four_players 3 and 4 too, the campaign's as well) */
         if (v->ap_demos)
@@ -8513,7 +8515,7 @@ static void autopilot_shell(Viewer *v, float dt)
     } else if (!strcmp(f, "MonsterSelect")) {
         ev = HUD_EV_ACCEPT;
         int humans = v->shell ? shell_game(v->shell)->num_players - shell_game(v->shell)->num_bots : 1;
-        for (int k = 0; k < sv.ms_players && k < 4; k++)
+        for (int k = 0; k < sv.ms_players && k < SHELL_PLAYERS; k++)
             if (!(sv.ms_ready >> k & 1)) {
                 pad = k < humans ? k : 0;            /* (the bots' cards: player 1's pad) */
                 break;
@@ -9487,6 +9489,7 @@ static int viewer_main(int argc, char **argv)
         v.prof_path = "rampage_profile.bin";
     v.profile_autoload = gfx.profile_autoload;
     v.four_players = gfx.four_players;
+    v.menu_players = gfx.menu_players;
     v.time_of_day = gfx.time_of_day;
     v.random_blocks = gfx.random_blocks;
     weather_set(gfx.weather);                        /* port extra: rain, a storm (weather.c) */
@@ -9623,7 +9626,7 @@ static int viewer_main(int argc, char **argv)
         g->play_type = play_type(&v);
         g->num_players = v.nmon;
         g->num_bots = v.num_bots;
-        for (int k = 0; k < v.nmon && k < 4; k++) {
+        for (int k = 0; k < v.nmon && k < SHELL_PLAYERS; k++) {
             int r = reveal_roster_find(&v.roster, v.monsters[v.mon[k].monster]);   /* MonsterData's index */
             g->monster[k] = r >= 0 ? r : 0;
             snprintf(g->monster_name[k], sizeof g->monster_name[k], "%s", v.monsters[v.mon[k].monster]);

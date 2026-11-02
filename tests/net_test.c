@@ -231,11 +231,12 @@ static void test_slot_pick(void)
     CHECK(net_slot_pick(s, 3, 7, 70, &wait) == NET_PICK_FULL);
 }
 
-/* four seats (docs/superpowers/specs/2026-11-01-four-player-online-design.md): ENet games 4, Steam 2 */
+/* the seats (docs/superpowers/specs/2026-11-01-four-player-online-design.md, then 8: docs/NETPLAY.md "Eight players"):
+ * ENet games and Steam alike RAMPAGE_MAX_PLAYERS */
 static void test_four_seats(void)
 {
-    CHECK(net_game_slots(0) == 4);
-    CHECK(net_game_slots(1) == 4);                              /* (Steam too) */
+    CHECK(net_game_slots(0) == 8);
+    CHECK(net_game_slots(1) == 8);                              /* (Steam too) */
     NetSlotPick s[NET_SLOTS] = { { NSL_HOST, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 } };
     double wait = -1;
     for (int k = 1; k < 4; k++) {                                /* guests in join order: seats 1, 2, 3 */

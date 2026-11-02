@@ -16,7 +16,8 @@ Ideas the owner wants, not started. Newest at the bottom.
   `Plugin.cs`). Online: the host decides when the lightning strikes so everyone sees the same flash.
 - (done 2026-11-02: --random-blocks SEED / random_blocks=, launcher Shuffle the city's buildings; the blocks' own decorations stay where they were, so a banner can hang on another building) **Random city blocks** (offered, not decided): shuffle a city's real building templates into new block layouts from a
   seed (`--random-city <seed>`); online, the host sends the seed.
-- (prototype 2026-11-02) **More than 4 players**: `build.bat dev8` makes RampageRE-dev8.exe with up to 8
+- (done 2026-11-02: 8 in every build, the menus' 5 .. 8 Player and Monster Select's 8 cards, the launcher's Players 1 .. 8, tools
+et8_menu_test.ps1; docs/NETPLAY.md "Eight players". Not yet: eight real PCs) **More than 4 players**: `build.bat dev8` makes RampageRE-dev8.exe with up to 8
   (RAMPAGE_MAX_PLAYERS: the monsters, the scene's, the game's players, the seats; the controllers stay 4). Offline 8
   monsters (--players 8 --monster5 .. --monster8) played three campaign blocks with no problem; online a host and 5
   guests on one PC passed every net4_test check (-Exe RampageRE-dev8.exe). The HUD (2026-11-02): with more than 4 players

@@ -25,6 +25,9 @@ typedef struct {
      * 3 Player and 4 Player as the game's other consoles do (King of the City, King of the World, the Timed Run; never
      * the campaign); 0 the PS2's one or two */
     int four_players;
+    /* menu_players= (port extra): 5 .. 8 adds 5 Player .. that many to the main menu (players past the PC's four
+     * controllers join online); 4 or less: four_players says (the default 4); --menu-players N */
+    int menu_players;
     /* time_of_day= (port extra): game (0, the default) as the game picks it (the campaign's cities' own, City Select's
      * toggle elsewhere), day (1) every city by day, night (2) every city by night; --time-of-day game|day|night */
     int time_of_day;

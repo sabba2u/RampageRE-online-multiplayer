@@ -23,6 +23,7 @@ static void defaults(Settings *s)
     s->profile_autoload = 1;
     s->language = 1;
     s->four_players = 1;
+    s->menu_players = 4;
     s->time_of_day = 0;
     s->weather = 0;
     s->random_blocks = 0;
@@ -32,7 +33,7 @@ static void defaults(Settings *s)
 void settings_unset(Settings *f)
 {
     f->width = f->height = f->fullscreen = f->vsync = f->ao = f->aniso = f->mips = f->smaa = f->msaa = UNSET;
-    f->profile_autoload = f->language = f->four_players = f->time_of_day = f->weather = UNSET;
+    f->profile_autoload = f->language = f->four_players = f->menu_players = f->time_of_day = f->weather = UNSET;
     f->random_blocks = 0;
     f->ao_radius = UNSET;
     f->wii_data[0] = 0;
@@ -102,6 +103,7 @@ static int set(Settings *s, const char *key, const char *v)
     else if (!_stricmp(key, "msaa")) s->msaa = clamp_msaa(atoi(v));
     else if (!_stricmp(key, "profile_autoload")) s->profile_autoload = atoi(v) != 0;
     else if (!_stricmp(key, "four_players")) s->four_players = atoi(v) != 0;
+    else if (!_stricmp(key, "menu_players")) s->menu_players = atoi(v) < 1 ? 1 : atoi(v) > 8 ? 8 : atoi(v);
     else if (!_stricmp(key, "time_of_day")) s->time_of_day = tod_of(v);
     else if (!_stricmp(key, "weather")) s->weather = weather_of_name(v);
     else if (!_stricmp(key, "random_blocks")) s->random_blocks = (unsigned)strtoul(v, NULL, 10);
@@ -144,7 +146,7 @@ static void read_cfg(Settings *s, const char *path)
 static void read_env(Settings *s)
 {
     static const char *const KEYS[] = { "window", "fullscreen", "vsync", "ao", "ao_radius", "aniso", "mips", "smaa", "msaa",
-                                        "profile_autoload", "language", "four_players", "time_of_day", "weather", "wii_data" };
+                                        "profile_autoload", "language", "four_players", "menu_players", "time_of_day", "weather", "wii_data" };
     for (size_t k = 0; k < sizeof KEYS / sizeof *KEYS; k++) {
         char name[32];
         snprintf(name, sizeof name, "RAMPAGE_%s", KEYS[k]);
@@ -169,6 +171,10 @@ int settings_arg(Settings *f, int argc, char **argv, int *i)
     else if (!strcmp(a, "--noautoload")) f->profile_autoload = 0;
     else if (!strcmp(a, "--four-players")) f->four_players = 1;
     else if (!strcmp(a, "--no-four-players")) f->four_players = 0;
+    else if (!strcmp(a, "--menu-players") && *i + 1 < argc) {
+        int n = atoi(argv[++*i]);
+        f->menu_players = n < 1 ? 1 : n > 8 ? 8 : n;
+    }
     else if (v && !strcmp(a, "--time-of-day")) { f->time_of_day = tod_of(v); ++*i; }
     else if (v && !strcmp(a, "--weather")) { f->weather = weather_of_name(v); ++*i; }
     else if (v && !strcmp(a, "--random-blocks")) { f->random_blocks = (unsigned)strtoul(v, NULL, 10) | 0x80000000u; ++*i; }
@@ -208,6 +214,7 @@ void settings_resolve(Settings *s, const Settings *f, int use_cfg)
     if (f->profile_autoload != UNSET) s->profile_autoload = f->profile_autoload;
     if (f->language >= 0) s->language = f->language;
     if (f->four_players != UNSET) s->four_players = f->four_players;
+    if (f->menu_players != UNSET) s->menu_players = f->menu_players;
     if (f->time_of_day != UNSET) s->time_of_day = f->time_of_day;
     if (f->weather != UNSET) s->weather = f->weather;
     if (f->random_blocks & 0x80000000u) s->random_blocks = f->random_blocks & 0x7FFFFFFFu;   /* (bit 31: given) */

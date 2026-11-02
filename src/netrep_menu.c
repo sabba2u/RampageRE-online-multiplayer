@@ -39,7 +39,7 @@ typedef struct {
     uint8_t mm_state, mm_players, ms_players, ms_ready, cs_locked;
     uint8_t paused;                                  /* 0 no, else 1 + the seat whose Start paused it (1 the host) */
     uint8_t results, world;                          /* a results screen is up; the host's game counts (2 players) */
-    char focus[16], mon[4][24], city[24];
+    char focus[16], mon[SHELL_PLAYERS][24], city[24];
     ShellNetView view;                               /* the front end, for the guest's own (shell_net_mirror) */
 } NgMenuState;
 
@@ -184,7 +184,7 @@ static void ngm_state_of(Viewer *v, NgMenuState *s)
         s->ms_ready = (uint8_t)av.ms_ready;
         s->cs_locked = (uint8_t)av.cs_locked;
         if (!strcmp(s->focus, "MonsterSelect") || !strcmp(s->focus, "MonsterSheet"))
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < SHELL_PLAYERS; k++)
                 snprintf(s->mon[k], sizeof s->mon[k], "%s", av.ms_name[k] ? av.ms_name[k] : "");
         if (!strcmp(s->focus, "CitySelect") && av.cs_index >= 0 && av.cs_index < v->prof.ncities &&
             v->prof.city_name[av.cs_index])
@@ -421,7 +421,7 @@ static void ngr_menu_message(Viewer *v, NetBuf *b)
     }
     if (sub == NGM_INPUT && net_role() == NET_HOST) {
         int seat = net_msg_slot();                   /* (the sender's: its presses are its player's) */
-        if (seat < 1 || seat >= 4)
+        if (seat < 1 || seat >= SHELL_PLAYERS)       /* (8 players: seats 1 .. 7; it was 1 .. 3) */
             seat = 1;
         int n = (int)net_r_u8(b);
         for (int i = 0; i < n && !b->err; i++) {
@@ -434,7 +434,7 @@ static void ngr_menu_message(Viewer *v, NetBuf *b)
         net_r_bytes(b, &s, (int)sizeof s);
         if (!b->err) {
             s.focus[sizeof s.focus - 1] = 0;
-            for (int k = 0; k < 4; k++)
+            for (int k = 0; k < SHELL_PLAYERS; k++)
                 s.mon[k][sizeof s.mon[k] - 1] = 0;
             s.city[sizeof s.city - 1] = 0;
             ngm_host = s;

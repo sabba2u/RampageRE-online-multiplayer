@@ -23,8 +23,11 @@ fn args_per_start() {
     let l = "http://127.0.0.1:19980".to_string();
     // online, over the network and over Steam: up to 4 players (3 and 4 Player in the menus)
     let (s, f) = ("--shell", "--four-players");
-    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![s, f, "--host", "--lobby", "http://127.0.0.1:19980"]);
-    assert_eq!(args(&Start::SteamHost), vec![s, f, "--steam-host"]);
+    // hosting: the menus offer up to 8 Player (the guests' screens follow the host's)
+    let m = ["--menu-players", "8"];
+    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![s, f, m[0], m[1], "--host", "--lobby", "http://127.0.0.1:19980"]);
+    assert_eq!(args(&Start::SteamHost), vec![s, f, m[0], m[1], "--steam-host"]);
+    assert_eq!(args(&Start::HostLan), vec![s, f, m[0], m[1], "--host"]);
     assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, f, "--lobby", l.as_str(), "--join", "K7PQ2"]);
     assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![s, f, "--join", "203.0.113.5:27960"]);
     // Join on Steam: the game signs in to Steam only when asked (--steam), so other starts never show "Spacewar"
@@ -112,9 +115,11 @@ fn play_local_players_choice() {
     // never chosen: 2 players
     assert_eq!(Settings::default().local_players(), 2);
     assert!(!Settings::default().four_players());
-    for (n, four) in [(1, false), (2, false), (3, true), (4, true)] {
+    // 2 and 5 to 8 host (friends join over the network: a PC takes four controllers), 1, 3 and 4 play on this PC
+    for (n, four, hosts) in [(1, false, false), (2, false, true), (3, true, false), (4, true, false), (5, true, true),
+                             (6, true, true), (7, true, true), (8, true, true)] {
         let s = Settings { local_players: n, ..Default::default() };
-        assert_eq!((s.local_players(), s.four_players()), (n, four));
+        assert_eq!((s.local_players(), s.four_players(), s.hosts()), (n, four, hosts));
     }
     assert_eq!(Settings { local_players: 9, ..Default::default() }.local_players(), 2);
 }
@@ -148,7 +153,7 @@ fn unlock_moves_on_by_default_and_passed() {
 
 #[test]
 fn host_local_hosts_without_a_server() {
-    assert_eq!(args(&Start::HostLan), vec!["--shell", "--four-players", "--host"]);
+    assert_eq!(args(&Start::HostLan), vec!["--shell", "--four-players", "--menu-players", "8", "--host"]);
 }
 
 #[test]

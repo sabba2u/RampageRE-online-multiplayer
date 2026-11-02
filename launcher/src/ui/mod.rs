@@ -83,9 +83,9 @@ impl App {
 
     pub fn say(&mut self, text: &str, problem: bool) { self.note = Some((text.to_string(), problem)); }
 
-    /// The top button: 2 players host (friends join it, up to 4 players in all), 1 or 3 and 4 play on this PC.
+    /// The top button: 2 or 5 to 8 players host (friends join it, up to 8 players in all), 1, 3 and 4 play on this PC.
     fn play(&mut self) {
-        let hosting = self.settings.local_players() == 2;
+        let hosting = self.settings.hosts();
         // on this PC: the game's number of players screen with all of 1 to 4 (computer players fill the others)
         let start = if hosting { Start::HostLan } else { Start::Offline { four_players: true } };
         match &self.game {
@@ -157,8 +157,8 @@ impl App {
         }
     }
 
-    /// Under Play Local: how many players (1 to 4; 3 or 4 adds 3 Player and 4 Player to the game's menu), and that
-    /// hosting is still there in the game (Insert).
+    /// Under Play Local: how many players (1 to 8; 3 or 4 adds 3 Player and 4 Player to the game's menu; 2 and 5 to 8
+    /// host, the others joining over the network), and that hosting is still there in the game (Insert).
     fn players_choice(&mut self, ui: &mut egui::Ui) {
         let label = |n: u8| if n == 1 { "1 player".to_string() } else { format!("{n} players") };
         let now = self.settings.local_players();
@@ -167,7 +167,7 @@ impl App {
             ui.add_space((ui.available_width() - 200.0).max(0.0) / 2.0);
             ui.label(RichText::new("Players:").color(DIM_TEXT));
             egui::ComboBox::from_id_salt("players").selected_text(label(now)).width(120.0).show_ui(ui, |ui| {
-                for n in 1..=4u8 {
+                for n in 1..=8u8 {
                     ui.selectable_value(&mut pick, n, label(n));
                 }
             });
@@ -175,14 +175,16 @@ impl App {
         if pick != now {
             self.settings = Settings::update(|s| s.local_players = pick);
         }
-        let hint = if self.settings.local_players() == 2 {
+        let n = self.settings.local_players();
+        let hint = if self.settings.hosts() {
             let lan = self.lan_ip.as_ref().map_or(String::new(), |ip| format!(", same Wi-Fi: {ip}"));
-            format!("Friends join your address: this PC: 127.0.0.1{lan}. From the internet: your public IP.")
+            let who = if n > 2 { format!("Pick {n} Player in the game; up to {} friends ", n - 1) } else { "Friends ".to_string() };
+            format!("{who}join your address: this PC: 127.0.0.1{lan}. From the internet: your public IP.")
         } else {
             "On this PC: the game's players screen gives you 1 to 4, with computer players.".to_string()
         };
         ui.label(RichText::new(hint).strong().color(look::YELLOW));
-        if self.settings.local_players() == 2 {
+        if self.settings.hosts() {
             self.public_ip_row(ui);
         }
     }
@@ -246,7 +248,7 @@ impl App {
                     look::section(ui, "Host a game (LAN)");
                     let play = match self.settings.local_players() {
                         1 => "Play Alone Locally",
-                        2 => "Host Local (LAN)",
+                        2 | 5..=8 => "Host Local (LAN)",
                         _ => "Play Local",
                     };
                     if look::big(ui, play, ready).clicked() {

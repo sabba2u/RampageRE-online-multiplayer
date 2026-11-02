@@ -175,8 +175,8 @@ struct IkFeet;
 struct TailAnim;
 /* a monster in the scene: the game has up to four (the players and the bots), each with its own skeleton, clips,
  * head turn, arm IK and foot IK; Scene.mon[k] is monster slot k */
-#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
-#define RAMPAGE_MAX_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: 8 players (4 on the PS2; up to 4 controllers on one PC, the rest online guests) */
+#define RAMPAGE_MAX_PLAYERS 8
 #endif
 #ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
                                                       * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */

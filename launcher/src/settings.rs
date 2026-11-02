@@ -14,7 +14,7 @@ pub struct Settings {
     pub spacewar_card_shown: bool,
     /// players banned from my hosted games (the launcher's player list): by IP, with the name they had
     pub banned: Vec<Banned>,
-    /// Play Local's "Players" choice, 1 to 4 (0: never chosen, 2)
+    /// Play Local's "Players" choice, 1 to 8 (0: never chosen, 2; 5 to 8 host: the rest join over the network)
     pub local_players: u8,
     /// every monster (and city) unlocked: the game's own cheat 141421, passed at each start; not saved in the game's
     /// profile, so unticked they are as the profile has them again
@@ -82,9 +82,11 @@ impl Settings {
 
     pub fn update(f: impl FnOnce(&mut Settings)) -> Settings { Settings::update_at(&path(), f) }
 
-    pub fn local_players(&self) -> u8 { if (1..=4).contains(&self.local_players) { self.local_players } else { 2 } }
+    pub fn local_players(&self) -> u8 { if (1..=8).contains(&self.local_players) { self.local_players } else { 2 } }
     /// 3 or 4 players: the game's menu gets 3 Player and 4 Player (--four-players)
     pub fn four_players(&self) -> bool { self.local_players() >= 3 }
+    /// 2, or 5 to 8: the top button hosts (friends join this PC; one PC takes four controllers), else it plays here
+    pub fn hosts(&self) -> bool { matches!(self.local_players(), 2 | 5..=8) }
 
     /// `ip` banned (once: banned again, its newest name kept).
     pub fn ban(&mut self, ip: &str, name: &str) {

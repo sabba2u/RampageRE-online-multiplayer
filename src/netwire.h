@@ -40,14 +40,14 @@ enum NetMsg {
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
  * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS. 4: 8 monster slots in every build (Boss Rumble's
- * bosses after the players) */
-#define NET_PROTO 4
+ * bosses after the players). 5: 8 players in every build (the front end's 8 cards) */
+#define NET_PROTO 5
 #define NET_PORT 27960
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
  * guest plays player 2); everything below is sized NET_SLOTS so 4 players later is no new wire format */
-#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
-#define RAMPAGE_MAX_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: 8 players (4 on the PS2; up to 4 controllers on one PC, the rest online guests) */
+#define RAMPAGE_MAX_PLAYERS 8
 #endif
 #define NET_SLOTS RAMPAGE_MAX_PLAYERS
 #define NET_RESERVE_S 60.0                           /* a dropped guest's slot is kept this long for its token */

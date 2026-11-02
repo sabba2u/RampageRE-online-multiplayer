@@ -32,7 +32,7 @@ void shell_net_view(const Shell *s, ShellNetView *o)
     o->num_players = (uint8_t)s->gs.num_players;
     o->num_bots = (uint8_t)s->gs.num_bots;
     const MonsterSel *ms = &s->ms;
-    for (int k = 0; k < 4; k++) {
+    for (int k = 0; k < SHELL_PLAYERS; k++) {
         o->ms_monster[k] = (int16_t)(k < ms->num_players ? ms_monster(ms, k) : -1);
         if (k < ms->num_players && ms->pl[k].ready)
             o->ms_ready |= (uint8_t)(1 << k);
@@ -48,6 +48,8 @@ void shell_net_view(const Shell *s, ShellNetView *o)
     memcpy(o->monster_flags, s->prof.monster_flags, sizeof o->monster_flags);
     memcpy(o->city_flags, s->prof.city_flags, sizeof o->city_flags);
     o->cheats = s->cheats;
+    o->four_players = (uint8_t)(s->prof.four_players != 0);
+    o->menu_players = (uint8_t)s->prof.menu_players;
 }
 
 /* the main menu's boxes (MainMenu.scr's: 0 the play modes, 1 the players, 2 the bots, 4 the retro games, 5 the cheat
@@ -55,9 +57,10 @@ void shell_net_view(const Shell *s, ShellNetView *o)
 static void nsh_box(Shell *s, const ShellNetView *h)
 {
     MainMenu *m = &s->mm;
-    if (h->mm_play_mode >= 2 && h->mm_play_mode <= 5 && m->play_mode != h->mm_play_mode) {
+    if (h->mm_play_mode >= 2 && h->mm_play_mode <= PLAY_MODE_LAST && m->play_mode != h->mm_play_mode) {   /* (Boss
+                                                          * Rumble's too: it was 2 .. 5) */
         m->play_mode = h->mm_play_mode;
-        node_localize(&s->gui, m->playtype, PLAY_MODE_TITLES[m->play_mode - 2]);
+        play_mode_title(s, m->playtype, m->play_mode);
         sound(s, "Rollover");
     }
     if (m->state != h->mm_state) {
@@ -75,21 +78,8 @@ static void nsh_box(Shell *s, const ShellNetView *h)
                 m->num_players = h->mm_players_sel + 1;
                 fader_go(&m->fd, m->numplayers, -1);
                 fader_go(&m->fd, m->numbots, 1);
-                char key[32];
-                snprintf(key, sizeof key, "MainMenu_%dPlayer", m->num_players);
-                node_localize(&s->gui, find(ifc_root(s, IF_MAINMENU), "nb_title"), key);
-                for (int i = 0; i < 4; i++) {
-                    Node *item = list_item(m->lb_bots, i);
-                    if (!item) continue;
-                    show(item, i < m->num_players);
-                    if (i < m->num_players) {
-                        char t[8];
-                        snprintf(t, sizeof t, "%d", m->num_players - i);
-                        set_text(item, t);
-                        snprintf(t, sizeof t, "%d", i);
-                        set_text(find(item, "computer"), t);
-                    }
-                }
+                localize_count(s, find(ifc_root(s, IF_MAINMENU), "nb_title"), "MainMenu_%dPlayer", m->num_players);
+                mm_bots_rows(s, m->num_players);
             }
         } else if (to == 4) {
             fader_go(&m->fd, m->retro, 1);
@@ -121,7 +111,7 @@ static void nsh_ms_setup(Shell *s, const ShellNetView *h)
     s->gs.play_type = h->play_type;
     s->gs.num_players = h->num_players ? h->num_players : 1;
     s->gs.num_bots = h->num_bots;
-    for (int k = 0; k < 4; k++)
+    for (int k = 0; k < SHELL_PLAYERS; k++)
         if (h->ms_monster[k] >= 0 && h->ms_monster[k] < s->nmonsters)
             s->gs.monster[k] = h->ms_monster[k];
     ms_setup_from_main_menu(s);
@@ -131,7 +121,7 @@ static void nsh_ms_setup(Shell *s, const ShellNetView *h)
 static void nsh_cards(Shell *s, const ShellNetView *h)
 {
     MonsterSel *m = &s->ms;
-    for (int k = 0; k < m->num_players && k < 4; k++) {
+    for (int k = 0; k < m->num_players && k < SHELL_PLAYERS; k++) {
         MsPlayer *pl = &m->pl[k];
         int id = h->ms_monster[k], j = -1;
         if (id < 0 || id >= s->nmonsters)
@@ -198,6 +188,8 @@ int shell_net_mirror(Shell *s, const ShellNetView *h)
     memcpy(s->prof.monster_flags, h->monster_flags, sizeof h->monster_flags);
     memcpy(s->prof.city_flags, h->city_flags, sizeof h->city_flags);
     s->cheats = h->cheats;
+    s->prof.four_players = h->four_players;          /* (the host's menu rows: mm_play_mode_select) */
+    s->prof.menu_players = h->menu_players;
     if (s->state != 3) {                                 /* the boot's movies or the attract mode: to the menus */
         s->boot_completed = 1;
         s->mc.boot_done = 1;

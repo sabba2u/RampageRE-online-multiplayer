@@ -1991,8 +1991,8 @@ typedef struct {
     int state, play_mode, retro_game, start_retro, num_players, num_bots, ntsc;
     int code[6], code_index;
     float glow_time, retro_delay;
-    float np_y0, np_step;                                /* [port extra, four_players] the players' list's first place
-                                                          * and step (np_rows) */
+    float np_y0, np_step, np_m;                          /* [port extra, four_players] the players' list's first place,
+                                                          * step and its items' scale (np_rows) */
     Faders fd;
 } MainMenu;
 
@@ -2006,7 +2006,7 @@ typedef struct {
 } MsPlayer;
 typedef struct {
     Node *player_base, *p1_dialog;
-    MsPlayer pl[4];
+    MsPlayer pl[SHELL_PLAYERS];
     int initialized, sheet_controller, num_players, num_bots, show_p1;
     float hl_time;
     Faders fd;
@@ -2014,7 +2014,7 @@ typedef struct {
 
 typedef struct {
     Node *offset, *selrect, *arrow_l, *arrow_r, *cards, *blowup, *arrows;
-    int initialized, controller, map_controller, state, sub, row, col, valid, in_use[3], sound_played;
+    int initialized, controller, map_controller, state, sub, row, col, valid, in_use[SHELL_PLAYERS - 1], sound_played;
     int selection, spin;
     float right_bounds, offset_x, target, prev_target, left_edge, right_edge, zoom, spin_amount, scale_base;
 } MonsterSheet;
@@ -2254,9 +2254,9 @@ static void fix_button(Node *in, const char *name, int index)
 {
     static const float ps2[4][3] = { { 0, 186, 255 }, { 190, 45, 39 }, { 220, 108, 194 }, { 0, 240, 156 } };
     Node *t = name && *name ? find(in, name) : NULL;
-    if (t && index >= 0 && index < 4) {
+    if (t && index >= 0 && index < SHELL_PLAYERS) {   /* (players 5 .. 8: 1 .. 4's colours) */
         float c[4];
-        col_255(c, ps2[index][0], ps2[index][1], ps2[index][2], 255);
+        col_255(c, ps2[index & 3][0], ps2[index & 3][1], ps2[index & 3][2], 255);
         set_col(t, c);
     }
 }
@@ -2275,7 +2275,7 @@ static int pad_allowed(const Shell *s, int pad)
 {
     int n = s->gs.num_players - s->gs.num_bots;
     if (n < 1) n = 1;
-    return pad >= 0 && pad < 4 && (pad < n || pad == 0) && (s->ctrl_mask & (1 << pad));
+    return pad >= 0 && pad < SHELL_PLAYERS && (pad < n || pad == 0) && (s->ctrl_mask & (1 << pad));
 }
 
 static void set_cheats(Shell *s, uint32_t flags)
@@ -3654,23 +3654,99 @@ static void mm_cheating(Shell *s, int ev)              /* processCheating */
     }
 }
 
-static void np_rows(MainMenu *m)
+/* a list's shown items one under another from its first place, a step apart; five and more (menu_players): the step
+ * and the items made smaller to fit the box the game's four take */
+static void rows_fit(Node *lb, float *y0, float *step, float *m0, int lift)
 {
-    Node *a = list_item(m->lb_players, 0), *b = list_item(m->lb_players, 1);
-    if (!m->np_step && a && b) {                         /* the file's places, before any is moved */
-        m->np_y0 = a->p[1];
-        m->np_step = b->p[1] - a->p[1];
+    Node *a = list_item(lb, 0), *b = list_item(lb, 1);
+    if (!*step && a && b) {                              /* the file's places, before any is moved */
+        *y0 = a->p[1];
+        *step = b->p[1] - a->p[1];
+        *m0 = a->m;
     }
     int n = 0;
-    for (Node *c = m->lb_players->child; c; c = c->next)
+    for (Node *c = lb ? lb->child : NULL; c; c = c->next)
         n += c->visible;
-    float y = m->np_y0 - (n > 3 ? (float)(n - 3) * m->np_step : 0);   /* four: up into the room under the title, the
-                                                          * last on the third place, clear of the Cancel / Select bar */
-    for (Node *c = m->lb_players->child; c; c = c->next)
+    float st = n > 4 ? *step * 4.0f / (float)n : *step, sc = n > 4 ? *m0 * (4.0f / (float)n + 0.12f) : *m0;
+    /* four (lift): up into the room under the title, the last on the third place, clear of the Cancel / Select bar */
+    float y = lift && n > 3 ? *y0 + 2 * *step - (float)(n - 1) * st : *y0;
+    for (Node *c = lb ? lb->child : NULL; c; c = c->next)
         if (c->visible) {
             c->p[1] = y;
-            y += m->np_step;
+            node_set_scale(c, sc);
+            y += st;
         }
+}
+static void np_rows(MainMenu *m) { rows_fit(m->lb_players, &m->np_y0, &m->np_step, &m->np_m, 1); }
+
+/* (port extra) "N Player" for 5 .. 8 (menu_players): the strings have 1 .. 4: "4 Player"'s text with its 4 made N; a
+ * key the strings lack ("MainMenu_6Player") the same way from its 4's */
+static void digit_swap(char *t, size_t size, const char *from, int n)
+{
+    snprintf(t, size, "%s", from ? from : "");
+    for (char *c = t; *c; c++)
+        if (*c == '4') {
+            *c = (char)('0' + n);
+            break;
+        }
+}
+static void localize_count(Shell *s, Node *nd, const char *fmt, int n)
+{
+    char key[48], t[MAX_TEXT];
+    snprintf(key, sizeof key, fmt, n);
+    if (n <= 4 || loc_find(&s->gui, key)) {
+        node_localize(&s->gui, nd, key);
+        return;
+    }
+    snprintf(key, sizeof key, fmt, 4);
+    digit_swap(t, sizeof t, loc_find(&s->gui, key), n);
+    if (nd)
+        node_text(nd, t[0] ? t : key);
+}
+/* the players' list grown to "8 Player" and the bots' to eight items (copies of the last; hidden until shown) */
+static void mm_grow_lists(Shell *s)
+{
+    MainMenu *m = &s->mm;
+    Layout *L = s->ifc[IF_MAINMENU];
+    Node *four = find(m->lb_players, "4 Player");
+    for (int n = 5; four && n <= SHELL_PLAYERS; n++) {
+        char nm[16], t[MAX_TEXT];
+        snprintf(nm, sizeof nm, "%d Player", n);
+        if (find(m->lb_players, nm))
+            continue;
+        Node *c = node_copy(L, four, m->lb_players);
+        if (!c)
+            break;
+        snprintf(c->name, sizeof c->name, "%s", nm);
+        digit_swap(t, sizeof t, four->text, n);
+        node_text(c, t);
+        show(c, 0);
+    }
+    while (m->lb_bots && child_count(m->lb_bots) < SHELL_PLAYERS) {
+        Node *c = node_copy(L, list_item(m->lb_bots, child_count(m->lb_bots) - 1), m->lb_bots);
+        if (!c)
+            break;
+        show(c, 0);
+    }
+}
+
+/* the bots' list: as many items as players (1 .. N humans, the rest computer; one shown at a time, in its place) */
+static void mm_bots_rows(Shell *s, int players)
+{
+    MainMenu *m = &s->mm;
+    for (int i = 0; i < SHELL_PLAYERS; i++) {
+        Node *item = list_item(m->lb_bots, i);
+        if (!item) continue;
+        if (i < players) {
+            char t[8];
+            show(item, 1);
+            snprintf(t, sizeof t, "%d", players - i);
+            set_text(item, t);
+            snprintf(t, sizeof t, "%d", i);
+            set_text(find(item, "computer"), t);
+        } else
+            show(item, 0);
+    }
 }
 
 static void mm_play_mode_select(Shell *s)              /* processPlayModeSelect */
@@ -3684,7 +3760,12 @@ static void mm_play_mode_select(Shell *s)              /* processPlayModeSelect 
         show(find(m->lb_players, "4 Player"), m->play_mode != 2 || s->prof.four_players);
     }
     show(find(m->lb_players, "1 Player"), m->play_mode == 2 || m->play_mode == 5 || m->play_mode == 6);
-    if (s->prof.four_players && m->lb_players)          /* [port extra] the PS2's layout has 3 Player and 4 Player on
+    for (int n = 5; n <= SHELL_PLAYERS; n++) {           /* [port extra, menu_players] 5 .. 8: online guests */
+        char nm[16];
+        snprintf(nm, sizeof nm, "%d Player", n);
+        show(find(m->lb_players, nm), s->prof.menu_players >= n);
+    }
+    if ((s->prof.four_players || s->prof.menu_players > 4) && m->lb_players)          /* [port extra] the PS2's layout has 3 Player and 4 Player on
                                                           * one place (y 113.5, after 41.5 and 77.5): the shown items
                                                           * one under another, a step apart */
         np_rows(m);
@@ -3740,23 +3821,8 @@ static void mm_num_player_select(Shell *s)             /* processNumPlayerSelect
     m->state = 2;
     fader_go(&m->fd, m->numplayers, -1);
     fader_go(&m->fd, m->numbots, 1);
-    Node *title = find(ifc_root(s, IF_MAINMENU), "nb_title");
-    char key[32];
-    snprintf(key, sizeof key, "MainMenu_%dPlayer", m->num_players);
-    node_localize(&s->gui, title, key);
-    for (int i = 0; i < 4; i++) {
-        Node *item = list_item(m->lb_bots, i);
-        if (!item) continue;
-        if (i < m->num_players) {
-            char t[8];
-            show(item, 1);
-            snprintf(t, sizeof t, "%d", m->num_players - i);
-            set_text(item, t);
-            snprintf(t, sizeof t, "%d", i);
-            set_text(find(item, "computer"), t);
-        } else
-            show(item, 0);
-    }
+    localize_count(s, find(ifc_root(s, IF_MAINMENU), "nb_title"), "MainMenu_%dPlayer", m->num_players);
+    mm_bots_rows(s, m->num_players);
     list_set(m->lb_bots, g_hosting ? 0 : m->num_players - 1);   /* [port extra] hosting online: no computer player
                                                           * first (shell_set_hosting) */
 }
@@ -3820,6 +3886,7 @@ static void mm_event(Shell *s, int ev, int button, int pad, float dt)
         if (m->ntsc) m->retro = find(r, "RetroGamesNTSC");
         m->lb_players = find(r, "np_selection");
         m->lb_bots = find(r, "nb_selection");
+        mm_grow_lists(s);
         m->retro_rects[0] = child_at(find(m->retro, "rg_rampage1"), 0);
         m->retro_rects[1] = child_at(find(m->retro, "rg_rampage2"), 0);
         m->retro_rects[2] = child_at(find(m->retro, "Ballers_Phenom_logo"), 0);
@@ -4385,7 +4452,7 @@ static int ms_available(Shell *s, int player, int monster)
     if ((s->cheats & 1) && strcmp(monster_name(s, monster), "Blank") != 0 &&
         !(int)monster_prop(s, monster, "NotFinished", 0))
         ok = 1;
-    if (ok && s->ms.num_players == 4 && (int)monster_prop(s, monster, "DisableFor4Player", 0))
+    if (ok && s->ms.num_players >= 4 && (int)monster_prop(s, monster, "DisableFor4Player", 0))
         ok = 0;
     return ok;
 }
@@ -4413,9 +4480,9 @@ static void ms_card_face(Shell *s, const char *name, int p)
     if (!card || !base || !fx || !head)
         return;
     char t[64];
-    snprintf(t, sizeof t, "Card_base_%d", p);
+    snprintf(t, sizeof t, "Card_base_%d", p & 3);   /* (players 5 .. 8: 1 .. 4's colours) */
     set_tex(&s->gui, base, t);
-    snprintf(t, sizeof t, "card_glow_%d.edf", p);       /* cardEffect.setEffect */
+    snprintf(t, sizeof t, "card_glow_%d.edf", p & 3);   /* cardEffect.setEffect */
     effect_set(fx, t);
     snprintf(t, sizeof t, "%s_Body", name);
     set_tex(&s->gui, head, t);
@@ -4429,7 +4496,7 @@ static void ms_card_face(Shell *s, const char *name, int p)
     if (!cb || !climb || !jump || !run || !face || !mut)
         return;
     node_localize(&s->gui, cb, name);
-    int four = s->gs.num_players == 4;
+    int four = s->gs.num_players >= 4;
     snprintf(t, sizeof t, "MS_MUTATION_%s", name);
     if (four) {
         Node *c = child_at(mut, 0);
@@ -4543,6 +4610,73 @@ static int ms_fill(Shell *s, int p, int prev)
 }
 
 /* setupFromMainMenu */
+/* (port extra) the layouts for 5 .. 8 players, which MonsterSelect.ifc has not: "4 Player" copied, its card and its
+ * "P" text copied for each player more, the cards in two rows of up to four (the second row centred), smaller; made
+ * once each, the layout keeps them. The colours of players 5 .. 8 are 1 .. 4's (ms_card_face, ms_selection_rects) */
+#define CARD_SCALE_MANY 0.42f
+static void ms_rename(Node *nd, const char *from, const char *to)
+{
+    for (; nd; nd = nd->next) {
+        if (!strcmp(nd->name, from))
+            snprintf(nd->name, sizeof nd->name, "%s", to);
+        ms_rename(nd->child, from, to);
+    }
+}
+static Node *ms_many_group(Shell *s, Node *r, int n)
+{
+    char name[24];
+    snprintf(name, sizeof name, "%d Player", n);
+    Node *four = find(r, "4 Player"), *par = four ? parent_of(r, four) : NULL, *g;
+    Layout *L = s->ifc[IF_MONSTERSELECT];
+    if (!four || !par || !(g = node_copy(L, four, par)))
+        return NULL;
+    snprintf(g->name, sizeof g->name, "%s", name);
+    Node *ids = find(g, "playerIds"), *id3 = find(ids, "playerId3"), *c3 = find(g, "Player3");
+    float id_x[4], card_x[4], fx_x[4], card_y = c3 ? c3->p[1] : 0;
+    for (int i = 0; i < 4; i++) {
+        Node *id = findf(ids, "playerId%d", i), *c = findf(g, "Player%d", i), *fx = find(c, "card_effect");
+        id_x[i] = id ? id->p[0] : 54 + 139 * i;
+        card_x[i] = c ? c->p[0] : -0.3f + 0.2f * i;
+        fx_x[i] = fx ? fx->p[0] : 0;
+    }
+    /* each card's glow (card_effect) has its own place, in units of its own: about 19.6 of them to the cards' one */
+    float fx_k = card_x[3] != card_x[0] ? (fx_x[3] - fx_x[0]) / (card_x[3] - card_x[0]) : 0;
+    char from[24], to[24];
+    for (int i = 4; i < n; i++) {
+        Node *id = id3 ? node_copy(L, id3, ids) : NULL, *c = c3 ? node_copy(L, c3, g) : NULL;
+        if (id)
+            snprintf(id->name, sizeof id->name, "playerId%d", i);
+        if (c) {
+            snprintf(c->name, sizeof c->name, "Player%d", i);
+            snprintf(from, sizeof from, "P%d_Arrows", 4);
+            snprintf(to, sizeof to, "P%d_Arrows", i + 1);
+            ms_rename(c->child, from, to);
+        }
+    }
+    float rows = 0.25f, id0 = 86, id1 = 246;              /* the rows' distance (the cards' units, y down), the "P"s' y */
+    const char *e = getenv("RAMPAGE_MS_ROWS");          /* (tuning: "rows id0 id1") */
+    if (e)
+        sscanf(e, "%f %f %f", &rows, &id0, &id1);
+    for (int i = 0; i < n; i++) {
+        int row = i / 4, col = i % 4, in_row = row ? n - 4 : 4;
+        float fx = col + (float)(4 - in_row) / 2;        /* the second row centred under the first */
+        int a = (int)fx > 3 ? 3 : (int)fx, b = a + 1 > 3 ? 3 : a + 1;
+        float fr = fx - (float)(int)fx;
+        Node *id = findf(ids, "playerId%d", i), *c = findf(g, "Player%d", i);
+        if (id)
+            set_pos(id, id_x[a] + (id_x[b] - id_x[a]) * fr, row ? id1 : id0, id->p[2]);
+        if (c) {
+            float x = card_x[a] + (card_x[b] - card_x[a]) * fr, y = card_y + (row ? 0.5f : -0.5f) * rows;
+            set_pos(c, x, y, c->p[2]);
+            node_set_scale(c, CARD_SCALE_MANY);          /* (its width, scale_base, the setup's) */
+            Node *fx = find(c, "card_effect");
+            if (fx)
+                set_pos(fx, fx_x[0] + (x - card_x[0]) * fx_k, (y - card_y) * fx_k, fx->p[2]);
+        }
+    }
+    return g;
+}
+
 static void ms_setup_from_main_menu(Shell *s)
 {
     MonsterSel *m = &s->ms;
@@ -4552,13 +4686,16 @@ static void ms_setup_from_main_menu(Shell *s)
     char name[24];
     snprintf(name, sizeof name, "%d Player", m->num_players);
     m->player_base = find(r, name);
-    int n = m->num_players > 4 ? 4 : m->num_players;
+    if (!m->player_base && m->num_players > 4)          /* (port extra: 5 .. 8 players, online guests) */
+        m->player_base = ms_many_group(s, r, m->num_players);
+    int n = m->num_players > SHELL_PLAYERS ? SHELL_PLAYERS : m->num_players;
+    int pick_from = n > 4 ? s->nmonsters : 6;            /* (the game's first six; more for more players) */
     for (int i = 0; i < n; i++)
         m->pl[i].selection = s->gs.monster[i];
     for (int i = 0; i < n; i++)
         if (!ms_available(s, i, m->pl[i].selection))
-            for (int j = 0; j < 6; j++) {
-                int ok = 1;
+            for (int j = 0; j < pick_from; j++) {
+                int ok = n <= 4 || ms_available(s, i, j);   /* (more than four: an unlocked one) */
                 for (int k = i + 1; ok && k < n; k++)
                     if (j == m->pl[k].selection) ok = 0;
                 if (ok) m->pl[i].selection = j;
@@ -4567,8 +4704,8 @@ static void ms_setup_from_main_menu(Shell *s)
         for (int j = 0; j < n; j++) {
             if (i == j || m->pl[i].selection != m->pl[j].selection)
                 continue;
-            for (int k = 0; k < 6; k++) {
-                int ok = 1;
+            for (int k = 0; k < pick_from; k++) {
+                int ok = n <= 4 || ms_available(s, j, k);
                 for (int q = 0; ok && q < n; q++)
                     if (q != j && k == m->pl[q].selection) ok = 0;
                 if (ok) { m->pl[j].selection = k; break; }
@@ -4583,7 +4720,7 @@ static void ms_setup_from_main_menu(Shell *s)
         ms_card_face(s, monster_name(s, ms_monster(m, i)), i);
         show(findf(m->player_base, "P%d_Arrows", i + 1), 1);
     }
-    for (int i = 1; i < 5; i++) {
+    for (int i = 1; i <= SHELL_PLAYERS; i++) {
         snprintf(name, sizeof name, "%d Player", i);
         show(find(r, name), i == m->num_players);
     }
@@ -4592,16 +4729,17 @@ static void ms_setup_from_main_menu(Shell *s)
         pl->base = findf(m->player_base, "Player%d", i);
         pl->spin = 0;
         pl->spin_amount = 0;
-        pl->scale_base = CARD_SCALES[n > 0 ? n - 1 : 0];
+        pl->scale_base = n > 4 ? CARD_SCALE_MANY : CARD_SCALES[n > 0 ? n - 1 : 0];
         node_set_scale_x(pl->base, pl->scale_base);
     }
     show(find(r, "nb_loadmonsters"), m->num_players > 1);
     int bot = 1;
     for (int i = 0; m->num_players > 1 && i < n; i++) {
-        char key[16];
-        if (i < m->num_players - m->num_bots) snprintf(key, sizeof key, "P%d", i + 1);
-        else snprintf(key, sizeof key, "Bot%d", bot++);
-        node_localize(&s->gui, findf(m->player_base, "playerId%d", i), key);
+        Node *id = findf(m->player_base, "playerId%d", i);
+        if (i < m->num_players - m->num_bots)            /* (P5 .. P8, Bot5 .. Bot7: from P4 / Bot4, localize_count) */
+            localize_count(s, id, "P%d", i + 1);
+        else
+            localize_count(s, id, "Bot%d", bot++);
     }
 }
 
@@ -4645,8 +4783,8 @@ static void ms_selection_rects(Shell *s, float dt)    /* updateSelectionRects */
     m->hl_time += dt * 8.0f;
     float k = (1.0f + sinf(m->hl_time)) / 2.0f;
     int cid = 0;
-    for (int i = 0; i < m->num_players && i < 4; i++) {
-        int idx = i, offbot = 0;
+    for (int i = 0; i < m->num_players && i < SHELL_PLAYERS; i++) {
+        int idx = i & 3, offbot = 0;
         if (i == 0 && m->pl[i].ready) cid = m->num_players - m->num_bots;
         if (i >= m->num_players - m->num_bots) {
             if (m->pl[i].ready) cid++;
@@ -4683,13 +4821,15 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
         }
         return;
     }
+    if (ev != EV_FRAME && getenv("RAMPAGE_MS_TRACE")) printf("MSEV ev %d pad %d players %d bots %d\n", ev, pad, m->num_players, m->num_bots);   /* (RAMPAGE_MS_TRACE: net8_menu_test.ps1
+                                                          * reads these) */
     if (ev != EV_FRAME && pad >= m->num_players - m->num_bots && pad > 0)
         return;
     int logic = pad;
     int c = pad;
     if (c == 0 && m->num_bots != 0 && ev != EV_FRAME)
         c = ms_remap(s, ev, pad);
-    if (c < 0 || c > 3) c = 0;
+    if (c < 0 || c >= SHELL_PLAYERS) c = 0;
     if (m->show_p1) {
         if (ev == EV_FRAME) {
             fader_update(&m->fd, dt);
@@ -4704,7 +4844,7 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
     }
     if (ev == EV_FRAME) {
         fader_update(&m->fd, dt);
-        for (int i = 0; i < m->num_players && i < 4; i++)
+        for (int i = 0; i < m->num_players && i < SHELL_PLAYERS; i++)
             spin_step(&m->pl[i].spin, &m->pl[i].spin_amount, m->pl[i].base, m->pl[i].scale_base, dt);
         ms_selection_rects(s, dt);
     } else if (ev == EV_GAIN) {
@@ -4713,7 +4853,7 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
             fader_init(&m->fd, m->p1_dialog, 0);
             int mode = s->gs.play_type > 2 ? s->gs.play_type : 2;
             play_mode_title(s, find(r, "play_mode"), mode);
-            for (int i = 0; i < m->num_players && i < 4; i++) {
+            for (int i = 0; i < m->num_players && i < SHELL_PLAYERS; i++) {
                 m->pl[i].spin = 0;
                 ms_sides(m->pl[i].base, 1);
             }
@@ -4758,14 +4898,14 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
             return;
         sound(s, "Click");
         int nready = 0;
-        for (int i = 0; i < m->num_players && i < 4; i++) {
+        for (int i = 0; i < m->num_players && i < SHELL_PLAYERS; i++) {
             if (!m->pl[i].ready && c == i)
                 ms_ready(s, i, 1);
             if (m->pl[i].ready) nready++;
         }
         if (nready < m->num_players)
             return;
-        for (int i = 0; i < s->gs.num_players && i < 4; i++) {   /* GameStatus.setMonsterIdx */
+        for (int i = 0; i < s->gs.num_players && i < SHELL_PLAYERS; i++) {   /* GameStatus.setMonsterIdx */
             s->gs.monster[i] = ms_monster(m, i);
             snprintf(s->gs.monster_name[i], sizeof s->gs.monster_name[i], "%s", monster_name(s, s->gs.monster[i]));
         }
@@ -4841,12 +4981,12 @@ static int sheet_available(Shell *s, int monster)       /* isMonsterAvailable: 1
 {
     MonsterSheet *h = &s->sh;
     int ok = (monster_flags(s, h->map_controller, monster) & 128) != 0;
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < SHELL_PLAYERS - 1; i++)       /* (the others' cards: 3 on the PS2, 7 with 8 players) */
         if (h->in_use[i] == monster) return -1;
     if ((s->cheats & 1) && strcmp(monster_name(s, monster), "Blank") != 0 &&
         !(int)monster_prop(s, monster, "NotFinished", 0))
         ok = 1;
-    if (ok && s->gs.num_players == 4 && (int)monster_prop(s, monster, "DisableFor4Player", 0))
+    if (ok && s->gs.num_players >= 4 && (int)monster_prop(s, monster, "DisableFor4Player", 0))
         ok = 0;
     return ok;
 }
@@ -5058,7 +5198,7 @@ static void sheet_event(Shell *s, int ev, int button, int pad, float dt)
             return;
         h->initialized = 1;
         fix_buttons(r, "nb_select", "nb_back", "nb_flip", "nb_grow");
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < SHELL_PLAYERS - 1; i++)
             h->in_use[i] = 0;                            /* [R] an int[3] starts {0, 0, 0} (TypePInt's 0x1CDA40), so
                                                           * George is dark until the first 512's reset */
         h->state = h->sub = 0;
@@ -5105,33 +5245,31 @@ static void sheet_event(Shell *s, int ev, int button, int pad, float dt)
                 show(find(item, "facePlayerId"), 0);
                 sheet_mini_upgrades(s, item, i * 2 + k);
             }
-        for (int i = 0; i < 3; i++) h->in_use[i] = -1;
+        for (int i = 0; i < SHELL_PLAYERS - 1; i++) h->in_use[i] = -1;
         static const float ids[4][3] = { { 2, 198, 27 }, { 213, 94, 43 }, { 0, 150, 255 }, { 255, 70, 163 } };
         int used = 0, np = s->gs.num_players, nb = s->gs.num_bots;
-        for (int i = 0; i < np && i < 4; i++) {
+        for (int i = 0; i < np && i < SHELL_PLAYERS; i++) {
             if (i == h->map_controller) continue;
             int mid = ms_player_selection(s, i);
             if (mid < 0) continue;
-            if (used < 3) h->in_use[used++] = mid;
+            if (used < SHELL_PLAYERS - 1) h->in_use[used++] = mid;
             Node *item = child_at(findf(r, "row%d", mid % 2), mid / 2);
             show(find(item, "black"), 1);
             Node *pid = find(item, "facePlayerId");
             float c[4];
-            col_255(c, ids[i][0], ids[i][1], ids[i][2], 255);
+            col_255(c, ids[i & 3][0], ids[i & 3][1], ids[i & 3][2], 255);
             show(pid, 1);
             set_col(pid, c);
             set_fade(pid, 0.35f);
-            char key[16];
-            if (i < np - nb) snprintf(key, sizeof key, "P%d", i + 1);
-            else snprintf(key, sizeof key, "Bot%d", 1 + i - (np - nb));
-            node_localize(&s->gui, pid, key);
+            if (i < np - nb) localize_count(s, pid, "P%d", i + 1);
+            else localize_count(s, pid, "Bot%d", 1 + i - (np - nb));
         }
         Node *gtp = find(r, "playerId");
         char key[16];
         int mc = h->map_controller;
-        if (mc < np - nb || nb == 0) snprintf(key, sizeof key, "P%d", mc + 1);
-        else snprintf(key, sizeof key, "Bot%d", mc - (np - nb) + 1);
-        node_localize(&s->gui, gtp, key);
+        if (mc < np - nb || nb == 0) localize_count(s, gtp, "P%d", mc + 1);   /* (P5 .. P8: localize_count) */
+        else localize_count(s, gtp, "Bot%d", mc - (np - nb) + 1);
+        (void)key;
         float c[4];
         col_255(c, ids[mc & 3][0], ids[mc & 3][1], ids[mc & 3][2], 255);
         set_col(gtp, c);
@@ -5886,6 +6024,7 @@ void shell_input_pad(Shell *s, int ev, int button, int pad)
         return;
     /* [R] the timer is reset (0x308240: gShell+0x18 = 120) by input the GUI takes: the screen's (0x2C5AD0, for a pad
      * the controller table allows, 0x2C5E60) or the popup's (0x2328B0) */
+    if (getenv("RAMPAGE_MS_TRACE")) printf("shell: in ev %d pad %d focus %d allowed %d mc %d ld %d vi %d np %d nb %d mask %x\n", ev, pad, s->focus, pad_allowed(s, pad), s->mc.mode, s->ld.on, s->vi.on, s->gs.num_players, s->gs.num_bots, s->ctrl_mask);   /* (RAMPAGE_MS_TRACE: tools/net8_menu_test.ps1) */
     if (s->mc.mode != MC_OFF || pad_allowed(s, pad))
         s->idle = IDLE_SECONDS;
     if (s->ld.on)
@@ -6142,7 +6281,7 @@ void shell_auto_view(const Shell *s, ShellAutoView *out)
     out->mm_play_mode = s->mm.play_mode;
     out->mm_players = s->mm.lb_players ? s->mm.lb_players->sel : 0;
     out->mm_bots = s->mm.lb_bots ? s->mm.lb_bots->sel : 0;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < SHELL_PLAYERS; i++)
         out->ms_ready |= s->ms.pl[i].ready ? 1 << i : 0;
     out->ms_players = s->ms.num_players;
     out->cs_index = s->cs.index;
@@ -6150,7 +6289,7 @@ void shell_auto_view(const Shell *s, ShellAutoView *out)
     out->mc_mode = s->mc.mode == MC_LIST ? 1 : s->mc.mode == MC_KEYBOARD ? 2 : s->mc.mode == MC_MESSAGE ? 3 : 0;
     out->mc_msg = s->mc.msg;
     out->attract_state = s->am.state;
-    for (int i = 0; i < 4; i++)                          /* NET: online play's guest is told the cards */
+    for (int i = 0; i < SHELL_PLAYERS; i++)              /* NET: online play's guest is told the cards */
         out->ms_name[i] = monster_name(s, ms_monster(&s->ms, i));
 }
 
@@ -6352,3 +6491,4 @@ int shell_quads(const Shell *s, HudQuad *out, int max)
 }
 
 #include "netshell.c"                              /* NET: online play, the guest shows the host's front end */
+
