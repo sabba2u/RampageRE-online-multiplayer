@@ -17,3 +17,8 @@ Ideas the owner wants, not started. Newest at the bottom.
 - **Random city blocks** (offered, not decided): shuffle a city's real building templates into new block layouts from a
   seed (`--random-city <seed>`); online, the host sends the seed.
 - **More than 4 players** (offered, not decided): after four-player online; a prototype first.
+- **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
+  textures. Re-skinning a monster on its own skeleton keeps all its moves; a new skeleton needs new animations and a
+  move graph. Export already works (`tools/anim.py`, `tools/city.py`, `tools/mesh.py`).
+- **Graphics upgrades** (suggested): anti-aliasing (multisampling or 2x supersampling) and AI-upscaled textures as a
+  texture pack. DLSS does not fit (OpenGL renderer, and the game is light enough to render at full resolution).
