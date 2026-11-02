@@ -68,6 +68,8 @@ typedef struct {
     Group shadow;                                     /* its template's ShadowData (shadow.c), at NULL: casts none */
     int own_ambient; float ambient[3];                /* drawn with this ambient, not the scene's (an adornment's: the
                                                        * building light's ramp at its height, 0x2CD060) */
+    int boss;                                         /* port extra: Boss Rumble's boss, a red glowing outline
+                                                       * (render_gl.c draw_boss) */
     int net_grey;                                     /* NET: drawn greyed over (an online player's slot nobody
                                                        * plays: netgame.c; render_gl.c draw_grey). 0 offline */
     float xray;                                       /* port extra: struck by lightning (main.c lightning_zap): the
@@ -204,8 +206,11 @@ typedef struct {
 
 typedef struct {
     const Bundle *city;
-    Bundle *own[2 * (SCENE_MONSTERS + 1)]; int nown;  /* bundles loaded for this scene (the monsters and their clips;
-                                                       * one more: a player joining past the monster to reveal, NET) */
+    Bundle *own[2 * (SCENE_MONSTERS + 1) + 64]; int nown;   /* bundles loaded for this scene (the monsters and their
+                                                       * clips; one more: a player joining past the monster to reveal,
+                                                       * NET; port extra: Boss Rumble's bosses, a slot's next ones) */
+    char own_file[2 * (SCENE_MONSTERS + 1) + 64][32]; /* (their files: city_monster_slot shares one loaded already) */
+    int share_own;
     SceneMesh *meshes; uint32_t nmeshes, meshes_cap;
     int32_t *mesh_of_entry;                           /* per city bundle entry: its SceneMesh, -1 = not loaded */
     Instance *instances; uint32_t ninstances, instances_cap;
@@ -336,6 +341,9 @@ void city_build_left(City *c, const char *block, Scene *s);
 /* a monster in the street at (x, y), turned deg about Z, playing its clip number `clip` (-1: its idle), in the next
  * slot (Scene.mon[Scene.nmon]); its slot, -1 = not made. The scene_monster_* functions take the slot k */
 int city_monster(City *c, Scene *s, const char *monster, int clip, float x, float y, float deg);
+/* (port extra, Boss Rumble) monster slot `slot` anew: the next one (as city_monster) or one in use, whose instance is
+ * hidden for good and replaced by the new monster's (the slot's index kept: the game's pointers into it stay right) */
+int city_monster_slot(City *c, Scene *s, int slot, const char *monster, int clip, float x, float y, float deg);
 void scene_update(Scene *s, double t);               /* pose everything that moves at time t (seconds) */
 /* the monster plays the clip whose name ends in suffix ("_WALK2", "_IDLE"); 0 = ok. *speed: how fast its root
  * travels in that clip (units per second), for moving it by hand */

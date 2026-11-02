@@ -4061,6 +4061,9 @@ uint32_t monster_names(const Vol *vol, const char **names, uint32_t max)
 static Bundle *own_bundle(const Vol *vol, Scene *s, const char *file)
 {
     uint32_t size;
+    for (int i = 0; s->share_own && i < s->nown; i++)   /* (Boss Rumble's next bosses: one loaded already) */
+        if (!_stricmp(s->own_file[i], file))
+            return s->own[i];
     uint8_t *data = vol_read(vol, file, &size);
     if (!data || s->nown == (int)(sizeof s->own / sizeof *s->own))
         return free(data), NULL;
@@ -4071,6 +4074,7 @@ static Bundle *own_bundle(const Vol *vol, Scene *s, const char *file)
         return NULL;
     }
     b->scope = "Monsters";
+    snprintf(s->own_file[s->nown], sizeof s->own_file[s->nown], "%s", file);
     s->own[s->nown++] = b;
     return b;
 }
@@ -4085,6 +4089,28 @@ static Skin *new_skin(const Mesh *m)
     sk->pos = calloc(3 * (sk->nverts ? sk->nverts : 1), sizeof(float));
     sk->nrm = calloc(3 * (sk->nverts ? sk->nverts : 1), sizeof(float));
     return sk;
+}
+
+int city_monster_slot(City *c, Scene *s, int slot, const char *monster, int clip, float x, float y, float deg)
+{
+    if (slot < 0 || slot > s->nmon || slot >= SCENE_MONSTERS)
+        return -1;
+    if (slot == s->nmon)
+        return city_monster(c, s, monster, clip, x, y, deg);
+    SceneMonster *sm = &s->mon[slot];
+    if (sm->inst >= 0 && (uint32_t)sm->inst < s->ninstances)
+        s->instances[sm->inst].hidden = 1;           /* (the old one's, left behind unseen) */
+    int n = s->nmon;
+    s->nmon = slot;
+    s->share_own = 1;
+    int r = city_monster(c, s, monster, clip, x, y, deg);
+    s->share_own = 0;
+    s->nmon = n;
+    if (r == slot) {
+        sm->ik_ready = 0;
+        sm->sway_building = -1;
+    }
+    return r;
 }
 
 int city_monster(City *c, Scene *s, const char *monster, int clip_index, float x, float y, float deg)

@@ -1205,6 +1205,8 @@ static void bot_hunt(DirAI *ai, const DirGraph *ag, MoveRunner *r, const DirBotV
     for (int k = 0; k < v->nm; k++) {
         if (k == v->self)
             continue;
+        if (ai->bot.hunter && (v->m[k].team == v->team || v->m[k].out || v->m[k].human))
+            continue;                                /* (port extra: a hunter's prey, the other side's in play) */
         float dx = v->m[k].pos[0] - v->pos[0], dy = v->m[k].pos[1] - v->pos[1], d = dx * dx + dy * dy;
         if (d < bd) {
             bd = d;
@@ -1252,6 +1254,13 @@ static int destroy_update(DirAI *ai, const DirGraph *ag, MoveRunner *r, float dt
         return 1;
     if (v->hp <= 0) {                                /* down: towards the respawn */
         bot_go_state(r, ag, bt->st_respawn, call, ctx);
+        return 1;
+    }
+    if (bt->hunter) {                                /* (port extra) no buildings: on the street, hunting */
+        if (v->mounted >= 0)
+            bot_action(r, ag, DA_JUMP, 0, call, ctx);
+        else
+            bot_hunt(ai, ag, r, v, call, ctx);
         return 1;
     }
     if (!bot_validate(bt, v)) {

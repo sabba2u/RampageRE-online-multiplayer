@@ -260,6 +260,7 @@ struct Renderer {
     int tex_gen;                                     /* the texture settings the cache was made with */
     int hold;                                        /* draw_mesh holds the blended parts back (gtao_active) */
     int grey;                                        /* NET: the instance drawn now is greyed (Instance.net_grey) */
+    int boss;                                        /* Boss Rumble: the instance drawn now is a boss (Instance.boss) */
     int xray;                                        /* port extra: the instance drawn now is x-rayed (Instance.xray) */
     double hud_t; int has_hud_t;                     /* the GUI's clock (rnd_hud_time), else the frame's */
     int in_hud;                                      /* draw_hud: textures made now get no mips nor anisotropy */
@@ -952,6 +953,40 @@ static void draw_held(Renderer *r, double t)
 #define GL_SOURCE0_ALPHA 0x8588
 #define GL_SOURCE1_ALPHA 0x8589
 #define GL_PRIMARY_COLOR 0x8577
+/* (port extra) Boss Rumble's boss: a red outline that glows, steady (the empty online seat's is grey and pulses): the
+ * part's back faces as lines, a wide faint pass then a narrow solid one, so only their edges past the silhouette show
+ * (the front faces hide the rest by depth) */
+static void draw_boss(const MeshPart *p, const void *idx)
+{
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
+                 GL_POLYGON_BIT | GL_LINE_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_ALPHA_TEST);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+    glPolygonMode(GL_BACK, GL_LINE);
+    glLineWidth(11.0f);                              /* the glow */
+    glColor4f(1.0f, 0.10f, 0.05f, 0.28f);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glLineWidth(4.0f);                               /* the line */
+    glColor4f(1.0f, 0.12f, 0.08f, 1.0f);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glLineWidth(1.0f);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glPopClientAttrib();
+    glPopAttrib();
+}
+
 static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, int teal)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
@@ -1243,6 +1278,8 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     r->drawn += p->ntris;
     if (r->grey && !blend && !see_through)           /* NET: greyed over */
         draw_grey(p, id, idx, t, r->grey == 2);
+    if (r->boss && !blend && !see_through)           /* Boss Rumble: its red outline */
+        draw_boss(p, idx);
     if (r->xray)                                     /* struck by lightning: the x-ray's flash (every part: George's
                                                       * fur is blended) */
         draw_xray(p, id, idx);
@@ -1791,6 +1828,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             glPushMatrix();
             glMultMatrixf(it->world.m);
             r->grey = in->net_grey;                  /* NET: an online player's monster nobody plays (netgame.c) */
+            r->boss = in->boss;
             /* struck by lightning: on and off about 9 times a second */
             r->xray = in->xray > 0 && fmodf(in->xray * 9.0f, 1.0f) < 0.6f;
             if (r->xray) {
@@ -1802,6 +1840,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             }
             draw_mesh(r, &s->meshes[it->mesh], it->skin, t);
             r->grey = 0;
+            r->boss = 0;
             r->xray = 0;
             glPopMatrix();
             if (own)

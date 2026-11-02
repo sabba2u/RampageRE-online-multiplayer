@@ -341,8 +341,8 @@ static void checkpoint_restore(Game *g)              /* 0x33D820: back to the ch
 
 static void take_life(Game *g, int slot)             /* 0x2D3950 / 0x2D37A4: a player out of lives takes the richest's */
 {
-    if (g->cfg.play_type != GP_CAMPAIGN || slot < 0 || slot >= GAME_PLAYERS)
-        return;
+    if ((g->cfg.play_type != GP_CAMPAIGN && g->cfg.play_type != GP_BOSS_RUMBLE) || slot < 0 || slot >= GAME_PLAYERS)
+        return;                                      /* (Boss Rumble: the campaign's lives) */
     int k = slot;
     if (g->lives[k] <= 0)
         for (int i = 0, most = 0; i < np(g); i++)
@@ -356,7 +356,8 @@ static void take_life(Game *g, int slot)             /* 0x2D3950 / 0x2D37A4: a p
 
 static void add_points(Game *g, int slot, int cat, int amount)   /* Player.addPoints, 0x33F530 [R] */
 {
-    if (slot < 0 || slot >= GAME_PLAYERS || cat < 0 || cat > 6)
+    if (slot < 0 || slot >= GAME_PLAYERS || slot >= np(g) || cat < 0 || cat > 6)   /* (a slot after the players:
+                                                      * Boss Rumble's bosses, no points) */
         return;
     Player *p = &g->p[slot];
     p->points[cat] += amount;
@@ -1267,7 +1268,7 @@ void game_set_boss_finished(Game *g, int centre_down)
 
 int game_become_human(Game *g, int slot)
 {
-    if (!g || slot < 0 || slot >= GAME_PLAYERS || g->state != GS_PLAY)
+    if (!g || slot < 0 || slot >= np(g) || g->state != GS_PLAY)
         return 0;                                    /* Monsters::becomeHuman: only in state 6 [R] */
     g->human[slot] = 1;
     return 1;
@@ -1275,9 +1276,9 @@ int game_become_human(Game *g, int slot)
 
 int game_can_respawn(const Game *g, int slot, int streaker_held)
 {
-    if (!g || slot < 0 || slot >= GAME_PLAYERS)
+    if (!g || slot < 0 || slot >= np(g))
         return 0;
-    if (total_lives(g) == 0 && g->cfg.play_type == GP_CAMPAIGN)
+    if (total_lives(g) == 0 && (g->cfg.play_type == GP_CAMPAIGN || g->cfg.play_type == GP_BOSS_RUMBLE))
         return 0;
     return g->human[slot] && !streaker_held;
 }
@@ -1285,7 +1286,7 @@ int game_can_respawn(const Game *g, int slot, int streaker_held)
 void game_start_respawn(Game *g, int slot, const GameRespawnIn *in, GameRespawn *out)
 {
     memset(out, 0, sizeof *out);
-    if (!g || slot < 0 || slot >= GAME_PLAYERS)
+    if (!g || slot < 0 || slot >= np(g))
         return;
     take_life(g, slot);
     out->fall = 1;

@@ -76,6 +76,8 @@ typedef struct {
     float radius;            /* (MONSTER_DATA +0x188 + the kept type-15 record's +0x8) x its scale (0x2E4FA0) [R] */
     float ref[3];            /* its reference point (0x2E4E90): the place + MONSTER_DATA +0x190 / +0x194 and the
                               * record's +0xC / +0x10 along its x / y axes, x its scale [R] */
+    int team;                /* (port extra, Boss Rumble) 0 the players' side, 1 a boss: a hunter goes for the other */
+    int out;                 /* (port extra) not to be hunted: down, beaten, hidden, an online seat nobody plays */
 } DirMonster;
 typedef struct {
     /* the bot itself */
@@ -89,6 +91,7 @@ typedef struct {
     float hp, half_width;    /* +0xA4C; MONSTER_DATA +0x198 x its scale */
     float probe;             /* 0x2E4E40: (MONSTER_DATA +0x1A4 + the kept type-16 record's +0x10) x its scale */
     int self;                /* its slot in m */
+    int team;                /* (port extra, Boss Rumble) its side, as DirMonster.team */
     const DirBuilding *b; int nb;
     const DirMonster *m; int nm;
     int under;               /* the building under its body (0x2D6150), -1 none */
@@ -110,6 +113,8 @@ typedef struct {
     int avoid; float avoid_time;   /* +0x68, +0x6C: a building it was knocked off */
     float on_target;         /* +0x70: seconds on this target */
     uint32_t seed;           /* (unused: rand01 is the world's one state, dir_ai_seed) */
+    int hunter;              /* (port extra, Boss Rumble) no buildings: it goes for the nearest monster of the other
+                              * side (bot_hunt), the bosses for the players and the players' bots for the bosses */
     int st_front, st_side_l, st_side_r, st_respawn, st_punch_down;   /* +0x74 .. +0x84: the states it goes to */
 } DirBot;
 #define DIR_GOALS 8

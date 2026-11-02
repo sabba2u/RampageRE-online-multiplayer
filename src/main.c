@@ -121,6 +121,11 @@ typedef struct Mon {
     int slot;                                        /* 0 .. 3 */
     int monster;                                     /* which of the 30 (Viewer.monsters), -1 none */
     int bot;                                         /* a bot: the last num_bots of the players (setIsAI in each block) */
+    int boss;                                        /* (port extra) Boss Rumble's boss: in a slot after the players, not
+                                                      * a game player (no lives, no points), a hunter of the players */
+    float boss_factor;                               /* its health and hits x this (rumble_factor) */
+    float boss_down;                                 /* seconds since its health ran out (beaten at RUMBLE_DOWN) */
+    int boss_beaten;                                 /* out for good: hidden till its slot's next boss */
     int drive;                                       /* DRIVE_*: whose pad */
     Pad pad;                                         /* this frame's pad (keys, --do, or the computer's) */
     float mx, my, mz, heading;                       /* where the monster stands, its turn about Z (0: facing +Y) */
@@ -279,6 +284,11 @@ typedef struct Viewer {
     FxLib *fxlib; FxWorld *fxw;
     ShadowList shl; ShadowGround sg; ShadowLighting slight;   /* the shadows (shadow.c) */
     int boss_block;                                  /* the block has a boss (the HUD's boss bar) */
+    struct {                                         /* (port extra) Boss Rumble's run (rumble_driver_step) */
+        int wave, players, nboss, won;               /* the wave (0 before the first), the players' slots, its bosses */
+        float pause;                                 /* seconds since the last wave was cleared */
+        uint32_t seed;
+    } rumble;
     CamDirector cd; CamView view;                    /* the camera modes and their blend; the camera shown */
     /* the game's next block, activated at the results: the scene keeps the block left (the next one stands 41 behind
      * it, slot 1) until the walk is over and the next block begins; meanwhile the game's places, which are the next
@@ -596,7 +606,8 @@ static void face_step(Mon *mo, float dt)
 /* the most HP: MONSTER_DATA +0x138 (0x2D9374 clamps a hit to it, addStats 0x2C51A0, the respawn 0x2D3930) [R] */
 static float mon_hp_max(const Mon *mo)
 {
-    return mo->have_graph && mo->graph.hp_max > 0 ? mo->graph.hp_max : 200;
+    float m = mo->have_graph && mo->graph.hp_max > 0 ? mo->graph.hp_max : 200;
+    return mo->boss ? m * mo->boss_factor : m;   /* (Boss Rumble: its wave's factor) */
 }
 
 static void mon_fx_event(Mon *mo, const MoveEvent *e);
@@ -1066,6 +1077,7 @@ static void reveal_events(Viewer *v)
 }
 
 static void block_left(Viewer *v);
+static void rumble_reset(Viewer *v);
 
 /* player k's HUD (Hud<k>.ifc), laid out for v->nmon players; player 1's has the screens (the block's build, and NET: a
  * player joining mid-block) */
@@ -1556,6 +1568,7 @@ static void build(Viewer *v)
                               city_block_index(v->city, v->blocks[v->block]), v->prof.current.seed[0],
                               v->prof.cheats, v->prof.current.seed[1], { 0 } };
             memcpy(gc.cities_won, v->cities_won, sizeof gc.cities_won);   /* King of the World's so far */
+            memset(&v->rumble, 0, sizeof v->rumble);   /* (Boss Rumble: a new run) */
             v->game = game_new(&gh, &gc);
             building_set_one_hit((v->prof.cheats & PCH_40000000) != 0);
             if (v->game && game_load_city(v->game, CITIES[v->city_index]) == 0) {
@@ -1678,7 +1691,7 @@ static float players_mid_x(const Viewer *v)
     int n = 0;
     for (int k = 0; k < v->nmon; k++) {
         const Mon *o = &v->mon[k];
-        if (!mon_in(o))
+        if (!mon_in(o) || o->boss)
             continue;
         if (!n || o->mx < lo) lo = o->mx;
         if (!n || o->mx > hi) hi = o->mx;
@@ -3291,8 +3304,8 @@ static void monsters_fight(Viewer *v)
         float h = at->heading / 57.2957795f, fwd[2] = { -sinf(h), cosf(h) };
         for (int j = 0; j < v->nmon; j++) {
             Mon *vi = &v->mon[j];
-            if (j == a || vi->defeated || vi->hp <= 0 || !mon_in(vi) || mon_in(vi)->hidden)
-                continue;
+            if (j == a || vi->defeated || vi->hp <= 0 || !mon_in(vi) || mon_in(vi)->hidden || (at->boss && vi->boss))
+                continue;                            /* (Boss Rumble: bosses leave each other be) */
             float dx = vi->mx - at->mx, dy = vi->my - at->my, dz = vi->mz - at->mz;
             if (dx * dx + dy * dy + dz * dz > 1600)
                 continue;
@@ -3991,6 +4004,7 @@ static void game_step(Viewer *v, float dt)
                 } else if (k >= 0 && e->b) {           /* the same block again in the game (a tied King block
                                                       * 0x325054, Game Over's Continue 0x325258): torn down and
                                                       * loaded fresh at once */
+                    rumble_reset(v);                 /* (Boss Rumble: the run again, from its first wave) */
                     v->next_block = -1;
                     v->block_shift = 0;
                     v->game_block = k;
@@ -4057,8 +4071,10 @@ static void game_step(Viewer *v, float dt)
                 break;
             case GE_AI:                              /* setIsAI; a bot's destroyBuildings, the computer's players' */
                 mo->is_ai = e->a || mo->drive == DRIVE_COMPUTER;
-                if ((e->b || (!e->a && mo->drive == DRIVE_COMPUTER)) && mo->have_graph)
+                if ((e->b || (!e->a && mo->drive == DRIVE_COMPUTER)) && mo->have_graph) {
                     dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)mo->slot);
+                    mo->ai.bot.hunter = play_type(v) == GP_BOSS_RUMBLE;   /* (Boss Rumble: the bosses, not the city) */
+                }
                 break;
             case GE_WALK:                            /* walkTo(pos, radius) and its way point */
                 if (mo->have_ag) {
@@ -4118,7 +4134,8 @@ static void game_step(Viewer *v, float dt)
                     HudResults r;
                     memset(&r, 0, sizeof r);
                     r.play_type = game_play_type(v->game);   /* GP_* and HUD_PLAY_* agree */
-                    r.num_players = v->nmon < HUD_RES_PLAYERS ? v->nmon : HUD_RES_PLAYERS;   /* (8 with dev8) */
+                    int npl = v->rumble.players ? v->rumble.players : v->nmon;   /* (Boss Rumble's bosses: not players) */
+                    r.num_players = npl < HUD_RES_PLAYERS ? npl : HUD_RES_PLAYERS;   /* (8 with dev8) */
                     for (int p = 0; p < r.num_players; p++) {
                         for (int c = 0; c < 7; c++) {
                             r.points[p][c] = game_points(v->game, p, c);
@@ -4626,7 +4643,7 @@ static void monster_blow_hit(Mon *mo, const Mon *by, const struct MonAtk *atk, c
             d[0] = mo->mx - by->mx;
             d[1] = mo->my - by->my;
         }
-        monster_take(mo, name, atk->damage, atk->level, slot, d, behind);
+        monster_take(mo, name, atk->damage * (by->boss ? by->boss_factor : 1), atk->level, slot, d, behind);
     }
 }
 
@@ -5232,7 +5249,7 @@ static int army_monsters(Viewer *v, ArmyMonster *m)
         m[k].mode = mo->mode;
         m[k].spheres = (const float (*)[4])spheres[k];
         m[k].nspheres = ns;
-        m[k].ignore = netgame_idle(mo);              /* (NET: nobody plays it: no unit picks it) */
+        m[k].ignore = netgame_idle(mo) || mo->boss;  /* (NET: nobody plays it: no unit picks it; nor a boss) */
         float hw = mo->graph.box[0] > 0 ? mo->graph.box[0] : 3, hh = mo->graph.box[1] > 0 ? mo->graph.box[1] : 4.25f;
         m[k].box_min[0] = mo->mx - hw; m[k].box_min[1] = mo->my - hw; m[k].box_min[2] = mo->mz;
         m[k].box_max[0] = mo->mx + hw; m[k].box_max[1] = mo->my + hw; m[k].box_max[2] = mo->mz + 2 * hh;
@@ -5988,6 +6005,8 @@ static void bot_views(Viewer *v, DirBuilding *db, DirMonster *dm, DirBotView *bv
         o->ref[0] = mo->mx + cosf(h) * fx - sinf(h) * fy;
         o->ref[1] = mo->my + sinf(h) * fx + cosf(h) * fy;
         o->ref[2] = mo->mz;
+        o->team = mo->boss;                          /* (Boss Rumble's sides) */
+        o->out = mo->defeated || mo->hp <= 0 || mo->boss_beaten || !mon_in(mo) || mon_in(mo)->hidden || netgame_idle(mo);
     }
     for (int k = 0; k < v->nmon; k++) {
         Mon *mo = &v->mon[k];
@@ -6007,6 +6026,7 @@ static void bot_views(Viewer *v, DirBuilding *db, DirMonster *dm, DirBotView *bv
         b->half_width = dm[k].radius;
         b->probe = ((mo->graph.probe[1]) + mo->ev16) * (mo->scale > 0 ? mo->scale : 1);
         b->self = k;
+        b->team = mo->boss;
         b->ni = game_ni_on(v->game);
         mon_body_centre(mo, b->centre);
         b->b = db;
@@ -6033,7 +6053,7 @@ static void bot_views(Viewer *v, DirBuilding *db, DirMonster *dm, DirBotView *bv
 static int cam_follows(const Mon *mo)
 {
     const Instance *in = mon_in(mo);
-    if (!in)
+    if (!in || mo->boss)                             /* (Boss Rumble's bosses: the camera keeps to the players) */
         return 0;
     if (mo->dropping)                                /* 0x2D69A0: not dropping in, not human unless its streaker */
         return 0;                                    /* still runs and is not held [R] */
@@ -7989,6 +8009,9 @@ static void setup_players(Viewer *v, int n, int bots, const int *monster)
         mo->slot = k;
         mo->monster = k < v->nmon ? monster[k] : -1;
         mo->bot = k < v->nmon && k >= v->nmon - v->num_bots;
+        mo->boss = mo->boss_beaten = 0;              /* (a Boss Rumble run's bosses gone) */
+        mo->boss_factor = 1;
+        mo->boss_down = 0;
         mo->drive = mo->bot || v->ap ? DRIVE_COMPUTER : k == 0 ? DRIVE_KEYS1 : k == 1 ? DRIVE_KEYS2 :
                     v->pads_on >> k & 1 ? DRIVE_PAD : DRIVE_COMPUTER;   /* (--autoplay: all the computer's) */
         mo->mx = -17.0f * (float)(v->nmon - 1) / 2 + 17.0f * (float)k;
@@ -8739,6 +8762,156 @@ static int lightning_pick(Viewer *v, unsigned seed)
 }
 
 /* the x-ray flicker running out (and with RAMPAGE_ZAP_TEST an autoplay's --ap-shots a picture of it, on) */
+/* ---- Boss Rumble (port extra, docs/superpowers/specs/2026-11-02-boss-rumble-design.md): the waves of bosses. A boss
+ * is a monster in a slot after the players' (the run's first players count), the computer's, hunting the players
+ * (director.c's hunter); its health and hits by its wave's factor. Beaten (no health) it lies RUMBLE_DOWN seconds, then
+ * is hidden; with none left the next wave comes after RUMBLE_WAVE_PAUSE, from off the screen's sides; after the
+ * twelfth, the run is won (game_set_won). Online the host runs it (netgame.c sends the waves) */
+#define RUMBLE_DOWN 3.0f
+
+static float rumble_env(const char *name, float def)  /* (testing: RAMPAGE_RUMBLE_BOSS_HP, _START_WAVE) */
+{
+    const char *e = getenv(name);
+    return e && *e ? (float)atof(e) : def;
+}
+
+/* slot k (the next one, or a beaten boss's) becomes roster monster `monster` as a boss of factor f at (x, y), facing
+ * deg: k, else -1 */
+static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y, float deg)
+{
+    if (!v->have_scene || !v->city || k < 0 || k >= MONSTERS || k > v->nmon || v->scene.nmon != v->nmon ||
+        monster < 0 || monster >= (int)v->nmonsters)
+        return -1;
+    Mon *mo = &v->mon[k];
+    int reuse = k < v->nmon;
+    if (reuse)
+        mon_fx_stop_all(mo);
+    mo->v = v;
+    mo->slot = k;
+    mo->monster = monster;
+    mo->bot = 1;
+    mo->drive = DRIVE_COMPUTER;
+    mo->hud = NULL;
+    mo->mx = x; mo->my = y; mo->mz = 0;
+    mo->heading = deg;
+    memset(&mo->pad, 0, sizeof mo->pad);
+    memset(mo->vel, 0, sizeof mo->vel);
+    mo->human = mo->dropping = mo->defeated = 0;
+    mo->reveal = mo->shown = 0;
+    mo->scale = mo->scale_to = 1;
+    mo->scale_left = 0;
+    mo->boss = 1;
+    mo->boss_factor = f;
+    mo->boss_down = 0;
+    mo->boss_beaten = 0;
+    if (city_monster_slot(v->city, &v->scene, k, v->monsters[monster], -1, x, y, deg) != k) {
+        printf("rumble: %s not loaded in slot %d\n", v->monsters[monster], k);
+        mo->boss_beaten = mo->defeated = 1;          /* (the slot out of the run, its old instance hidden) */
+        mo->hp = 0;
+        return -1;
+    }
+    start_moves(mo);
+    mo->held_vehicle = mo->held_rail = mo->held_sobj = mo->held_parade = -1;
+    mo->streaker = -1;
+    shadow_monster_init(&mo->smon);
+    mo->hp = mon_hp_max(mo) * rumble_env("RAMPAGE_RUMBLE_BOSS_HP", 1);
+    if (mon_in(mo))
+        mon_in(mo)->boss = 1;                        /* (its red outline) */
+    mo->is_ai = 1;
+    if (!reuse)
+        v->nmon++;
+    if (mo->have_graph) {
+        dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)k);
+        mo->ai.bot.hunter = 1;
+    }
+    return k;
+}
+
+/* the run again (Game Over's Continue): the bosses' slots let go (the block is built anew with the players' alone) */
+static void rumble_reset(Viewer *v)
+{
+    if (play_type(v) != GP_BOSS_RUMBLE || !v->rumble.players)
+        return;
+    for (int k = v->rumble.players; k < v->nmon; k++) {
+        Mon *mo = &v->mon[k];
+        mon_fx_stop_all(mo);
+        if (mon_in(mo))
+            mon_in(mo)->hidden = 1;
+        mo->boss = mo->boss_beaten = 0;
+        mo->boss_factor = 1;
+        mo->monster = -1;
+    }
+    v->nmon = v->rumble.players;
+    memset(&v->rumble, 0, sizeof v->rumble);
+}
+
+/* wave w's bosses: picked from the whole roster (a player's monster too), half from each side of the players */
+static void rumble_wave(Viewer *v, int w)
+{
+    int pick[RUMBLE_MAX_BOSSES], n = rumble_wave_size(w), room = MONSTERS - v->rumble.players;
+    if (n > room)
+        n = room;
+    n = rumble_pick(&v->rumble.seed, (int)v->nmonsters, n, pick);
+    float mid = players_mid_x(v);
+    char names[160] = "";
+    int made = 0;
+    for (int i = 0; i < n; i++) {
+        int side = i % 2 ? 1 : -1;
+        float x = mid + (float)side * (34.0f + 8.0f * (float)(i / 2));
+        if (mon_set_boss(v, v->rumble.players + i, pick[i], rumble_factor(w), x, -18, side < 0 ? 270.0f : 90.0f) >= 0) {
+            made++;
+            snprintf(names + strlen(names), sizeof names - strlen(names), " %s", v->monsters[pick[i]]);
+        }
+    }
+    v->rumble.wave = w;
+    v->rumble.nboss = made;
+    v->rumble.pause = 0;
+    printf("rumble: wave %d:%s\n", w, names);
+}
+
+static void rumble_driver_step(Viewer *v, float dt)
+{
+    if (play_type(v) != GP_BOSS_RUMBLE || !v->game || game_state(v->game) != GS_PLAY || game_ni_on(v->game) ||
+        v->rumble.won || net_guest_world())
+        return;
+    if (!v->rumble.players) {                        /* the run's start: the players are the slots so far */
+        v->rumble.players = v->nmon;
+        v->rumble.seed = v->prof.current.seed[0] * 2654435761u + 7u;
+        v->rumble.wave = (int)rumble_env("RAMPAGE_RUMBLE_START_WAVE", 1) - 1;
+        v->rumble.pause = RUMBLE_WAVE_PAUSE - 1.0f;  /* (the first wave a second in) */
+    }
+    int alive = 0;
+    for (int k = v->rumble.players; k < v->nmon; k++) {
+        Mon *mo = &v->mon[k];
+        if (!mo->boss || mo->boss_beaten)
+            continue;
+        if (mo->hp > 0) {
+            alive++;
+            continue;
+        }
+        mo->boss_down += dt;
+        if (mo->boss_down >= RUMBLE_DOWN) {          /* out for good */
+            mo->boss_beaten = mo->defeated = 1;
+            if (mon_in(mo))
+                mon_in(mo)->hidden = 1;
+            mon_fx_stop_all(mo);
+            printf("rumble: %s beaten (wave %d)\n", v->monsters[mo->monster], v->rumble.wave);
+        } else
+            alive++;                                 /* (down: not cleared yet) */
+    }
+    if (alive)
+        return;
+    if (v->rumble.wave >= RUMBLE_WAVES) {
+        v->rumble.won = 1;
+        game_set_won(v->game);
+        printf("rumble: won at %.1f s\n", game_clock(v->game, NULL));
+        return;
+    }
+    v->rumble.pause += dt;
+    if (v->rumble.pause >= RUMBLE_WAVE_PAUSE)
+        rumble_wave(v, v->rumble.wave + 1);
+}
+
 /* (testing: RAMPAGE_RESULTS_SHOTS with --autoplay --ap-shots) the results screen's shots, 3, 7 and 11 s after it
  * opens: autoplay's own is taken as it starts, before its items are in */
 static float results_shot_t;
@@ -9527,6 +9700,7 @@ static int viewer_main(int argc, char **argv)
                 if (playing && weather_update(wdt, &wx, &wseed))   /* (onto a monster now and then: lightning_pick) */
                     netgame_weather_strike(wx, wseed, lightning_pick(&v, wseed));
                 lightning_step(&v, wdt);
+                rumble_driver_step(&v, wdt);
                 results_shots(&v, dt);
             }
             netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */
