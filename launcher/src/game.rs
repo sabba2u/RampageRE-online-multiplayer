@@ -96,6 +96,9 @@ pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
         "storm" => a.extend(["--weather", "storm"]),
         _ => {}
     }
+    if s.look == "film" {
+        a.push("--film");
+    }
     match s.smoothing.as_str() {
         "medium" => a.extend(["--smaa", "medium"]),
         "high" => a.extend(["--smaa", "high", "--msaa", "4"]),

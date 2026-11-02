@@ -481,6 +481,13 @@ static void panel(void)
         changed |= ImGui::IsItemDeactivatedAfterEdit();
         ImGui::SliderFloat("Tilt camera down", &fx->pitch, 0, 35, "%.0f degrees");
         changed |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("1950s film", &fx->film, 0, 1, "%.2f");   /* black and white, grain, scratches */
+        changed |= ImGui::IsItemDeactivatedAfterEdit();
+        if (ImGui::Button("1950s monster movie")) {   /* the old film, the camera as the game's */
+            fx->film = 1; fx->dof = 0; fx->tilt = 0;
+            changed = 1;
+        }
+        ImGui::SameLine();
         if (ImGui::Button("Miniature city")) {        /* a ready-made look: zoomed out, from above, tilt-shift */
             fx->tilt = 0.85f; fx->tilt_band = 0.3f; fx->tilt_center = 0.55f; fx->tilt_color = 0.6f;
             fx->zoom = 0.6f; fx->pitch = 20; fx->dof = 0;

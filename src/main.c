@@ -8727,6 +8727,7 @@ static int viewer_main(int argc, char **argv)
         } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
         else if (strcmp(argv[i], "--steam-host") == 0 || strcmp(argv[i], "--steam") == 0) { }
+        else if (strcmp(argv[i], "--film") == 0) { }  /* (lookfx: read after lookfx_load below) */
         else if (strcmp(argv[i], "--net-rate") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "--lobby") == 0 && i + 1 < argc) netlobby_set_url(argv[++i], 0);   /* NET: netlobby.h */
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
@@ -8862,6 +8863,9 @@ static int viewer_main(int argc, char **argv)
     netgame_init(&v, argc, argv, w.hwnd, shot != NULL);   /* NET: --host, --join, the panel */
     if (!shot)
         lookfx_load();                               /* the look as last set (lookfx.cfg; never for a --shot) */
+    for (int i = 1; i < argc; i++)                   /* --film: the 1950s monster movie (the launcher's Look) */
+        if (!strcmp(argv[i], "--film"))
+            lookfx()->film = 1;
     v.gfx = &gfx;
     v.win = &w;
     v.gfx_write = !shot;

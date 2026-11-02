@@ -174,6 +174,7 @@ impl App {
                 let mut tod = self.settings.time_of_day.clone();
                 let mut smooth = self.settings.smoothing.clone();
                 let mut weather = self.settings.weather.clone();
+                let mut look_pick = self.settings.look.clone();
                 ui.horizontal(|ui| {
                     ui.label("Time of day:");
                     egui::ComboBox::from_id_salt("tod").selected_text(match tod.as_str() {
@@ -195,6 +196,15 @@ impl App {
                         });
                 });
                 ui.horizontal(|ui| {
+                    ui.label("Look:");
+                    egui::ComboBox::from_id_salt("look").selected_text(if look_pick == "film" {
+                        "1950s monster movie" } else { "Normal" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut look_pick, "normal".to_string(), "Normal");
+                            ui.selectable_value(&mut look_pick, "film".to_string(), "1950s monster movie");
+                        });
+                });
+                ui.horizontal(|ui| {
                     ui.label("Smooth edges:");
                     egui::ComboBox::from_id_salt("smooth").selected_text(match smooth.as_str() {
                         "medium" => "Medium", "high" => "High", _ => "Game's setting" })
@@ -204,11 +214,13 @@ impl App {
                             ui.selectable_value(&mut smooth, "high".to_string(), "High");
                         });
                 });
-                if tod != self.settings.time_of_day || smooth != self.settings.smoothing || weather != self.settings.weather {
+                if tod != self.settings.time_of_day || smooth != self.settings.smoothing || weather != self.settings.weather
+                    || look_pick != self.settings.look {
                     self.settings = Settings::update(|s| {
                         s.time_of_day = tod.clone();
                         s.smoothing = smooth.clone();
                         s.weather = weather.clone();
+                        s.look = look_pick.clone();
                     });
                 }
                 match &self.game {

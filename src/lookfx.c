@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -41,11 +42,11 @@ static GLint  (APIENTRY *p_GetUniformLocation)(GLuint, const GLch *);
 static void   (APIENTRY *p_Uniform1i)(GLint, GLint);
 static void   (APIENTRY *p_Uniform4f)(GLint, GLfloat, GLfloat, GLfloat, GLfloat);
 
-static LookFx g_fx = { 0, 0.5f, 0, 0.55f, 0.3f, 0.5f, 0, 0 };
+static LookFx g_fx = { 0, 0.5f, 0, 0.55f, 0.3f, 0.5f, 0, 0, 0 };
 static int g_active, g_state;                        /* g_state: 0 not tried, 1 ready, -1 not available */
 static GLuint g_prog, g_color, g_depth;
 static int g_tw, g_th;
-static GLint u_color, u_depth, u_px, u_dof, u_tilt, u_z;
+static GLint u_color, u_depth, u_px, u_dof, u_tilt, u_z, u_film;
 
 LookFx *lookfx(void) { return &g_fx; }
 void lookfx_active(int on) { g_active = on; }
@@ -67,6 +68,7 @@ void lookfx_load(void)
         else if (!strcmp(k, "tilt_color")) g_fx.tilt_color = v;
         else if (!strcmp(k, "zoom")) g_fx.zoom = v;
         else if (!strcmp(k, "pitch")) g_fx.pitch = v;
+        else if (!strcmp(k, "film")) g_fx.film = v;
     }
     fclose(f);
 }
@@ -76,9 +78,9 @@ void lookfx_save(void)
     FILE *f = fopen("lookfx.cfg", "w");
     if (!f)
         return;
-    fprintf(f, "dof=%g\ndof_range=%g\ntilt=%g\ntilt_center=%g\ntilt_band=%g\ntilt_color=%g\nzoom=%g\npitch=%g\n",
-            g_fx.dof, g_fx.dof_range, g_fx.tilt, g_fx.tilt_center, g_fx.tilt_band, g_fx.tilt_color, g_fx.zoom,
-            g_fx.pitch);
+    fprintf(f, "dof=%g\ndof_range=%g\ntilt=%g\ntilt_center=%g\ntilt_band=%g\ntilt_color=%g\nzoom=%g\npitch=%g\n"
+               "film=%g\n", g_fx.dof, g_fx.dof_range, g_fx.tilt, g_fx.tilt_center, g_fx.tilt_band, g_fx.tilt_color,
+            g_fx.zoom, g_fx.pitch, g_fx.film);
     fclose(f);
 }
 
@@ -119,6 +121,7 @@ static const char *FS =
     "uniform vec4 dof;   /* strength, the sharp range (view units), focus depth (view units), - */\n"
     "uniform vec4 tilt;  /* strength, band middle (0 top), band half height, colour */\n"
     "uniform vec4 zr;    /* near, far */\n"
+    "uniform vec4 film;  /* the old film: strength, time (s), this frame's random, the aspect */\n"
     "varying vec2 uv;\n"
     "float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * zr.x * zr.y / (zr.y + zr.x - z * (zr.y - zr.x)); }\n"
     "float coc(vec2 t) {\n"
@@ -152,6 +155,34 @@ static const char *FS =
     "        float g = dot(col, vec3(0.299, 0.587, 0.114)), k = tilt.w * tilt.x;\n"
     "        col = mix(vec3(g), col, 1.0 + 0.6 * k);\n"
     "        col = (col - 0.5) * (1.0 + 0.15 * k) + 0.5;\n"
+    "    }\n"
+    "    if (film.x > 0.0) {   /* a 1950s monster movie */\n"
+    "        float k = film.x; vec2 d = uv - 0.5;\n"
+    "        vec2 ca = d * (0.006 * k);   /* the lens's colour fringes, growing to the edges */\n"
+    "        vec3 w = vec3(0.299, 0.587, 0.114);\n"
+    "        float lr = dot(texture2D(color, uv + ca).rgb, w), lb = dot(texture2D(color, uv - ca).rgb, w);\n"
+    "        float lg = dot(col, w);\n"
+    "        vec3 bw = vec3(mix(lg, lr, 0.85), lg, mix(lg, lb, 0.85));\n"
+    "        bw = clamp((bw - 0.5) * 1.25 + 0.5, 0.0, 1.0);   /* the print's contrast */\n"
+    "        bw *= vec3(1.04, 1.0, 0.92);   /* a little warm: the silver print */\n"
+    "        float t = film.y, f = floor(t * 18.0);   /* 18 frames a second for the scratches and the dust */\n"
+    "        bw *= 1.0 + 0.06 * k * (fract(sin(f * 12.9898) * 43758.5453) - 0.5);   /* the projector's flicker */\n"
+    "        float g = fract(sin(dot(uv * vec2(1280.0, 720.0) + film.z * 91.7, vec2(12.9898, 78.233))) * 43758.5453);\n"
+    "        bw += (g - 0.5) * 0.12 * k;   /* grain */\n"
+    "        for (int i = 0; i < 3; i++) {   /* scratches: thin vertical lines that jump from frame to frame */\n"
+    "            float h = fract(sin((f + float(i) * 7.0) * 3.17) * 917.13);\n"
+    "            if (h < 0.55) { float x = fract(h * 13.7 + float(i) * 0.31);\n"
+    "                float l = 1.0 - smoothstep(0.0, 0.0012, abs(uv.x - x));\n"
+    "                bw += l * (h < 0.3 ? 0.35 : -0.25) * k; }\n"
+    "        }\n"
+    "        for (int i = 0; i < 4; i++) {   /* dust and hairs: specks for a frame */\n"
+    "            vec2 p = vec2(fract(sin((f + float(i)) * 4.1) * 311.7), fract(sin((f + float(i)) * 9.3) * 173.1));\n"
+    "            float r = length((uv - p) * vec2(film.w, 1.0));\n"
+    "            bw -= (1.0 - smoothstep(0.002, 0.005, r)) * 0.5 * k;\n"
+    "        }\n"
+    "        float v = smoothstep(0.85, 0.25, length(d * vec2(film.w * 0.75, 1.0)));   /* the vignette */\n"
+    "        bw *= mix(1.0, v, 0.85 * k);\n"
+    "        col = mix(col, bw, clamp(k * 1.5, 0.0, 1.0));\n"
     "    }\n"
     "    gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);\n"
     "}\n";
@@ -207,6 +238,7 @@ static int init(void)
     u_dof = p_GetUniformLocation(g_prog, "dof");
     u_tilt = p_GetUniformLocation(g_prog, "tilt");
     u_z = p_GetUniformLocation(g_prog, "zr");
+    u_film = p_GetUniformLocation(g_prog, "film");
     glGenTextures(1, &g_color);
     glGenTextures(1, &g_depth);
     return 0;
@@ -234,7 +266,7 @@ static void size_textures(int w, int h)
 
 void lookfx_frame(int w, int h, float znear, float zfar)
 {
-    if (!g_active || (g_fx.dof <= 0 && g_fx.tilt <= 0) || w <= 0 || h <= 0 || postfx_samples() > 0)
+    if (!g_active || (g_fx.dof <= 0 && g_fx.tilt <= 0 && g_fx.film <= 0) || w <= 0 || h <= 0 || postfx_samples() > 0)
         return;                                      /* (MSAA's target cannot be copied: with MSAA on, none) */
     if (!g_state)
         g_state = init() == 0 ? 1 : -1;
@@ -285,6 +317,10 @@ void lookfx_frame(int w, int h, float znear, float zfar)
     p_Uniform4f(u_dof, g_fx.dof, 5 + 60 * g_fx.dof_range, focus, 0);
     p_Uniform4f(u_tilt, g_fx.tilt, g_fx.tilt_center, 0.5f * g_fx.tilt_band, g_fx.tilt_color);
     p_Uniform4f(u_z, znear, zfar, 0, 0);
+    static unsigned frame_rand = 1;
+    frame_rand = frame_rand * 1664525u + 1013904223u;
+    p_Uniform4f(u_film, g_fx.film, (float)clock() / CLOCKS_PER_SEC, (float)(frame_rand >> 16) / 65536.0f,
+                (float)w / h);
     glBegin(GL_QUADS);
     glTexCoord2f(0, 0); glVertex2f(-1, -1);
     glTexCoord2f(1, 0); glVertex2f(1, -1);

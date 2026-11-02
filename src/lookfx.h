@@ -17,6 +17,9 @@ typedef struct {
     float tilt_color;                                /* the miniature's livelier colours: 0 .. 1 */
     float zoom;                                      /* the camera pulled back: 0 the game's .. 1 far */
     float pitch;                                     /* the camera tilted down: degrees, 0 .. 35 */
+    float film;                                      /* a 1950s monster movie: black and white, grain, scratches,
+                                                      * dust, flicker, colour fringes at the edges, a dark vignette:
+                                                      * 0 off .. 1 strong (--film) */
 } LookFx;
 
 LookFx *lookfx(void);                                /* the settings, changed in place by the panel */
