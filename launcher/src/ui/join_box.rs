@@ -7,6 +7,7 @@ use crate::links;
 use crate::settings::Settings;
 use eframe::egui::{self, RichText};
 use std::sync::mpsc::{channel, Receiver};
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct JoinBox {
@@ -15,6 +16,10 @@ pub struct JoinBox {
     connecting: Option<(String, Receiver<Result<(), String>>)>,
     /// the server Connect reached this session
     connected: Option<String>,
+    /// its rooms, asked for every few seconds while connected (a fetch under way, when the last came)
+    rooms: Vec<join::Room>,
+    rooms_rx: Option<Receiver<Result<Vec<join::Room>, String>>>,
+    rooms_at: Option<Instant>,
 }
 
 /// "http://192.168.7.105:19980" as people say it: "192.168.7.105" (the port only when it isn't the usual one).
@@ -114,6 +119,51 @@ impl App {
         });
         if let Some((t, problem)) = &self.note {
             ui.label(RichText::new(t).size(15.0).color(if *problem { RED } else { GREEN }));
+        }
+        self.rooms_list(ui, busy);
+    }
+
+    /// The connected server's rooms: one line each with its own Join (the code filled in and joined).
+    fn rooms_list(&mut self, ui: &mut egui::Ui, busy: bool) {
+        let Some(server) = self.join_box.connected.clone() else { return };
+        if let Some(rx) = &self.join_box.rooms_rx {
+            if let Ok(r) = rx.try_recv() {
+                self.join_box.rooms = r.unwrap_or_default();
+                self.join_box.rooms_rx = None;
+            }
+        }
+        let due = self.join_box.rooms_at.map_or(true, |t| t.elapsed() > Duration::from_secs(3));
+        if due && self.join_box.rooms_rx.is_none() {
+            let (tx, rx) = channel();
+            let s = server.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(join::fetch_rooms(&s));
+            });
+            self.join_box.rooms_rx = Some(rx);
+            self.join_box.rooms_at = Some(Instant::now());
+        }
+        ui.ctx().request_repaint_after(Duration::from_secs(1));
+        ui.add_space(4.0);
+        ui.label(RichText::new(format!("Rooms on {}", server_shown(&server))).strong());
+        if self.join_box.rooms.is_empty() {
+            ui.label(RichText::new("No rooms open on this server right now.").small().color(DIM_TEXT));
+            return;
+        }
+        let mut join_code = None;
+        for r in self.join_box.rooms.clone() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&r.code).monospace().strong());
+                ui.label(RichText::new(r.label()).small());
+                ui.label(RichText::new(r.seats()).small().color(if r.full() { RED } else { GREEN }));
+                let b = ui.add_enabled(!busy && !r.full(), egui::Button::new(RichText::new("Join").strong()));
+                if b.clicked() {
+                    join_code = Some(r.code.clone());
+                }
+            });
+        }
+        if let Some(c) = join_code {
+            self.code = c;
+            self.join();
         }
     }
 }

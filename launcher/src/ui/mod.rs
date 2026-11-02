@@ -51,6 +51,9 @@ pub struct App {
     pub join_box: join_box::JoinBox,
     /// this PC's address on its network, looked up once (Host Local's hint)
     lan_ip: Option<String>,
+    /// its address on the internet, looked up when asked (Host Local's "Show my internet address")
+    public_ip: Option<Result<String, String>>,
+    public_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
 }
 
 #[derive(Clone)]
@@ -72,7 +75,8 @@ impl App {
         let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
-                            join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip() };
+                            join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
+                            public_ip: None, public_rx: None };
         app.refresh_links();
         app
     }
@@ -178,6 +182,48 @@ impl App {
             "On this PC: the game's players screen gives you 1 to 4, with computer players.".to_string()
         };
         ui.label(RichText::new(hint).strong().color(look::YELLOW));
+        if self.settings.local_players() == 2 {
+            self.public_ip_row(ui);
+        }
+    }
+
+    /// "Show my internet address": looked up on a thread when clicked, then shown with a Copy button.
+    fn public_ip_row(&mut self, ui: &mut egui::Ui) {
+        if let Some(rx) = &self.public_rx {
+            if let Ok(r) = rx.try_recv() {
+                self.public_ip = Some(r);
+                self.public_rx = None;
+            }
+        }
+        ui.horizontal(|ui| {
+            match &self.public_ip {
+                Some(Ok(ip)) => {
+                    ui.label(RichText::new(format!("Your internet address: {ip}")).strong());
+                    if ui.button("Copy").clicked() {
+                        ui.ctx().copy_text(ip.clone());
+                    }
+                    ui.label(RichText::new("(friends need UDP 27960 forwarded to this PC)").small().color(look::DIM_TEXT));
+                }
+                Some(Err(e)) => {
+                    ui.label(RichText::new(e).small().color(look::RED));
+                }
+                None if self.public_rx.is_some() => {
+                    ui.label(RichText::new("Looking up your internet address...").small());
+                }
+                None => {
+                    if ui.button("Show my internet address").clicked() {
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        std::thread::spawn(move || {
+                            let _ = tx.send(join::public_ip());
+                        });
+                        self.public_rx = Some(rx);
+                    }
+                }
+            }
+        });
+        if self.public_rx.is_some() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+        }
     }
 
     fn main_screen(&mut self, ui: &mut egui::Ui) {
@@ -265,7 +311,11 @@ impl eframe::App for App {
         }
         egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
             look::background(ui);
-            self.main_screen(ui);
+            // (a long rooms list or the hosting box's players: the screen scrolls, the window's size stays)
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                self.main_screen(ui);
+                ui.add_space(12.0);
+            });
         });
         self.settings_window(ctx);
         self.first_run_popup(ctx);

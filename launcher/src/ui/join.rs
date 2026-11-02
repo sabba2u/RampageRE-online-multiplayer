@@ -86,6 +86,68 @@ pub fn fetch_players(server: &str, code: &str) -> Result<Vec<crate::lobby::games
     }).take(8).collect())
 }
 
+/// A room on a server's list (GET /games): what the launcher shows to pick from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Room {
+    pub code: String,
+    pub name: String,
+    pub monster: String,
+    pub city: String,
+    pub players: u32,
+    pub max: u32,
+    pub reserved: u32,
+}
+
+impl Room {
+    /// "sabba · George · Chicago 1", the parts it has; "A room" with none
+    pub fn label(&self) -> String {
+        let parts: Vec<&str> = [&self.name, &self.monster, &self.city].iter().map(|s| s.as_str())
+            .filter(|s| !s.is_empty()).collect();
+        if parts.is_empty() { "A room".into() } else { parts.join(" · ") }
+    }
+    /// "2 / 4", "2 / 4 (1 rejoining)"
+    pub fn seats(&self) -> String {
+        if self.reserved > 0 { format!("{} / {} ({} rejoining)", self.players, self.max, self.reserved) }
+        else { format!("{} / {}", self.players, self.max) }
+    }
+    pub fn full(&self) -> bool { self.players + self.reserved >= self.max }
+}
+
+pub fn parse_rooms(body: &str) -> Result<Vec<Room>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|_| CANT_REACH.to_string())?;
+    let list = v["games"].as_array().ok_or(CANT_REACH)?;
+    let s = |g: &serde_json::Value, k: &str| g[k].as_str().unwrap_or("").chars().take(32).collect::<String>();
+    let n = |g: &serde_json::Value, k: &str| g[k].as_u64().unwrap_or(0).min(8) as u32;
+    Ok(list.iter().filter(|g| g["code"].is_string()).map(|g| Room {
+        code: s(g, "code"), name: s(g, "name"), monster: s(g, "monster"), city: s(g, "city"),
+        players: n(g, "players"), max: n(g, "max"), reserved: n(g, "reserved"),
+    }).take(50).collect())
+}
+
+/// The rooms on `server` now.
+pub fn fetch_rooms(server: &str) -> Result<Vec<Room>, String> {
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(3)).build();
+    let body = agent.get(&format!("{server}/games")).call().ok().and_then(|r| r.into_string().ok())
+        .ok_or_else(|| CANT_REACH.to_string())?;
+    parse_rooms(&body)
+}
+
+pub const NO_PUBLIC_IP: &str = "Couldn't find your internet address (no internet, or the lookup service is down).";
+
+/// An address lookup's answer: the address alone, or why not.
+pub fn public_ip_from(body: &str) -> Result<String, String> {
+    let t = body.trim();
+    t.parse::<std::net::IpAddr>().map(|ip| ip.to_string()).map_err(|_| NO_PUBLIC_IP.to_string())
+}
+
+/// This connection's address on the internet, as a lookup service sees it (asked only when the player clicks).
+pub fn public_ip() -> Result<String, String> {
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(5)).build();
+    let body = agent.get("https://api.ipify.org").call().ok().and_then(|r| r.into_string().ok())
+        .ok_or_else(|| NO_PUBLIC_IP.to_string())?;
+    public_ip_from(&body)
+}
+
 /// What the player typed in the Join box: a code, or a pasted group link.
 pub fn typed(input: &str) -> Result<Link, String> {
     let s = input.trim();

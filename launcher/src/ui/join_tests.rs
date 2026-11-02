@@ -89,3 +89,29 @@ fn connect_checks_its_a_server() {
     let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     assert_eq!(check_server(&format!("http://127.0.0.1:{free}")).unwrap_err(), CANT_REACH);
 }
+
+#[test]
+fn rooms_from_the_servers_list() {
+    let body = r#"{"games":[
+        {"code":"K7PQ2","name":"sabba","monster":"George","city":"Chicago 1","players":2,"max":4,"reserved":1,"build":"CAFE1234"},
+        {"code":"ZZZZZ","name":"","monster":"","city":"","players":4,"max":4,"reserved":0,"build":"CAFE1234"}],
+        "you":"1.2.3.4","heartbeat":15}"#;
+    let rooms = parse_rooms(body).unwrap();
+    assert_eq!(rooms.len(), 2);
+    assert_eq!(rooms[0].code, "K7PQ2");
+    assert_eq!(rooms[0].label(), "sabba · George · Chicago 1");
+    assert_eq!(rooms[0].seats(), "2 / 4 (1 rejoining)");
+    assert!(!rooms[0].full());
+    assert!(rooms[1].full());
+    assert_eq!(rooms[1].label(), "A room");
+    assert!(parse_rooms("not json").is_err());
+    assert!(parse_rooms(r#"{"games":[]}"#).unwrap().is_empty());
+}
+
+#[test]
+fn public_ip_answer_checked() {
+    assert_eq!(public_ip_from("203.0.113.5\n").unwrap(), "203.0.113.5");
+    assert_eq!(public_ip_from("2001:db8::1").unwrap(), "2001:db8::1");
+    assert!(public_ip_from("<html>oops</html>").is_err());
+    assert!(public_ip_from("").is_err());
+}
