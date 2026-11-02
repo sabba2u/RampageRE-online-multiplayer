@@ -208,6 +208,32 @@ static void test_slot_pick(void)
     CHECK(net_slot_pick(s, 3, 7, 70, &wait) == NET_PICK_FULL);
 }
 
+/* four seats (docs/superpowers/specs/2026-11-01-four-player-online-design.md): ENet games 4, Steam 2 */
+static void test_four_seats(void)
+{
+    CHECK(net_game_slots(0) == 4);
+    CHECK(net_game_slots(1) == 2);
+    NetSlotPick s[NET_SLOTS] = { { NSL_HOST, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 }, { NSL_OPEN, 0, 0 } };
+    double wait = -1;
+    for (int k = 1; k < 4; k++) {                                /* guests in join order: seats 1, 2, 3 */
+        CHECK(net_slot_pick(s, 4, 0, 0, &wait) == k);
+        s[k].state = NSL_ONLINE;
+        s[k].token = 100 + k;
+    }
+    CHECK(net_slot_pick(s, 4, 0, 0, &wait) == NET_PICK_FULL);
+    s[2].state = NSL_RESERVED;                                   /* seat 2's guest dropped: kept for its token */
+    s[2].until = 60;
+    CHECK(net_slot_pick(s, 4, 0, 10, &wait) == NET_PICK_RESERVED);
+    CHECK(net_slot_pick(s, 4, 102, 10, &wait) == 2);             /* it comes back to seat 2 */
+    NetSlots n = { 4, { NSL_HOST, NSL_ONLINE, NSL_RESERVED, NSL_LOCAL }, { 0, 0, 30.0f, 0 } }, t;
+    uint8_t m[64];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_slots(&b, &n);
+    NetBuf rb = netbuf(m, b.len);
+    net_r_slots(&rb, &t);
+    CHECK(!rb.err && t.n == 4 && t.state[3] == NSL_LOCAL && t.left[2] == 30.0f);
+}
+
 static void test_slot_messages(void)
 {
     uint8_t m[64];
@@ -400,6 +426,7 @@ int main(void)
 {
     test_message_types_distinct();
     test_slot_pick();
+    test_four_seats();
     test_slot_messages();
     test_wire_round_trip();
     test_wire_read_past_end();

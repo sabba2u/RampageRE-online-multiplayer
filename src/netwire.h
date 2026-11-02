@@ -34,7 +34,7 @@ enum NetMsg {
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
  * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS */
-#define NET_PROTO 2
+#define NET_PROTO 3
 #define NET_PORT 27960
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
@@ -57,6 +57,8 @@ typedef struct { uint8_t state; uint64_t token; double until; } NetSlotPick;
  * NET_PICK_FULL when every one is played */
 enum { NET_PICK_FULL = -1, NET_PICK_RESERVED = -2 };
 int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, double *wait);
+/* the seats a hosted game has: 4 (the host and up to three guests); over Steam 2 (one Steam peer) */
+int net_game_slots(int steam);
 
 /* NM_HELLO after its type byte */
 typedef struct { uint32_t proto, build, world; uint64_t token; int monster; } NetHello;

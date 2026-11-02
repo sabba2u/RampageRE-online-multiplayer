@@ -15,7 +15,7 @@ enum { NT_NONE, NT_CONNECT, NT_DISCONNECT, NT_DATA };
 /* the host takes up to NT_PEERS connections at once (each a guest's, or one being told the game is full); a guest has
  * the one, to the host, peer 0. Which player slot a peer plays is the session's (net.c), not the transport's. Over
  * Steam (netsteam.c) there is one peer, 0, still: one guest at a time there */
-#define NT_PEERS 4
+#define NT_PEERS 6
 
 typedef struct {
     int type;                                        /* NT_* */

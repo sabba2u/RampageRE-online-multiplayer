@@ -52,8 +52,8 @@ $shot = 0; $rejoined = $false
 while (((Get-Date) - $t0).TotalSeconds -lt $Seconds) {
     $el = ((Get-Date) - $t0).TotalSeconds
     if ($Rejoin -gt 0 -and -not $rejoined -and $el -ge 15) {
-        $g[$Rejoin] | Stop-Process -Force
-        Start-Sleep 3
+        $g[$Rejoin] | Stop-Process -Force   # (the host notices in 5 to 10 s: ENet's timeout; its seat is kept from then)
+        Start-Sleep 12
         $g[$Rejoin] = Start-Guest $Rejoin "b"
         $rejoined = $true
     }

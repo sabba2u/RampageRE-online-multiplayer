@@ -26,7 +26,7 @@
 
 #define LOG_LINES 200
 #define DIGESTS 256                                  /* the host's own, at most 30 a second: eight seconds */
-#define NET_GAME_SLOTS 2                             /* the slots a hosted game has today (a guest plays player 2) */
+#define NET_GAME_SLOTS net_game_slots(nt_is_steam())   /* 4 seats; over Steam 2 (netwire.c) */
 #define REJOIN_FILE "netrejoin.cfg"
 #define REJOIN_KEEP_S 3600                           /* a token older than this in the file is not offered */
 
@@ -64,7 +64,6 @@ static struct {
     double told_at;
     /* the host */
     Slot slot[NET_SLOTS];
-    int nslots;
     int peer_slot[NT_PEERS];                         /* each peer's slot, -1 saying hello (or none) */
     int peer_on[NT_PEERS];
     int msg_slot;                                    /* the slot of the message being handled */
@@ -222,7 +221,6 @@ static void slots_reset(void)
         g.peer_slot[i] = -1;
         g.peer_on[i] = 0;
     }
-    g.nslots = NET_GAME_SLOTS;
     g.msg_slot = -1;
     g.slots_dirty = 1;
 }
@@ -412,7 +410,7 @@ static void slots_frame(void)
         return;
     NetSlots s;
     memset(&s, 0, sizeof s);
-    s.n = g.nslots;
+    s.n = NET_GAME_SLOTS;
     for (int k = 0; k < s.n; k++) {
         s.state[k] = (uint8_t)(g.slot[k].state | (net_slot_joining(k) ? NSL_JOINING : 0));
         s.left[k] = g.slot[k].state == NSL_RESERVED ? (float)(g.slot[k].until - g.now) : 0;
@@ -643,7 +641,7 @@ static void on_hello(int peer, NetBuf *b)
             pk[i].until = g.slot[i].until;
         }
         double wait = 0;
-        k = net_slot_pick(pk, g.nslots, h.token, g.now, &wait);
+        k = net_slot_pick(pk, NET_GAME_SLOTS, h.token, g.now, &wait);
         if (k == NET_PICK_RESERVED)
             snprintf(why, sizeof why, "A player who dropped out has their place kept for %d:%02d more; try again then",
                      (int)(wait + 0.99) / 60, (int)(wait + 0.99) % 60);
