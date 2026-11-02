@@ -3679,6 +3679,34 @@ int scene_monster_node(const Scene *s, int k, const char *name, Mat4 *world)
     return -1;
 }
 
+int instance_bones(const Instance *in, float (*seg)[6], int max)
+{
+    if (!in || !in->node || !in->tree.n)
+        return 0;
+    int bip = 0, n = 0;
+    for (uint32_t i = 0; i < in->tree.n && !bip; i++)
+        bip = in->tree.nodes[i].name && strstr(in->tree.nodes[i].name, "Bip01 ") != NULL;
+    for (uint32_t i = 0; i < in->tree.n && n < max; i++) {
+        int p = in->tree.nodes[i].parent;
+        const char *a = in->tree.nodes[i].name ? in->tree.nodes[i].name : "";
+        const char *b = p >= 0 && (uint32_t)p < in->tree.n && in->tree.nodes[p].name ? in->tree.nodes[p].name : "";
+        if (p < 0 || (uint32_t)p >= in->tree.n || ends_with(b, "Bip01") || strstr(a, "Footsteps") ||
+            (bip && (!strstr(a, "Bip01 ") || !strstr(b, "Bip01 "))))
+            continue;                                /* (the root's: from the ground up to the pelvis) */
+        const int ends[2] = { (int)i, p };
+        for (int e = 0; e < 2; e++) {
+            const float *m = in->node[ends[e]].m;
+            float x = in->mirrored ? -m[12] : m[12], y = m[13], z = m[14];   /* mirrored: model x reflected */
+            const float *B = in->base.m;
+            seg[n][3 * e + 0] = B[0] * x + B[4] * y + B[8] * z + B[12];
+            seg[n][3 * e + 1] = B[1] * x + B[5] * y + B[9] * z + B[13];
+            seg[n][3 * e + 2] = B[2] * x + B[6] * y + B[10] * z + B[14];
+        }
+        n++;
+    }
+    return n;
+}
+
 int scene_monster_hand(const Scene *s, int k, int hand, Mat4 *world)
 {
     const Instance *in = mon_inst(s, k);

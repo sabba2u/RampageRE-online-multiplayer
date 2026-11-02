@@ -1,6 +1,6 @@
-/* weather.h - port extra (docs/TODO.md): rain, lightning and thunder over a city. Just to look at and hear: nothing in
- * the game is touched (no hits, no game state), so the offline game and its regression shots are as before with the
- * weather off (the default).
+/* weather.h - port extra (docs/TODO.md): rain, lightning and thunder over a city. Off (the default) nothing in the game
+ * is touched, so the offline game and its regression shots are as before. In a storm a strike now and then lands on a
+ * monster (main.c lightning_zap: the zap reaction, 15 HP, an x-ray flicker); the rest is just to look at and hear.
  *   - rain: slanted streaks falling over the world (drawn after the world's particles, before the HUD), the scene a
  *     little darker under it;
  *   - lightning (a storm): now and then a jagged bolt from the top of the screen down into the city, the whole screen
@@ -24,6 +24,9 @@ void weather_visible(int on);                        /* in a city's play (1), el
  * this copy picked one now: *x the strike's place across the screen 0..1, *seed its bolt's shape) */
 int weather_update(float dt, float *x, unsigned *seed);
 void weather_strike(float x, unsigned seed);         /* a strike, as picked (here or by the host) */
+/* one that lands at (x, y), 0..1 of the screen from the top left (on a monster: main.c lightning_zap); y < 0: into
+ * the city as weather_strike */
+void weather_strike_to(float x, float y, unsigned seed);
 /* render_gl.c: the rain, the bolt and the flash over the world (GL state: the HUD's 2D, set and put back here) */
 void weather_draw(int width, int height);
 /* the mixer (sound.c, its own thread): the thunder added into out (stereo floats at SOUND_RATE) */

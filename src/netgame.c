@@ -806,8 +806,12 @@ static void ng_handler(const uint8_t *data, int len)
     else if (type == NM_WEATHER && net_role() == NET_GUEST && net_live()) {
         float x = net_r_f32(&b);
         unsigned seed = net_r_u32(&b);
-        if (!b.err)
+        int monster = b.len < b.cap ? net_r_u8(&b) : 255;   /* (a host from before the x-ray zap sends none) */
+        if (!b.err) {
             weather_strike(x, seed);
+            if (monster != 255)                      /* onto that monster: the bolt, the sparks, its x-ray */
+                lightning_zap(g_ngv, monster, seed, 0);
+        }
     }
     else if (type == NM_MENU)
         ngr_menu_message(g_ngv, &b);
@@ -2163,7 +2167,7 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 }
 
 /* main.c: a strike this copy picked (offline, or the host): the guests see it too */
-static void netgame_weather_strike(float x, unsigned seed)
+static void netgame_weather_strike(float x, unsigned seed, int monster)
 {
     if (net_role() != NET_HOST || !net_live())
         return;
@@ -2172,6 +2176,7 @@ static void netgame_weather_strike(float x, unsigned seed)
     net_w_u8(&b, NM_WEATHER);
     net_w_f32(&b, x);
     net_w_u32(&b, seed);
+    net_w_u8(&b, (uint8_t)(monster >= 0 ? monster : 255));   /* the monster it strikes (main.c lightning_zap), 255 none */
     if (!b.err)
         net_send_msg(1, m, b.len);
 }

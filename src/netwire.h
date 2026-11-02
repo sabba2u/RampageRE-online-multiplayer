@@ -31,7 +31,8 @@ enum NetMsg {
     NM_SLOTS,        /* host -> guests, reliable, on change and each second while one is kept: every player slot's
                       * state (NSL_*) and a kept one's seconds left (net_w_slots) */
     NM_WEATHER,      /* host -> guests, reliable: a lightning strike (weather.c): its place across the screen, its
-                      * bolt's seed (the weather itself comes with the world, NgWorld) */
+                      * bolt's seed, the monster it strikes (255 none: main.c lightning_zap; the weather itself comes
+                      * with the world, NgWorld) */
 };
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it

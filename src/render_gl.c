@@ -260,6 +260,7 @@ struct Renderer {
     int tex_gen;                                     /* the texture settings the cache was made with */
     int hold;                                        /* draw_mesh holds the blended parts back (gtao_active) */
     int grey;                                        /* NET: the instance drawn now is greyed (Instance.net_grey) */
+    int xray;                                        /* port extra: the instance drawn now is x-rayed (Instance.xray) */
     double hud_t; int has_hud_t;                     /* the GUI's clock (rnd_hud_time), else the frame's */
     int in_hud;                                      /* draw_hud: textures made now get no mips nor anisotropy */
     HeldPart *held; int nheld, cheld;
@@ -999,6 +1000,86 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, 
     glPopAttrib();
 }
 
+/* port extra: a monster struck by lightning (Instance.xray, main.c lightning_zap) flickers into an x-ray, as a cartoon
+ * zap: on the flicker's on frames each opaque part is drawn again over itself in a pale electric blue (unlit, the
+ * texture's alpha cutting it out as draw_grey's), and its skeleton after the scene's items over everything
+ * (draw_xray_bones) */
+static void draw_xray(const MeshPart *p, GLuint tex, const void *idx)
+{
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glColor4f(0.22f, 0.55f, 1.0f, 0.82f);
+    if (tex && p->uv) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_REPLACE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_RGB, GL_PRIMARY_COLOR);
+        glTexEnvi(GL_TEXTURE_ENV, GL_COMBINE_ALPHA, GL_MODULATE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE0_ALPHA, GL_TEXTURE);
+        glTexEnvi(GL_TEXTURE_ENV, GL_SOURCE1_ALPHA, GL_PRIMARY_COLOR);
+        glEnable(GL_ALPHA_TEST);
+        glAlphaFunc(GL_GREATER, 0.25f);              /* (0.82 x the texture's, whose opaque is 0.5 and up) */
+    } else
+        glDisable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glPopClientAttrib();
+    glPopAttrib();
+}
+
+/* the x-rayed instances' skeletons: thick white bones with a pale blue edge and round joints, through everything */
+static void draw_xray_bones(const Scene *s, const int *list, int n)
+{
+    static float seg[256][6];
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_CURRENT_BIT | GL_LINE_BIT |
+                 GL_POINT_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_FOG);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_ALPHA_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_LINE_SMOOTH);
+    glEnable(GL_POINT_SMOOTH);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    for (int i = 0; i < n; i++) {
+        int ns = instance_bones(&s->instances[list[i]], seg, 256);
+        for (int pass = 0; pass < 2; pass++) {       /* the blue edge, then the bone */
+            glLineWidth(pass ? 4.0f : 8.0f);
+            glPointSize(pass ? 7.0f : 11.0f);
+            if (pass)
+                glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+            else
+                glColor4f(0.15f, 0.45f, 1.0f, 0.75f);
+            glBegin(GL_LINES);
+            for (int k = 0; k < ns; k++) {
+                glVertex3fv(seg[k]);
+                glVertex3fv(seg[k] + 3);
+            }
+            glEnd();
+            glBegin(GL_POINTS);
+            for (int k = 0; k < ns; k++)
+                glVertex3fv(seg[k]);
+            glEnd();
+        }
+    }
+    glPopAttrib();
+    glLineWidth(1.0f);
+    glPointSize(1.0f);
+}
+
 static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32_t i, uint32_t first, double t)
 {
     const Scene *s = r->scene;
@@ -1162,6 +1243,9 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     r->drawn += p->ntris;
     if (r->grey && !blend && !see_through)           /* NET: greyed over */
         draw_grey(p, id, idx, t, r->grey == 2);
+    if (r->xray)                                     /* struck by lightning: the x-ray's flash (every part: George's
+                                                      * fur is blended) */
+        draw_xray(p, id, idx);
     /* the reflection layer, shader 0x1A's second pass [R]: texture slot 1 (the material's +0x3A `cubemap`, or for an
      * RCUBEMAP* material the block's EnvMap, 0x2B96E4) at the sphere-map coordinates (VU1 0x34F1C8, sphere_coords),
      * TFX 1 DECAL, TCC 0, colour mode 0 (the texture's colour, unlit), GS state 10: ALPHA 0x58 = Cs x Ad + Cd (added,
@@ -1691,6 +1775,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
     }
     float view_mv[16], ty = tanf(cam->fov_deg * 3.14159265f / 360.0f), tx = ty * aspect;
     glGetFloatv(GL_MODELVIEW_MATRIX, view_mv);
+    int xrays[8], nxray = 0;                             /* port extra: the instances x-rayed this frame */
     for (int pass = 0; pass < 2; pass++) {               /* the street, its building shadows, then the rest */
         r->hold = pass && gtao_active();                 /* port extra: the blended parts after the occlusion (the
                                                           * street's lie on it, darkened as it is) */
@@ -1706,8 +1791,18 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             glPushMatrix();
             glMultMatrixf(it->world.m);
             r->grey = in->net_grey;                  /* NET: an online player's monster nobody plays (netgame.c) */
+            /* struck by lightning: on and off about 9 times a second */
+            r->xray = in->xray > 0 && fmodf(in->xray * 9.0f, 1.0f) < 0.6f;
+            if (r->xray) {
+                int seen = 0;
+                for (int k = 0; k < nxray; k++)
+                    seen |= xrays[k] == it->instance;
+                if (!seen && nxray < 8)
+                    xrays[nxray++] = it->instance;
+            }
             draw_mesh(r, &s->meshes[it->mesh], it->skin, t);
             r->grey = 0;
+            r->xray = 0;
             glPopMatrix();
             if (own)
                 glLightModelfv(GL_LIGHT_MODEL_AMBIENT, amb);
@@ -1736,6 +1831,8 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
         draw_shadows(r, SHADOW_PASS_DECAL);
         draw_shadows(r, SHADOW_PASS_WALL);
     }
+    if (nxray)                                             /* port extra: the lightning's x-ray, its skeletons */
+        draw_xray_bones(s, xrays, nxray);
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);

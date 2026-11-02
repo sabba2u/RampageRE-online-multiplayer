@@ -269,6 +269,8 @@ Autoplay *ap_open(const char *log, const char *shots, const ApLimits *lim, const
     return a;
 }
 
+void ap_want_shot(Autoplay *a, const char *tag) { if (a) want_shot(a, 2, tag); }
+
 const char *ap_shot_path(const Autoplay *a) { return a && a->shot_reason ? a->shot : NULL; }
 
 void ap_shot_done(Autoplay *a, int ok)

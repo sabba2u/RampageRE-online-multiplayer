@@ -31,5 +31,8 @@ Ideas the owner wants, not started. Newest at the bottom.
   (136 to a 2 player game's guest), 4.8 Mbit/s on average and 6.6 at peak with three guests. Most is the people, army
   and traffic copied to each guest at 60 updates a second. Fewer updates a second for the world's puppets, or sending
   only what changed, would cut it.
-- **X-ray zap** (asked): when a monster is electrocuted (an electric sign, Hazard_Shock, the blimp's barriers: the
-  React_*_Zap clips), flicker it between its look and a dark silhouette with its skeleton's bones glowing white.
+- (done 2026-11-02 for lightning: main.c lightning_zap, render_gl.c draw_xray) **X-ray zap** (asked): in a storm 2
+  strikes in 5 land on a monster in play on the screen (the host picks; NM_WEATHER names it to the guests): the bolt
+  onto it, the thunder at once, React_Front_Zap (React_Side_L_Zap on a wall) and 15 HP, and for 1.2 s it flickers
+  between its look and an electric-blue x-ray with its skeleton's bones white. Not yet: the same on the game's own
+  shocks (an electric sign, Hazard_Shock, the blimp's barriers: Instance.xray set as their React_*_Zap starts).

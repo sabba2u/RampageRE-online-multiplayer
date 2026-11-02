@@ -75,6 +75,7 @@ int ap_frame(Autoplay *a, const ApFrame *f);           /* AP_* bits */
 const char *ap_shot_path(const Autoplay *a);
 void ap_shot_done(Autoplay *a, int ok);
 void ap_event(Autoplay *a, const char *fmt, ...);      /* an EVENT line */
+void ap_want_shot(Autoplay *a, const char *tag);       /* a screenshot of this frame (with --ap-shots), tagged */
 void ap_game_left(Autoplay *a, int demo);              /* a game went back to the shell (a demo's: demo 1) */
 /* the SUMMARY line, the log closed; the process' exit code: 0 no problem seen, 3 problems */
 int ap_close(Autoplay *a, const char *why);

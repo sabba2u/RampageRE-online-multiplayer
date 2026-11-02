@@ -70,6 +70,8 @@ typedef struct {
                                                        * building light's ramp at its height, 0x2CD060) */
     int net_grey;                                     /* NET: drawn greyed over (an online player's slot nobody
                                                        * plays: netgame.c; render_gl.c draw_grey). 0 offline */
+    float xray;                                       /* port extra: struck by lightning (main.c lightning_zap): the
+                                                       * seconds left of the x-ray flicker (render_gl.c), 0 none */
 } Instance;
 
 typedef struct {
@@ -385,6 +387,9 @@ void scene_fx_started(Scene *s, FxWorld *w, const struct SceneFx *f, int id);
 void scene_fx_follow(Scene *s, FxWorld *w);          /* the spawners' update: their effects on their storeys */
 /* a node of the monster's skeleton by name, in the world as drawn (mirrored: the other side's, reflected); 0 = ok */
 int scene_monster_node(const Scene *s, int k, const char *name, Mat4 *world);
+/* port extra (the lightning's x-ray, render_gl.c): the instance's bones as segments in the world, each joint to its
+ * parent's (x0 y0 z0 x1 y1 z1): the Bip01 skeleton's below its root, else every node's; the count (at most max) */
+int instance_bones(const Instance *in, float (*seg)[6], int max);
 /* the window occupants (0x318650): every SpawnRate seconds (0.75) one comes to a random free slot of a building in
  * view; the slots are the block's windows, a FillRate share of them, each with an occupant picked by Frequency */
 /* building bi's window slots (0x3196F0's first half): the host makes them building by building just before the

@@ -8634,6 +8634,100 @@ static void gui_log_bound(void)                      /* a bound for whatever sti
 #define DEBUG_TITLE 1                                /* city, block, clip, triangles, fps and effects in the title */
 #endif
 
+/* port extra: lightning striking a monster (a storm, weather.c; docs/TODO.md "x-ray zap"). Where monster k is on the
+ * screen (0..1 from the top left, its chest), by the camera shown (v->view; zap_aspect the window's width / height):
+ * 0 off the screen or behind */
+static float zap_aspect = 4.0f / 3;
+static int mon_screen(const Viewer *v, const Mon *mo, float *sx, float *sy)
+{
+    const CamView *c = &v->view;
+    float f = 1.0f / tanf(c->fov * 0.5f);
+    float p[3] = { mo->mx - c->pos[0], mo->my - c->pos[1], mo->mz + 5 * (mo->scale > 0 ? mo->scale : 1) - c->pos[2] };
+    float x = p[0] * c->rows[0][0] + p[1] * c->rows[0][1] + p[2] * c->rows[0][2];
+    float d = p[0] * c->rows[1][0] + p[1] * c->rows[1][1] + p[2] * c->rows[1][2];
+    float y = p[0] * c->rows[2][0] + p[1] * c->rows[2][1] + p[2] * c->rows[2][2];
+    if (d < 1 || !(f > 0))
+        return 0;
+    *sx = 0.5f * (1 + f / zap_aspect * x / d);
+    *sy = 0.5f * (1 - f * y / d);
+    return *sx > 0.04f && *sx < 0.96f && *sy > 0.12f && *sy < 0.95f;
+}
+
+/* monster k can be struck: in play and seen (not hidden, dropping in, defeated, turned human, nobody's online seat) */
+static int zap_target(const Viewer *v, int k)
+{
+    if (k < 0 || k >= v->nmon)
+        return 0;
+    const Mon *mo = &v->mon[k];
+    const Instance *in = mon_in(mo);
+    float sx, sy;
+    return in && !in->hidden && !mo->human && !mo->dropping && monster_hittable(mo) && !netgame_idle(mo) &&
+           mon_screen(v, mo, &sx, &sy);
+}
+
+/* lightning onto monster k: the bolt down onto it (weather_strike_to, the thunder at once), the sparks
+ * (Electrical_Shock_1), the x-ray flicker for 1.2 s (Instance.xray, render_gl.c); and where the game is run
+ * (offline, the host: own) the zap itself, as an electric sign gives it: React_Front_Zap (React_Side_L_Zap on a wall)
+ * and 15 HP. A guest only draws it: its monster's move and HP are the host's (the snapshots). 0: k cannot be struck */
+static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
+{
+    if (!v || k < 0 || k >= v->nmon)
+        return 0;
+    Mon *mo = &v->mon[k];
+    Instance *in = mon_in(mo);
+    float sx, sy;
+    if (!in || in->hidden || !mon_screen(v, mo, &sx, &sy))
+        return 0;
+    weather_strike_to(sx, sy, seed);
+    in->xray = 1.2f;
+    float at[3] = { mo->mx, mo->my, mo->mz + 5 * (mo->scale > 0 ? mo->scale : 1) };
+    if (v->fxw)
+        fx_spawn(v->fxw, getenv("RAMPAGE_ZAP_FX") ? getenv("RAMPAGE_ZAP_FX") : "Electrical_Shock_1", at, NULL, 1);
+    if (own && monster_hittable(mo)) {
+        const char *move = mo->have_graph ? mo->graph.states[mo->run.state].name : "";
+        float d[2] = { 0, 0 };
+        monster_take(mo, "lightning", 15, 1, -1, d, 0);
+        if (mo->hp > 0)
+            force_state(mo, strstr(move, "Side") ? "React_Side_L_Zap" : "React_Front_Zap");
+    }
+    if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_NET_TRACE"))
+        printf("  lightning strikes monster %d (%.2f, %.2f of the screen), HP %.0f\n", k, sx, sy, mo->hp);
+    return 1;
+}
+
+/* a strike this copy picked (offline, the host): 2 in 5 onto a monster that can be struck (every one with
+ * RAMPAGE_ZAP_TEST), picked by the strike's seed; the monster, -1 into the city */
+static int lightning_pick(Viewer *v, unsigned seed)
+{
+    int can[MONSTERS], n = 0;
+    for (int k = 0; k < v->nmon && k < MONSTERS; k++)
+        if (zap_target(v, k))
+            can[n++] = k;
+    if (!n || (!getenv("RAMPAGE_ZAP_TEST") && (seed >> 7) % 5 >= 2))
+        return -1;
+    int k = can[(seed >> 13) % (unsigned)n];
+    return lightning_zap(v, k, seed, 1) ? k : -1;
+}
+
+/* the x-ray flicker running out (and with RAMPAGE_ZAP_TEST an autoplay's --ap-shots a picture of it, on) */
+static void lightning_step(Viewer *v, float dt)
+{
+    static int shots;
+    for (int k = 0; k < v->nmon; k++) {
+        Instance *in = mon_in(&v->mon[k]);
+        if (in && v->ap && shots < 8 && getenv("RAMPAGE_ZAP_TEST") &&
+            ((in->xray > 1.15f && in->xray - dt <= 1.15f) || (in->xray > 0.8f && in->xray - dt <= 0.8f))) {
+            ap_want_shot(v->ap, "zap");
+            shots++;
+        }
+    }
+    for (int k = 0; k < v->nmon; k++) {
+        Instance *in = mon_in(&v->mon[k]);
+        if (in && in->xray > 0)
+            in->xray = fmaxf(0, in->xray - dt);
+    }
+}
+
 #include "netgame.c"                               /* NET: online play, the game's side */
 
 static int viewer_main(int argc, char **argv)
@@ -9372,8 +9466,12 @@ static int viewer_main(int argc, char **argv)
                 unsigned wseed;
                 int playing = v.play && !v.shell && v.game && !v.attract;
                 weather_visible(playing);
-                if (playing && weather_update(net_world_paused ? 0 : (dt > 0.1f ? 0.1f : dt), &wx, &wseed))
-                    netgame_weather_strike(wx, wseed);
+                float wdt = net_world_paused ? 0 : (dt > 0.1f ? 0.1f : dt);
+                if (w.width && w.height)
+                    zap_aspect = (float)w.width / w.height;
+                if (playing && weather_update(wdt, &wx, &wseed))   /* (onto a monster now and then: lightning_pick) */
+                    netgame_weather_strike(wx, wseed, lightning_pick(&v, wseed));
+                lightning_step(&v, wdt);
             }
             netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */
             pose_monsters(&v, shot && !v.ap ? shot_time : world_t);   /* the clips at the states' times (clip_at),

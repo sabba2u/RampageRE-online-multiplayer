@@ -111,21 +111,26 @@ int weather_update(float dt, float *x, unsigned *seed)
             W.next_strike = -1;
         return 0;
     }
+    int test = getenv("RAMPAGE_ZAP_TEST") != NULL;   /* (a test: one every 3 s, onto a monster: main.c) */
     if (W.next_strike < 0)
-        W.next_strike = W.t + 4 + frand(&W.rng) * 10;   /* every 4 to 18 s */
+        W.next_strike = W.t + (test ? 3 : 4 + frand(&W.rng) * 10);   /* every 4 to 18 s */
     if (W.t < W.next_strike)
         return 0;
-    W.next_strike = W.t + 6 + frand(&W.rng) * 12;
+    W.next_strike = W.t + (test ? 3 : 6 + frand(&W.rng) * 12);
     *x = 0.12f + frand(&W.rng) * 0.76f;
     *seed = (unsigned)(frand(&W.rng) * 4294967040.0f) | 1u;
     weather_strike(*x, *seed);
     return 1;
 }
 
-void weather_strike(float x, unsigned seed)
+void weather_strike(float x, unsigned seed) { weather_strike_to(x, -1, seed); }
+
+void weather_strike_to(float x, float y, unsigned seed)
 {
     unsigned s = seed ? seed : 1;
-    float bottom = 0.55f + frand(&s) * 0.25f;        /* where it lands: down in the city */
+    float bottom = 0.55f + frand(&s) * 0.25f;        /* where it lands: down in the city (or on a monster: y) */
+    if (y >= 0)
+        bottom = y < 0.08f ? 0.08f : y;
     float px = x + (frand(&s) - 0.5f) * 0.12f, py = -0.02f;
     W.nbolt = 0;
     while (py < bottom && W.nbolt < BOLT_PTS - 1) {  /* a jagged path down, drawn to where it lands */
@@ -143,6 +148,10 @@ void weather_strike(float x, unsigned seed)
     thunder_gain = 0.55f + frand(&s) * 0.35f;
     thunder_len = 4 * SOUND_RATE;
     thunder_go = (int)((0.4f + frand(&s) * 1.2f) * SOUND_RATE);
+    if (y >= 0) {                                    /* on a monster: right here, the crack at once and loud */
+        thunder_gain = 1.0f;
+        thunder_go = (int)(0.04f * SOUND_RATE);
+    }
 }
 
 /* the flash's brightness at age a (seconds): on, off, on (Emberville's flicker), then a fading glow */
