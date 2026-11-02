@@ -19,13 +19,18 @@ pub struct Settings {
     /// every monster (and city) unlocked: the game's own cheat 141421, passed at each start; not saved in the game's
     /// profile, so unticked they are as the profile has them again
     pub unlock_all: bool,
+    /// "game" (as the game picks: the campaign's cities' own), "day" or "night": every city so (--time-of-day)
+    pub time_of_day: String,
+    /// smoother edges: "off" (the game's rampage.cfg decides), "medium" (SMAA), "high" (SMAA high and 4x MSAA)
+    pub smoothing: String,
 }
 
 impl Default for Settings {
     /// Unlock all monsters on; the rest empty, off, never chosen.
     fn default() -> Settings {
         Settings { servers: Vec::new(), first_run_done: false, firewall_note_shown: false, spacewar_card_shown: false,
-                   banned: Vec::new(), local_players: 0, unlock_all: true }
+                   banned: Vec::new(), local_players: 0, unlock_all: true, time_of_day: "game".into(),
+                   smoothing: "off".into() }
     }
 }
 

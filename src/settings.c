@@ -23,13 +23,14 @@ static void defaults(Settings *s)
     s->profile_autoload = 1;
     s->language = 1;
     s->four_players = 1;
+    s->time_of_day = 0;
     s->wii_data[0] = 0;
 }
 
 void settings_unset(Settings *f)
 {
     f->width = f->height = f->fullscreen = f->vsync = f->ao = f->aniso = f->mips = f->smaa = f->msaa = UNSET;
-    f->profile_autoload = f->language = f->four_players = UNSET;
+    f->profile_autoload = f->language = f->four_players = f->time_of_day = UNSET;
     f->ao_radius = UNSET;
     f->wii_data[0] = 0;
 }
@@ -37,6 +38,16 @@ void settings_unset(Settings *f)
 /* the values kept to what the passes take */
 static int clamp_msaa(int n) { return n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0; }
 static int clamp_aniso(int n) { return n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 1; }
+/* time_of_day's value: "day" / 1, "night" / 2, anything else the game's (0) */
+static int tod_of(const char *v)
+{
+    if (!_stricmp(v, "day") || !strcmp(v, "1"))
+        return 1;
+    if (!_stricmp(v, "night") || !strcmp(v, "2"))
+        return 2;
+    return 0;
+}
+
 static int smaa_of(const char *v)                    /* 0..4 or off / low / medium / high / ultra */
 {
     for (int k = 0; k < 5; k++)
@@ -78,6 +89,7 @@ static int set(Settings *s, const char *key, const char *v)
     else if (!_stricmp(key, "msaa")) s->msaa = clamp_msaa(atoi(v));
     else if (!_stricmp(key, "profile_autoload")) s->profile_autoload = atoi(v) != 0;
     else if (!_stricmp(key, "four_players")) s->four_players = atoi(v) != 0;
+    else if (!_stricmp(key, "time_of_day")) s->time_of_day = tod_of(v);
     else if (!_stricmp(key, "wii_data")) snprintf(s->wii_data, sizeof s->wii_data, "%s", v);
     else if (!_stricmp(key, "language")) {
         int l = language_of(v);
@@ -117,7 +129,7 @@ static void read_cfg(Settings *s, const char *path)
 static void read_env(Settings *s)
 {
     static const char *const KEYS[] = { "window", "fullscreen", "vsync", "ao", "ao_radius", "aniso", "mips", "smaa", "msaa",
-                                        "profile_autoload", "language", "four_players", "wii_data" };
+                                        "profile_autoload", "language", "four_players", "time_of_day", "wii_data" };
     for (size_t k = 0; k < sizeof KEYS / sizeof *KEYS; k++) {
         char name[32];
         snprintf(name, sizeof name, "RAMPAGE_%s", KEYS[k]);
@@ -142,6 +154,7 @@ int settings_arg(Settings *f, int argc, char **argv, int *i)
     else if (!strcmp(a, "--noautoload")) f->profile_autoload = 0;
     else if (!strcmp(a, "--four-players")) f->four_players = 1;
     else if (!strcmp(a, "--no-four-players")) f->four_players = 0;
+    else if (v && !strcmp(a, "--time-of-day")) { f->time_of_day = tod_of(v); ++*i; }
     else if (v && !strcmp(a, "--ao-radius")) { float r = (float)atof(v); if (r > 0) f->ao_radius = r; ++*i; }
     else if (v && !strcmp(a, "--smaa")) { f->smaa = smaa_of(v); ++*i; }
     else if (v && !strcmp(a, "--msaa")) { f->msaa = clamp_msaa(atoi(v)); ++*i; }
@@ -178,6 +191,7 @@ void settings_resolve(Settings *s, const Settings *f, int use_cfg)
     if (f->profile_autoload != UNSET) s->profile_autoload = f->profile_autoload;
     if (f->language >= 0) s->language = f->language;
     if (f->four_players != UNSET) s->four_players = f->four_players;
+    if (f->time_of_day != UNSET) s->time_of_day = f->time_of_day;
     if (f->wii_data[0]) snprintf(s->wii_data, sizeof s->wii_data, "%s", f->wii_data);
 }
 

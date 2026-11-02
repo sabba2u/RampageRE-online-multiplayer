@@ -54,6 +54,7 @@ typedef struct {
     int profile_shown;              /* 0x4D7FF8 & 0x200: a popup closed with a result but 3 (getShowProfile() 0) */
     int offer_create;               /* port extra (profile_autoload): no profile file yet, so the main menu's first focus
                                      * opens the list's Create New Profile, once a launch */
+    int time_of_day;                /* port extra (rampage.cfg time_of_day): 0 the game's, 1 day, 2 night */
     int four_players;               /* port extra (rampage.cfg four_players): the main menu offers 3 Player and 4 Player
                                      * where the game's other consoles do */
     char name[16];                  /* its name (the popup shows it) */

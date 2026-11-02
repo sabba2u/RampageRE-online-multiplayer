@@ -5152,6 +5152,8 @@ static void sheet_event(Shell *s, int ev, int button, int pad, float dt)
 static void cs_day_night_globe(Shell *s)               /* updateDayNightGlobe: the globe's light, and the text */
 {
     CitySel *c = &s->cs;
+    if (s->prof.time_of_day)                             /* [port extra] time_of_day: shown as the game will play it */
+        c->night = s->prof.time_of_day == 2;
     Node *l = find(ifc_root(s, IF_CITYSELECT), "lights");
     if (l) {
         float v = c->night ? 100.0f / 255.0f : 1.0f, g = (c->night ? 5.0f : 55.0f) / 255.0f;

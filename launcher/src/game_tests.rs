@@ -135,3 +135,23 @@ fn unlock_all_on_by_default_and_passed() {
 fn host_local_hosts_without_a_server() {
     assert_eq!(args(&Start::HostLan), vec!["--shell", "--four-players", "--host"]);
 }
+
+#[test]
+fn game_options_passed() {
+    let d = Settings::default();
+    assert_eq!(d.time_of_day, "game");
+    assert_eq!(d.smoothing, "off");
+    assert!(game_options(&d).is_empty(), "the defaults pass nothing: the game's own rampage.cfg decides");
+    let mut s = d.clone();
+    s.time_of_day = "night".into();
+    s.smoothing = "high".into();
+    assert_eq!(game_options(&s), vec!["--time-of-day", "night", "--smaa", "high", "--msaa", "4"]);
+    s.time_of_day = "day".into();
+    s.smoothing = "medium".into();
+    assert_eq!(game_options(&s), vec!["--time-of-day", "day", "--smaa", "medium"]);
+    s.time_of_day = "bogus".into();
+    s.smoothing = "bogus".into();
+    assert!(game_options(&s).is_empty());
+    let old: Settings = serde_json::from_str(r#"{"unlock_all": true}"#).unwrap();
+    assert_eq!((old.time_of_day.as_str(), old.smoothing.as_str()), ("game", "off"));
+}

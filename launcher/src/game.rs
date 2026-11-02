@@ -83,13 +83,31 @@ pub fn start_args(s: &Start, unlock_all: bool) -> Vec<String> {
     a
 }
 
+/// The Settings window's Game options as the game's flags: nothing for the defaults (its rampage.cfg decides).
+pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
+    let mut a: Vec<&str> = Vec::new();
+    match s.time_of_day.as_str() {
+        "day" => a.extend(["--time-of-day", "day"]),
+        "night" => a.extend(["--time-of-day", "night"]),
+        _ => {}
+    }
+    match s.smoothing.as_str() {
+        "medium" => a.extend(["--smaa", "medium"]),
+        "high" => a.extend(["--smaa", "high", "--msaa", "4"]),
+        _ => {}
+    }
+    a.into_iter().map(String::from).collect()
+}
+
 /// Started from its own folder (it finds its data there). Anything but Offline needs a game with online play.
 pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
     if !matches!(s, Start::Offline { .. }) && !supports_online(exe) {
         return Err(io::Error::other(OLD_GAME));
     }
     let mut c = Command::new(exe);
-    c.args(start_args(s, crate::settings::Settings::load().unlock_all));
+    let settings = crate::settings::Settings::load();
+    c.args(start_args(s, settings.unlock_all));
+    c.args(game_options(&settings));
     if let Some(dir) = exe.parent() {
         c.current_dir(dir);
     }

@@ -170,6 +170,35 @@ impl App {
                 {
                     self.settings = Settings::update(|s| s.unlock_all = unlock);
                 }
+                // the time of day and smoother edges, passed at each start (the game's own settings when left alone)
+                let mut tod = self.settings.time_of_day.clone();
+                let mut smooth = self.settings.smoothing.clone();
+                ui.horizontal(|ui| {
+                    ui.label("Time of day:");
+                    egui::ComboBox::from_id_salt("tod").selected_text(match tod.as_str() {
+                        "day" => "Always day", "night" => "Always night", _ => "As the game picks" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut tod, "game".to_string(), "As the game picks");
+                            ui.selectable_value(&mut tod, "day".to_string(), "Always day");
+                            ui.selectable_value(&mut tod, "night".to_string(), "Always night");
+                        });
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Smooth edges:");
+                    egui::ComboBox::from_id_salt("smooth").selected_text(match smooth.as_str() {
+                        "medium" => "Medium", "high" => "High", _ => "Game's setting" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut smooth, "off".to_string(), "Game's setting");
+                            ui.selectable_value(&mut smooth, "medium".to_string(), "Medium");
+                            ui.selectable_value(&mut smooth, "high".to_string(), "High");
+                        });
+                });
+                if tod != self.settings.time_of_day || smooth != self.settings.smoothing {
+                    self.settings = Settings::update(|s| {
+                        s.time_of_day = tod.clone();
+                        s.smoothing = smooth.clone();
+                    });
+                }
                 match &self.game {
                     Ok(g) => {
                         ui.label(RichText::new(g.display().to_string()).monospace().small());

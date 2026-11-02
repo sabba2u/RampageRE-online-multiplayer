@@ -240,6 +240,7 @@ typedef struct Viewer {
     float play_now;                                  /* the world's play time (gWorld.curTime): the buildings' alarms */
     int profile_autoload;                            /* rampage.cfg profile_autoload (port extra, settings.h) */
     int four_players;                                /* rampage.cfg four_players (port extra, settings.h) */
+    int time_of_day;                                 /* rampage.cfg time_of_day: 0 the game's, 1 day, 2 night */
     int game_block;                                  /* a block the game moved on to, to build after the frame; -1 */
     int left_block;                                  /* the block the game left, laid at -41 by that build; -1 */
     int game_built;                                  /* this build is the game's: keep the game going */
@@ -7355,6 +7356,7 @@ static void shell_profile(Viewer *v, ShellProfile *sp)
     sp->profile_shown = v->prof.profile_shown;
     sp->offer_create = v->profile_autoload && !v->prof_on_card && v->prof_write;
     sp->four_players = v->four_players;
+    sp->time_of_day = v->time_of_day;
     snprintf(sp->name, sizeof sp->name, "%s", v->prof.block.name);
     for (int p = 0; p < 4; p++)
         for (int m = 0; m < v->prof.nmonsters && m < SHELL_MONSTERS; m++)
@@ -7988,7 +7990,7 @@ static void shell_start_game(Viewer *v)
     v->attract = g->play_type == GP_ATTRACT;
     v->attract_button = 0;
     v->play_type = v->attract ? 0 : g->play_type;
-    v->night = g->night;
+    v->night = v->time_of_day ? v->time_of_day == 2 : g->night;   /* (time_of_day: every city by day or night) */
     if (v->attract) {                                /* GameStatus +0x0 / +0x4: the current record's */
         v->prof.current.seed[0] = g->seed[0];
         v->prof.current.seed[1] = g->seed[1];
@@ -8925,6 +8927,7 @@ static int viewer_main(int argc, char **argv)
         v.prof_path = "rampage_profile.bin";
     v.profile_autoload = gfx.profile_autoload;
     v.four_players = gfx.four_players;
+    v.time_of_day = gfx.time_of_day;
     int prof_read = !newprofile && v.prof_write ? profile_read(&v.prof, v.prof_path) : -1;
     if (prof_read > 0) {
         printf("profile %s\n", v.prof_path);

@@ -25,6 +25,9 @@ typedef struct {
      * 3 Player and 4 Player as the game's other consoles do (King of the City, King of the World, the Timed Run; never
      * the campaign); 0 the PS2's one or two */
     int four_players;
+    /* time_of_day= (port extra): game (0, the default) as the game picks it (the campaign's cities' own, City Select's
+     * toggle elsewhere), day (1) every city by day, night (2) every city by night; --time-of-day game|day|night */
+    int time_of_day;
     /* wii_data= (port extra, docs/WII_PLAN.md): the player's own extracted Wii disc (Dolphin's Extract Entire Disc: the
      * folder holding DATA, or its DATA/files), whose ten monsters and Dallas the port adds; "" (the default) none, on
      * the Switch, the Vita and Android the home folder's wii when there is one (main.c) */
