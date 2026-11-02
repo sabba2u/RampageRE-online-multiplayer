@@ -1629,8 +1629,6 @@ struct Hud {
     /* Hud.scr's objects and state */
     Node *health, *rage, *score, *heads, *blocks, *num_text, *block_text, *block;
     float group_p[3];                                    /* player 2's "group" where Hud1.ifc has it (hud_set_players) */
-    int middle;                                          /* port extra: players 5 .. 8 (RAMPAGE_MAX_PLAYERS 8): their
-                                                          * panels in a row under the clock, kept in the middle */
     float hp, hp_max, energy, energy_max;
     int points, lives, blocks_won;
     int prev_points, prev_lives;
@@ -1697,20 +1695,8 @@ void hud_set_players(Hud *h, int num_players)
     if (!h || !h->hud)
         return;
     h->cfg.num_players = num_players;
-    /* port extra: players 5 .. 8 (a build with more than 4, RAMPAGE_MAX_PLAYERS): Hud1.ifc's panel, four to a row
-     * under the clock (the first row's panels at 60, the clock between players 2 and 3), a step of 110 (the panels'
-     * in Hud0 .. 3), the row's panels together in the screen's middle; in a wide window kept there (hud_quads) */
-    if (h->cfg.player >= 4) {
-        Node *g = layout_find(h->hud->root, "group");
-        int i = (h->cfg.player - 4) % 4, row = (h->cfg.player - 4) / 4;
-        int in_row = num_players - 4 - 4 * row;
-        in_row = in_row < 1 ? 1 : in_row > 4 ? 4 : in_row;
-        if (g) {
-            g->p[0] = HUD_SCREEN_W / 2 - 55.0f * in_row + 110.0f * i + 5;
-            g->p[1] = 116 + 56.0f * row;
-        }
+    if (num_players > 4)                                 /* port extra: more than 4: one row (hud_quads) */
         return;
-    }
     Node *g = h->cfg.player == 1 ? layout_find(h->hud->root, "group") : NULL;
     if (!g)
         return;
@@ -1775,10 +1761,6 @@ Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg
         if (g)
             memcpy(h->group_p, g->p, sizeof h->group_p);
     }
-    /* port extra: players 5 .. 8 (a build with more than 4, RAMPAGE_MAX_PLAYERS): Hud1.ifc's panel, four to a row of
-     * its width (110: the panels' step in Hud0 .. 3), the row's middle the screen's, under the clock (the first row's
-     * panels at 60, the clock between players 2 and 3); in a wide window kept in the middle (hud_quads) */
-    h->middle = cfg->player >= 4;
     hud_set_players(h, cfg->num_players);
     h->hp_max = 200;
     h->energy_max = 100;
@@ -4926,14 +4908,51 @@ static int to_side(HudQuad *q, int n)
     return n;
 }
 
+/* port extra: more than 4 players (a build with RAMPAGE_MAX_PLAYERS 8): every player's panel made smaller, all in one
+ * row across the top of the window, player 1's at the left (the panels' 110 wide at full size, as Hud0 .. 3 step
+ * them; at most that size); the clock under the row (HUD_ROW_CLOCK). Laid out as drawn: the window's width (g_side) */
+#define HUD_ROW_PANEL 110.0f
+static float row_scale(int num_players)
+{
+    float step = (HUD_SCREEN_W + 2 * g_side - 24) / (float)num_players, s = step / (HUD_ROW_PANEL + 8);
+    return s > 1 ? 1 : s;
+}
+
+static void row_place(const Hud *h)
+{
+    Node *g = layout_find(h->hud->root, "group");
+    int n = h->cfg.num_players, i = h->cfg.player;
+    if (!g || i < 0 || i >= n)
+        return;
+    float step = (HUD_SCREEN_W + 2 * g_side - 24) / (float)n, s = row_scale(n);
+    g->m = s;
+    g->p[0] = -g_side + 12 + step * i + (step - HUD_ROW_PANEL * s) / 2;
+    g->p[1] = 18 + 42 * s;                               /* (the panel's top, its score, about 20 above its place) */
+}
+
+static void shift_quads_y(HudQuad *q, int n, float dy)
+{
+    for (int i = 0; i < n; i++) {
+        q[i].y0 += dy;
+        q[i].y1 += dy;
+        for (int k = 0; k < 4; k++)
+            q[i].cy[k] += dy;
+    }
+}
+
 int hud_quads(const Hud *h, HudQuad *out, int max)
 {
     if (!h || !out || max <= 0)
         return 0;
-    int n = banners_emit(h, out, max);
+    int n = banners_emit(h, out, max), row = h->hud && h->cfg.num_players > 4;
+    if (row)
+        row_place(h);                                    /* (the layout's own node: the window may have changed) */
     int nh = emit_layout(out + n, max - n, &h->gui, h->hud);
-    n += h->middle ? nh : to_side(out + n, nh);          /* (players 5 .. 8: in the middle) */
-    n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->clock));
+    n += row ? nh : to_side(out + n, nh);
+    int nc = to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->clock));
+    if (row)                                             /* the clock under the row of panels */
+        shift_quads_y(out + n, nc, 18 + 42 * row_scale(h->cfg.num_players) + 46 * row_scale(h->cfg.num_players) - 36);
+    n += nc;
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->attract));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->cs.L));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->cs.L2));
