@@ -264,6 +264,17 @@ const char *city_game_block(City *c, int start_block)
     return i >= 0 && (uint32_t)i < n ? record_str(list, r[i]) : NULL;
 }
 
+void city_game_block_range(City *c, int *first, int *last)
+{
+    Group list = group_sub(group_sub(c->world, "BlockData"), "BlockList");
+    Record r[MAX_REC];
+    int n = (int)group_items(list, r, MAX_REC);
+    *first = (int)group_num(c->world, "BlockStart", 0);
+    *last = (int)group_num(c->world, "BlockEnd", (float)(n - 3));
+    if (*last < *first)
+        *last = *first;
+}
+
 uint32_t city_blocks(City *c, const char **names, uint32_t max)
 {
     Group list = group_sub(group_sub(c->world, "BlockData"), "BlockList");

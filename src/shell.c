@@ -3473,8 +3473,18 @@ static void am_event(Shell *s, int ev, int pad, float dt)
 }
 
 /* ---------------------------------------------------------------- MainMenu.scr [R] */
-static const char *const PLAY_MODE_TITLES[4] = { "PlayMode_Campaign", "PlayMode_KingOfTheCity",
-                                                 "PlayMode_KingOfTheWorld", "PlayMode_TimedRun" };
+static const char *const PLAY_MODE_TITLES[5] = { "PlayMode_Campaign", "PlayMode_KingOfTheCity",
+                                                 "PlayMode_KingOfTheWorld", "PlayMode_TimedRun",
+                                                 "PlayMode_BossRumble" };   /* (port extra: 6, Boss Rumble) */
+#define PLAY_MODE_LAST 6                                 /* (the game's: 5, the Timed Run) */
+/* a play mode's title: its localized key; Boss Rumble's, which the strings lack, as words (the owner's art later) */
+static void play_mode_title(Shell *s, Node *nd, int mode)
+{
+    if (mode == 6 && !loc_find(&s->gui, PLAY_MODE_TITLES[4]))
+        node_text(nd, "Boss Rumble");
+    else
+        node_localize(&s->gui, nd, PLAY_MODE_TITLES[mode - 2]);
+}
 
 static void mm_retro_selection(Shell *s)               /* handleRetroGameSelection */
 {
@@ -3641,7 +3651,7 @@ static void mm_play_mode_select(Shell *s)              /* processPlayModeSelect 
         show(find(m->lb_players, "3 Player"), m->play_mode != 2 || s->prof.four_players);
         show(find(m->lb_players, "4 Player"), m->play_mode != 2 || s->prof.four_players);
     }
-    show(find(m->lb_players, "1 Player"), m->play_mode == 2 || m->play_mode == 5);
+    show(find(m->lb_players, "1 Player"), m->play_mode == 2 || m->play_mode == 5 || m->play_mode == 6);
     if (s->prof.four_players && m->lb_players)          /* [port extra] the PS2's layout has 3 Player and 4 Player on
                                                           * one place (y 113.5, after 41.5 and 77.5): the shown items
                                                           * one under another, a step apart */
@@ -3808,7 +3818,7 @@ static void mm_event(Shell *s, int ev, int button, int pad, float dt)
         if (m->state == 0 && get_fade(m->icons) < 1.0f)
             fader_go(&m->fd, m->icons, 1);
         m->play_mode = s->gs.play_type > 2 ? s->gs.play_type : 2;
-        node_localize(&s->gui, m->playtype, PLAY_MODE_TITLES[m->play_mode - 2]);
+        play_mode_title(s, m->playtype, m->play_mode);
         mm_icons(s, 0);
         mm_reset_cheat(s);
         controller_table(s, 1);
@@ -3875,9 +3885,9 @@ static void mm_event(Shell *s, int ev, int button, int pad, float dt)
     } else if (ev == EV_LEFT || ev == EV_RIGHT) {
         if (m->state == 0) {
             m->play_mode += ev == EV_RIGHT ? 1 : -1;
-            if (m->play_mode < 2) m->play_mode = 5;
-            if (m->play_mode > 5) m->play_mode = 2;
-            node_localize(&s->gui, m->playtype, PLAY_MODE_TITLES[m->play_mode - 2]);
+            if (m->play_mode < 2) m->play_mode = PLAY_MODE_LAST;
+            if (m->play_mode > PLAY_MODE_LAST) m->play_mode = 2;
+            play_mode_title(s, m->playtype, m->play_mode);
             sound(s, "Rollover");
         } else if (m->state == 4) {
             m->retro_game += ev == EV_RIGHT ? 1 : -1;
@@ -4669,7 +4679,7 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
             m->show_p1 = 0;
             fader_init(&m->fd, m->p1_dialog, 0);
             int mode = s->gs.play_type > 2 ? s->gs.play_type : 2;
-            node_localize(&s->gui, find(r, "play_mode"), PLAY_MODE_TITLES[mode - 2]);
+            play_mode_title(s, find(r, "play_mode"), mode);
             for (int i = 0; i < m->num_players && i < 4; i++) {
                 m->pl[i].spin = 0;
                 ms_sides(m->pl[i].base, 1);
@@ -4728,7 +4738,8 @@ static void ms_event(Shell *s, int ev, int button, int pad, float dt)
         }
         if (s->choose_monster && !s->city_destroyed)
             cr_start_game(s);
-        else if (s->gs.play_type == 4) {                 /* King of the World: city 0, block 0 */
+        else if (s->gs.play_type == 4 || s->gs.play_type == 6) {   /* King of the World: city 0, block 0 (Boss
+                                                          * Rumble: the viewer draws its city and block) */
             s->gs.city_index = 0;
             s->gs.start_block = 0;
             snprintf(s->gs.city, sizeof s->gs.city, "%s", city_name(s, 0));
@@ -5092,7 +5103,7 @@ static void sheet_event(Shell *s, int ev, int button, int pad, float dt)
         col_255(c, ids[mc & 3][0], ids[mc & 3][1], ids[mc & 3][2], 255);
         set_col(gtp, c);
         int mode = s->gs.play_type > 2 ? s->gs.play_type : 2;
-        node_localize(&s->gui, find(r, "play_mode"), PLAY_MODE_TITLES[mode - 2]);
+        play_mode_title(s, find(r, "play_mode"), mode);
         node_localize(&s->gui, find(r, "nb_grow"), "Button_ZoomIn");
         sheet_update_selection(s, 0);
         return;

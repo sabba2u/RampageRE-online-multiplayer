@@ -45,6 +45,7 @@
 #include <ctype.h>
 #include <time.h>
 #include "boss.h"
+#include "rumble.h"
 #include "streetobj.h"
 #include "parade.h"
 #include "collide.h"
@@ -1559,6 +1560,8 @@ static void build(Viewer *v)
             building_set_one_hit((v->prof.cheats & PCH_40000000) != 0);
             if (v->game && game_load_city(v->game, CITIES[v->city_index]) == 0) {
                 game_start(v->game);
+                if (play_type(v) == GP_BOSS_RUMBLE)
+                    printf("rumble: city %s block %s\n", CITIES[v->city_index], v->blocks[v->block]);
                 /* the city's total and flags [R 0x33DB90]: a campaign city resumed at a later block (the start block
                  * the profile's status has) keeps its checkpoint's, a challenge missed before staying missed; any
                  * other start begins at 0 and "All Challenges Met" until one is not (the world's start clears them
@@ -1628,6 +1631,7 @@ static void build(Viewer *v)
 
 /* block: the index in the city's block names (city_blocks); game_block >= 0 instead: a game's start block, a
  * BlockList index (the profile's saved one), its block found by name */
+#define OPEN_RANDOM_BLOCK (-2)                       /* open_city's game_block: one at random (Boss Rumble) */
 static int open_city(Viewer *v, int index, uint32_t block, int game_block)
 {
     City *c = city_open(&v->vol, CITIES[index]);
@@ -1645,6 +1649,11 @@ static int open_city(Viewer *v, int index, uint32_t block, int game_block)
     if (v->roster.n && !v->wii_roster.n)             /* its names are the old city's book's: read from this one's */
         reveal_roster_load(&v->roster, city_book_group(c, "ShellData", "MonsterData"));
     v->nblocks = city_blocks(c, v->blocks, 64);
+    if (game_block == OPEN_RANDOM_BLOCK) {           /* (Boss Rumble from the menu: any of the city's own blocks) */
+        int first, last;
+        city_game_block_range(c, &first, &last);
+        game_block = first + (int)(rumble_rand(&v->world_rng) % (unsigned)(last - first + 1));
+    }
     const char *at = game_block >= 0 ? city_game_block(c, game_block) : NULL;
     for (uint32_t i = 0; at && i < v->nblocks; i++)
         if (!_stricmp(v->blocks[i], at)) {
@@ -8051,7 +8060,11 @@ static void shell_start_game(Viewer *v)
     /* the start block is the BlockList's index (Profile.getStartBlock: the block after the last one won); the names'
      * list keeps the repeated first block once, so taken as their index it began one block on, the block after the
      * one to play again skipped */
-    open_city(v, city, 0, v->last_game.start_block > 0 ? v->last_game.start_block : 0);   /* (g is gone) */
+    if (v->play_type == GP_BOSS_RUMBLE) {            /* (port extra) Boss Rumble: a city and a block at random */
+        city = (int)(rumble_rand(&v->world_rng) % NCITIES);
+        open_city(v, city, 0, OPEN_RANDOM_BLOCK);
+    } else
+        open_city(v, city, 0, v->last_game.start_block > 0 ? v->last_game.start_block : 0);   /* (g is gone) */
     const ShellGame *lg = &v->last_game;
     ap_event(v->ap, "what=game_start city=%s type=%d players=%d bots=%d start_block=%d night=%d monsters=%s,%s,%s,%s",
              CITIES[city], lg->play_type, lg->num_players, lg->num_bots, lg->start_block, lg->night, lg->monster_name[0],
@@ -8428,8 +8441,14 @@ static void autopilot_shell(Viewer *v, float dt)
                                                       * or 2; four_players 3 and 4 too, the campaign's as well) */
         if (v->ap_demos)
             ev = 0;
-        else if (sv.mm_state == 0)
+        else if (sv.mm_state == 0) {
             ev = sv.mm_play_mode != want ? HUD_EV_RIGHT : HUD_EV_ACCEPT;
+            static int menu_shot;                    /* (--ap-shots: Boss Rumble's title on the menu, once) */
+            if (want == GP_BOSS_RUMBLE && sv.mm_play_mode == want && !menu_shot++) {
+                ap_want_shot(v->ap, "menu");
+                ev = 0;
+            }
+        }
         else if (sv.mm_state == 1)
             ev = sv.mm_players < np - 1 ? HUD_EV_DOWN : sv.mm_players > np - 1 ? HUD_EV_UP : HUD_EV_ACCEPT;
         else if (sv.mm_state == 2)
@@ -8837,10 +8856,10 @@ static int viewer_main(int argc, char **argv)
         else if (strcmp(argv[i], "--card-free-kb") == 0 && i + 1 < argc) v.card_free_kb = atoi(argv[++i]);
         else if (strcmp(argv[i], "--profile") == 0 && i + 1 < argc) v.prof_path = argv[++i];
         else if (strcmp(argv[i], "--cheat") == 0 && i + 1 < argc) cheat = argv[++i];
-        else if (strcmp(argv[i], "--play") == 0 && i + 1 < argc) {   /* campaign, kingcity, kingworld, timed */
+        else if (strcmp(argv[i], "--play") == 0 && i + 1 < argc) {   /* campaign, kingcity, kingworld, timed, rumble */
             const char *m = argv[++i];
             v.play_type = !_stricmp(m, "kingcity") ? GP_KING_CITY : !_stricmp(m, "kingworld") ? GP_KING_WORLD :
-                          !_stricmp(m, "timed") ? GP_TIMED_RUN : GP_CAMPAIGN;
+                          !_stricmp(m, "timed") ? GP_TIMED_RUN : !_stricmp(m, "rumble") ? GP_BOSS_RUMBLE : GP_CAMPAIGN;
         }
         else if (strcmp(argv[i], "--cam") == 0 && i + 5 < argc) {   /* x y z yaw pitch (degrees): a fixed view */
             for (int k = 0; k < 5; k++)

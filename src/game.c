@@ -48,6 +48,7 @@ struct Game {
     int ni, ni_fallback; char ni_name[64];           /* +0x10 the running NI */
     int fin, fin_fallback; char fin_name[64];        /* +0x14 IsBlockFinished */
     int level_done, game_over;                       /* +0x18, +0x19 */
+    int rumble_won;                                  /* (Boss Rumble: game_set_won) */
     float dt;                                        /* this frame's (the world's +0x4, 0x4D17A4) */
     /* Levels.bsf's globals [R Levels.scr] */
     float ni_time, ni_frequency;
@@ -156,6 +157,8 @@ static Group parent_of(const Game *g, Group grp)     /* ParentPropertySet = "Gro
 static float clock_left(const Game *g)               /* 0x347DC0 [R] */
 {
     float t = g->running ? (float)g->now : g->stop;
+    if (g->cfg.play_type == GP_BOSS_RUMBLE)          /* (port extra: the seconds survived) */
+        return t > g->start ? t - g->start : 0;
     float left = g->clock_limit - (t - g->start);
     return left < 0 ? 0 : left;
 }
@@ -163,7 +166,17 @@ static float clock_left(const Game *g)               /* 0x347DC0 [R] */
 /* 0x347D70: the clock is out when it is armed or running and the world's clock is the bonus time (+0x3C) or more past
  * the start (+0x34), stopped or not; not the time left: an unarmed block's clock is out at its 0:00, a boss block's
  * (TimeLimit 600, bonus time 480) with 2:00 still shown [R] */
-int game_time_up(const Game *g) { return g && (g->enabled || g->running) && !((float)g->now - g->start < g->max_time); }
+void game_set_won(Game *g)
+{
+    if (g && g->cfg.play_type == GP_BOSS_RUMBLE)
+        g->rumble_won = 1;
+}
+
+int game_time_up(const Game *g)
+{
+    return g && g->cfg.play_type != GP_BOSS_RUMBLE && (g->enabled || g->running) &&
+           !((float)g->now - g->start < g->max_time);
+}
 
 static void clock_start(Game *g)                     /* 0x347EA0 [R] */
 {
@@ -208,7 +221,7 @@ static void clock_block(Game *g)
     g->visible = 0;
     Group blk = block_def(g, g->cur), par = parent_of(g, blk);
     Group tb = blk.at ? group_sub(blk, "TimeBonus") : blk, ptb = par.at ? group_sub(par, "TimeBonus") : par;
-    if (!tb.at && !ptb.at)
+    if (!tb.at && !ptb.at && g->cfg.play_type != GP_BOSS_RUMBLE)
         return;                                      /* [R 0x347FB8]: the rest stays as it was */
     Group def = either(tb, ptb, "BonusDef");
     if (def.at) {
@@ -234,6 +247,10 @@ static void clock_block(Game *g)
     if (g->cfg.play_type == GP_TIMED_RUN) {          /* the time left carries on, plus this block's */
         g->clock_limit += g->limit;
         g->enabled = 1;
+    } else if (g->cfg.play_type == GP_BOSS_RUMBLE) {   /* (port extra) counting up, no limit, always shown */
+        g->clock_limit = g->limit = 0;
+        g->enabled = 0;
+        g->visible = 1;
     } else if (g->cfg.play_type == GP_ATTRACT) {     /* a minute at most */
         g->clock_limit = 60;
         if (g->limit != 0 && g->clock_limit > g->limit)
@@ -278,6 +295,7 @@ static void status_reset(Game *g)                    /* 0x33DB90 [R] */
                 g->p[i].cities_won = 0;
             break;
         case GP_TIMED_RUN: g->lives[i] = 0; break;
+        case GP_BOSS_RUMBLE: g->lives[i] = 3; break; /* (as the campaign's) */
         default: break;
         }
     }
@@ -845,7 +863,7 @@ static void block_won(Game *g)
     }
     for (int i = 0; i < np(g); i++)                  /* 0x2DCB40: a monster still down comes back, for a life */
         cancel_respawn(g, i, 0);
-    g->level_done = !(g->cur < g->last);
+    g->level_done = !(g->cur < g->last) || g->cfg.play_type == GP_BOSS_RUMBLE;   /* (Boss Rumble: one block) */
     if (!g->level_done)
         activate_next_block(g, 1);
     if (g->level_done && g->city_total >= g->par_score)
@@ -860,7 +878,7 @@ static void block_won(Game *g)
     checkpoint_save(g);
     if (g->level_done && g->cfg.play_type == GP_CAMPAIGN && g->cfg.city_index == g->cfg.num_cities - 1)
         g->world_done = 1;
-    start_results(g, g->cfg.play_type == GP_CAMPAIGN ? GR_SCREEN_RESULTS :
+    start_results(g, g->cfg.play_type == GP_CAMPAIGN || g->cfg.play_type == GP_BOSS_RUMBLE ? GR_SCREEN_RESULTS :
                      g->cfg.play_type == GP_TIMED_RUN ? GR_SCREEN_TIMED_RUN : GR_SCREEN_KING_BLOCK);
     start_ni(g, "ResultsNI", !g->level_done);
 }
@@ -947,7 +965,7 @@ static void transition(Game *g)
             clear_points(&g->p[i]);
         if (g->select || g->quit)
             leave(g, 0, -1);
-        if (g->level_done && pt == GP_TIMED_RUN) {
+        if (g->level_done && (pt == GP_TIMED_RUN || pt == GP_BOSS_RUMBLE)) {
             g->city_destroyed = 0;
             leave(g, 0, -1);
         } else if (g->level_done)
@@ -984,6 +1002,7 @@ static void transition(Game *g)
             checkpoint_restore(g);                   /* three lives, the checkpoint's block */
         status_reset(g);                             /* the points */
         g->game_over = 0;
+        g->rumble_won = 0;
         if (pt == GP_TIMED_RUN)
             g->cur = g->first - 1;
         else
@@ -1051,7 +1070,9 @@ static void step(Game *g)
     }
     if (g->state == GS_PLAY) {
         int finished;                                /* IsBlockFinished, every frame */
-        if (g->fin == FN_HOST) {
+        if (g->cfg.play_type == GP_BOSS_RUMBLE)      /* (its buildings don't count: the last wave beaten) */
+            finished = g->rumble_won;
+        else if (g->fin == FN_HOST) {
             float r = g->host.script ? g->host.script(g->host.ctx, g->fin_name, 0) : -1;
             finished = r >= 0 ? r > 0 : is_finished(g, g->fin_fallback);
         } else
@@ -1066,7 +1087,8 @@ static void step(Game *g)
             adv = 1;
         } else if ((g->cfg.cheats & 0x10000u) && (g->cfg.cheats & 0x20000u) && g->cur < g->last)
             adv = 1;                                 /* [R 0x324930] cheat 874098: the block is won at once */
-        if (!g->game_over && g->cfg.play_type == GP_CAMPAIGN) {   /* game over: fewer lives than monsters down */
+        if (!g->game_over && (g->cfg.play_type == GP_CAMPAIGN || g->cfg.play_type == GP_BOSS_RUMBLE)) {   /* game
+                                                      * over: fewer lives than monsters down */
             int dead = 0;
             for (int i = 0; i < np(g); i++)
                 dead += g->hp[i] <= 0;

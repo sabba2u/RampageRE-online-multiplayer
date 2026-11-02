@@ -452,6 +452,9 @@ int city_block_index(City *c, const char *name);
  * max(start block, BlockStart) (0x2B74D0); NULL past the list. The BlockList repeats its first block (BlockStart 1),
  * which city_blocks' names keep once */
 const char *city_game_block(City *c, int start_block);
+/* (port extra, Boss Rumble) the game's blocks: BlockStart .. BlockEnd (default the list's count - 3), the boss blocks
+ * after them left out */
+void city_game_block_range(City *c, int *first, int *last);
 /* a model's bounds in its own frame (its meshes' vertices); 0 = ok */
 int city_shape_box(City *c, const char *shape, float min[3], float max[3]);
 /* the sphere the model keeps (the union of its meshes' header spheres); 0 = ok */

@@ -131,7 +131,7 @@ void ap_event(Autoplay *a, const char *fmt, ...)
 static const char *type_name(int pt)
 {
     return pt == GP_ATTRACT ? "demo" : pt == GP_CAMPAIGN ? "campaign" : pt == GP_KING_CITY ? "kingcity" :
-           pt == GP_KING_WORLD ? "kingworld" : pt == GP_TIMED_RUN ? "timed" : "?";
+           pt == GP_KING_WORLD ? "kingworld" : pt == GP_TIMED_RUN ? "timed" : pt == GP_BOSS_RUMBLE ? "rumble" : "?";
 }
 
 static void want_shot(Autoplay *a, int reason, const char *tag)

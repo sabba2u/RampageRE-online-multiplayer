@@ -1756,7 +1756,7 @@ Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg
         }
     }
     if (h->num_text)
-        h->num_text->visible = gt == HUD_PLAY_CAMPAIGN;
+        h->num_text->visible = gt == HUD_PLAY_CAMPAIGN || gt == HUD_PLAY_RUMBLE;   /* (Boss Rumble: lives too) */
     if (cfg->player == 1) {
         Node *g = layout_find(r, "group");
         if (g)

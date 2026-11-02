@@ -59,7 +59,8 @@ enum {
 };
 
 /* gCommon.getPlayType() [R MainMenu.scr: playModeTitles 2 .. 5] */
-enum { GP_ATTRACT = 0, GP_CAMPAIGN = 2, GP_KING_CITY = 3, GP_KING_WORLD = 4, GP_TIMED_RUN = 5 };
+enum { GP_ATTRACT = 0, GP_CAMPAIGN = 2, GP_KING_CITY = 3, GP_KING_WORLD = 4, GP_TIMED_RUN = 5,
+       GP_BOSS_RUMBLE = 6 };                         /* (port extra: Boss Rumble, docs/superpowers/specs) */
 
 /* WorldGuiDriver::startResults(n): the results screen [R WorldGuiDriver.scr] */
 enum {
@@ -188,6 +189,9 @@ void game_add_points(Game *g, int slot, int cat, int amount);
 /* <City>::setBossBlockFinished, the boss AIInstance's CompletionCallback; centre_down: New York's centre building
  * (0, 10, 1) is falling or destroyed */
 void game_set_boss_finished(Game *g, int centre_down);
+/* Boss Rumble (port extra): its last wave beaten, the block (the run) won; its clock counts up (game_clock gives the
+ * seconds survived), never runs out, and the run is over when every player's lives are gone */
+void game_set_won(Game *g);
 /* gWorld +0x828, the state frand and findPointInRubble share (0x106BD0), and a draw of frand from it */
 uint32_t *game_rng(Game *g);
 float game_frand(Game *g);

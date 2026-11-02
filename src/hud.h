@@ -34,7 +34,8 @@ enum {
     HUD_PLAY_CAMPAIGN = 2,   /* the lives counter "xN" by the head */
     HUD_PLAY_KING_CITY = 3,  /* King of the City / World: the blocks icon "xN" instead of the head */
     HUD_PLAY_KING_WORLD = 4,
-    HUD_PLAY_TIMED = 5
+    HUD_PLAY_TIMED = 5,
+    HUD_PLAY_RUMBLE = 6      /* (port extra) Boss Rumble: the lives as the campaign's, the clock counting up */
 };
 
 typedef struct {
