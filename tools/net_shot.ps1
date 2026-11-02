@@ -1,5 +1,5 @@
 <#
-net_shot.ps1 - a picture of each running RampageRE-dev.exe window (the host's and the guest's), side by side, into
+net_shot.ps1 - a picture of each running RampageRE-dev.exe window (the host's and the guest's), side by side (a 2 x 2 grid for 3 or 4), into
 build\nettest\<name>.png: PrintWindow on each window, so whatever covers them is not in it.
   .\tools\net_shot.ps1 -Name both_1
 #>
@@ -30,11 +30,16 @@ $imgs = foreach ($p in $procs) {
     $bmp
 }
 $imgs = @($imgs | Where-Object { $_ -is [System.Drawing.Bitmap] })
-$W = 0; $H = 0
-foreach ($b in $imgs) { $W += $b.Width; if ($b.Height -gt $H) { $H = $b.Height } }
-$all = New-Object System.Drawing.Bitmap $W, $H
-$g = [System.Drawing.Graphics]::FromImage($all); $x = 0
-foreach ($b in $imgs) { $g.DrawImage($b, $x, 0); $x += $b.Width; $b.Dispose() }
+# one row for two windows; a 2 x 2 grid for three or four (host top left, then the guests in the order they started)
+$cols = if ($imgs.Count -gt 2) { 2 } else { $imgs.Count }
+$cw = 0; $ch = 0
+foreach ($b in $imgs) { if ($b.Width -gt $cw) { $cw = $b.Width }; if ($b.Height -gt $ch) { $ch = $b.Height } }
+$rows = [math]::Ceiling($imgs.Count / $cols)
+$all = New-Object System.Drawing.Bitmap ($cw * $cols), ($ch * $rows)
+$g = [System.Drawing.Graphics]::FromImage($all)
+for ($i = 0; $i -lt $imgs.Count; $i++) {
+    $g.DrawImage($imgs[$i], ($i % $cols) * $cw, [math]::Floor($i / $cols) * $ch); $imgs[$i].Dispose()
+}
 $g.Dispose()
 $to = Join-Path $root "build\nettest\$Name.png"
 $all.Save($to); $all.Dispose()

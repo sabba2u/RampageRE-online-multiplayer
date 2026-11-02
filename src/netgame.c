@@ -2112,9 +2112,10 @@ static void netgame_frame(Viewer *v, Window *w, double now)
     if (getenv("RAMPAGE_NET_TAILS") && now - tail_trace > 1) {   /* the tails' springs, each monster's (a test) */
         tail_trace = now;
         for (int k = 0; k < v->nmon; k++)
-            printf("net: tail %d: links %d weight %.2f target %.2f state %s\n", k, v->mon[k].tail.n,
-                   v->mon[k].tail.weight, v->mon[k].tail.target,
-                   v->mon[k].have_graph ? v->mon[k].graph.states[v->mon[k].run.state].name : "-");
+            printf("net: tail %d: links %d weight %.2f target %.2f state %s points %d lives %d\n", k,
+                   v->mon[k].tail.n, v->mon[k].tail.weight, v->mon[k].tail.target,
+                   v->mon[k].have_graph ? v->mon[k].graph.states[v->mon[k].run.state].name : "-",
+                   v->game ? game_points(v->game, k, GPT_TOTAL) : -1, v->game ? game_lives(v->game, k) : -1);
     }
     if (!DEBUG_TITLE)                                /* (the developer build's title says it every half second) */
         netgame_plain_title(v, w);
@@ -2385,7 +2386,8 @@ static void netgame_pads(Viewer *v, const Window *w)
         static int was;
         if (!t0)
             t0 = net_now();
-        double t = net_now() - t0, c = fmod(t, 8.0);
+        /* a number (net4_test.ps1: the guest's seat) puts each guest's pattern 2.7 s apart, so they move differently */
+        double t = net_now() - t0 + atof(getenv("RAMPAGE_NET_TESTPAD")) * 2.7, c = fmod(t, 8.0);
         memset(&mine, 0, sizeof mine);
         int on = 0, btn = fmod(t, 1.8) < 0.6 ? MV_SQUARE : fmod(t, 1.8) < 1.2 ? MV_TRIANGLE : MV_CIRCLE;   /* (circle:
                                                       * a window person grabbed, eaten) */
