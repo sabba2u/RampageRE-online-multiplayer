@@ -42,7 +42,32 @@ typedef struct {
     int have_remote;
     int sys_run[NET_DSYS];                           /* its digests' systems that differed in a row */
     char addr[64];                                   /* NSL_ONLINE: its guest's "ip:port" (the launcher's list) */
+    int snap_ack;                                    /* the newest NM_SNAP its guest has (its NM_PAD's last u16), -1 none */
 } Slot;
+
+/* NM_SNAP as a delta (NET_PROTO 6, netwire.h net_delta_*): the host keeps its last SNAP_SENT snapshots by seq and sends
+ * each guest the new one against the newest it says it has (NM_PAD's last u16), else against nothing; the guest keeps
+ * the last SNAP_GOT it made, drops one whose base it has not, and the buffer gets the very bytes the host's game wrote */
+#define SNAP_SENT 32
+#define SNAP_GOT 64
+#define SNAP_NONE 0xFFFF
+typedef struct { int seq, len; uint8_t data[NET_SNAP_MAX]; } SnapCopy;
+static SnapCopy snap_sent[SNAP_SENT], snap_got[SNAP_GOT];
+static int snap_seq, snap_latest = -1, snap_ready;
+static void snap_rings_clear(void)
+{
+    for (int i = 0; i < SNAP_SENT; i++) snap_sent[i].seq = -1;
+    for (int i = 0; i < SNAP_GOT; i++) snap_got[i].seq = -1;
+    snap_latest = -1;
+    snap_ready = 1;
+}
+static const SnapCopy *snap_find(const SnapCopy *ring, int n, int seq)
+{
+    if (!snap_ready)
+        snap_rings_clear();
+    const SnapCopy *c = seq >= 0 ? &ring[seq % n] : NULL;
+    return c && c->seq == seq ? c : NULL;
+}
 
 static struct {
     int role, state, port;
@@ -75,6 +100,7 @@ static struct {
     /* the panel's counters */
     double stat_at;
     int snaps_since, snap_bytes;
+    int snap_drops, snap_got_n, snap_full_n;          /* the guest: this second's snapshots (RAMPAGE_NET_DELTA_LOG) */
     unsigned out_at, in_at;
     NetStats stats;
 } g;
@@ -704,6 +730,7 @@ static void on_hello(int peer, NetBuf *b)
     nt_send_to(peer, 1, m, o.len);
     net_log(back ? "the guest of slot %d came back" : "a guest joined: slot %d", k);
     slot_set(k, NSL_ONLINE);
+    s->snap_ack = -1;                                /* (a new guest there: full snapshots till it says) */
     g.slots_dirty = 1;
 }
 
@@ -717,6 +744,11 @@ static void on_pad(Slot *sl, NetBuf *b)
     for (int i = 0; i < n; i++) {
         p[i].lx = net_r_f32(b); p[i].ly = net_r_f32(b); p[i].rx = net_r_f32(b); p[i].ry = net_r_f32(b);
         p[i].pressed = net_r_u32(b); p[i].held = net_r_u32(b);
+    }
+    if (!b->err && b->len + 2 <= b->cap) {          /* (NET_PROTO 6: the newest NM_SNAP it has) */
+        int ack = (int)net_r_u16(b);
+        if (!b->err)
+            sl->snap_ack = ack == SNAP_NONE ? -1 : ack;
     }
     if (b->err || n < 1 || (sl->have_remote && frame <= sl->remote_frame))
         return;
@@ -890,8 +922,27 @@ static void on_data(int peer, const uint8_t *data, int len)
     }
     case NM_SNAP: {
         double t = net_r_f64(&b);
+        int seq = (int)net_r_u16(&b), bs = (int)net_r_u16(&b);
         if (!b.err && net_live()) {
-            netsnap_push(&g.snaps, t, g.now, data + b.len, len - b.len);
+            const SnapCopy *base = bs == SNAP_NONE ? NULL : snap_find(snap_got, SNAP_GOT, bs);
+            if (bs != SNAP_NONE && !base) {
+                g.snap_drops++;
+                break;                               /* (its base gone here: the next comes against our newest) */
+            }
+            static uint8_t out[NET_SNAP_MAX];
+            int n = net_delta_decode(base ? base->data : NULL, base ? base->len : 0, data + b.len, len - b.len, out,
+                                     (int)sizeof out);
+            if (n <= 0)
+                break;
+            SnapCopy *c = &snap_got[seq % SNAP_GOT];
+            memcpy(c->data, out, (size_t)n);
+            c->len = n;
+            c->seq = seq;
+            if (snap_latest < 0 || (int16_t)(uint16_t)(seq - snap_latest) > 0)
+                snap_latest = seq;
+            netsnap_push(&g.snaps, t, g.now, out, n);
+            g.snap_got_n++;
+            g.snap_full_n += bs == SNAP_NONE;
             g.snaps_since++;
             g.snap_bytes = len;
         }
@@ -980,6 +1031,9 @@ void net_update(double now)
         g.stats.kb_out_per_s = (float)((out - g.out_at) / 1024.0 / s);
         g.stats.kb_in_per_s = (float)((in - g.in_at) / 1024.0 / s);
         g.stats.snap_bytes = g.snap_bytes;
+        if (g.role == NET_GUEST && (g.snap_drops || g.snap_got_n) && getenv("RAMPAGE_NET_DELTA_LOG"))
+            net_log("snapshots: %d taken, %d dropped (base missing), %d full", g.snap_got_n, g.snap_drops, g.snap_full_n);
+        g.snap_drops = g.snap_got_n = g.snap_full_n = 0;
         g.out_at = out;
         g.in_at = in;
         g.snaps_since = 0;
@@ -1002,7 +1056,7 @@ void net_send_pad(const NetPad *p)
     g.pad_pending = 0;
     g.pad_frame++;
     int n = g.pad_frame < NET_PAD_REDUNDANCY ? (int)g.pad_frame : NET_PAD_REDUNDANCY;
-    uint8_t m[8 + NET_PAD_REDUNDANCY * 24];
+    uint8_t m[10 + NET_PAD_REDUNDANCY * 24];
     NetBuf b = netbuf(m, sizeof m);
     net_w_u8(&b, NM_PAD);
     net_w_u32(&b, g.pad_frame);
@@ -1012,6 +1066,9 @@ void net_send_pad(const NetPad *p)
         net_w_f32(&b, g.pads[i].rx); net_w_f32(&b, g.pads[i].ry);
         net_w_u32(&b, g.pads[i].pressed); net_w_u32(&b, g.pads[i].held);
     }
+    if (!snap_ready)
+        snap_rings_clear();
+    net_w_u16(&b, snap_latest < 0 ? SNAP_NONE : (uint32_t)snap_latest);   /* (NET_PROTO 6: the newest NM_SNAP we have) */
     nt_send(0 /* unreliable */, m, b.len);
 }
 
@@ -1037,16 +1094,34 @@ void net_send_snap(const void *data, int len)
 {
     if (g.role != NET_HOST || !net_live())
         return;
-    static uint8_t m[NET_SNAP_MAX + 16];
-    NetBuf b = netbuf(m, sizeof m);
-    net_w_u8(&b, NM_SNAP);
-    net_w_f64(&b, g.now);
-    net_w_bytes(&b, data, len);
-    if (b.err)
+    static uint8_t m[NET_DELTA_MAX(NET_SNAP_MAX) + 32];
+    if (len <= 0 || len > NET_SNAP_MAX)
         return;
-    send_guests(-1, 0, m, b.len);
+    int seq = snap_seq;
+    snap_seq = (snap_seq + 1) % SNAP_NONE;
+    int sent = 0;
+    for (int k = 1; k < NET_SLOTS; k++) {            /* each guest its own: against what it has */
+        if (g.slot[k].state != NSL_ONLINE)
+            continue;
+        const SnapCopy *base = snap_find(snap_sent, SNAP_SENT, g.slot[k].snap_ack);
+        NetBuf b = netbuf(m, sizeof m);
+        net_w_u8(&b, NM_SNAP);
+        net_w_f64(&b, g.now);
+        net_w_u16(&b, (uint32_t)seq);
+        net_w_u16(&b, base ? (uint32_t)base->seq : SNAP_NONE);
+        int n = b.err ? -1 : net_delta_encode(base ? base->data : NULL, base ? base->len : 0, (const uint8_t *)data, len,
+                                              m + b.len, b.cap - b.len);
+        if (n < 0)
+            continue;
+        nt_send_to(g.slot[k].peer, 0, m, b.len + n);
+        sent = b.len + n;
+    }
+    SnapCopy *c = &snap_sent[seq % SNAP_SENT];
+    memcpy(c->data, data, (size_t)len);
+    c->len = len;
+    c->seq = seq;
     g.snaps_since++;
-    g.snap_bytes = b.len;
+    g.snap_bytes = sent;
 }
 
 void net_send_msg(int reliable, const void *data, int len)

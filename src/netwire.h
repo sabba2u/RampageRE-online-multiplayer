@@ -36,12 +36,15 @@ enum NetMsg {
     NM_RUMBLE_PICKUP, /* host -> guests, reliable (port extra, Boss Rumble): a power-up out in the city: op (0 out, 1
                       * taken, 2 gone untaken), the host's id, its kind, its place, who took it (main.c rumble_pu_*;
                       * the waves' bosses come with the world, NgWorld) */
+    NM_PACK,         /* guest -> host, unreliable, up to 30 a second: the newest NM_PUPPET of each channel it has (its
+                      * seq), the base the host's next delta to it is made against (netgame.c ng_puppets_send) */
 };
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
  * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS. 4: 8 monster slots in every build (Boss Rumble's
- * bosses after the players). 5: 8 players in every build (the front end's 8 cards) */
-#define NET_PROTO 5
+ * bosses after the players). 5: 8 players in every build (the front end's 8 cards). 6: NM_PUPPET as a delta
+ * (seq, base) against the guest's acknowledged copy (NM_PACK) */
+#define NET_PROTO 6
 #define NET_PORT 27960
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
@@ -97,6 +100,15 @@ uint32_t net_r_u32(NetBuf *b);
 float net_r_f32(NetBuf *b);
 double net_r_f64(NetBuf *b);
 void net_r_bytes(NetBuf *b, void *p, int n);
+
+/* the puppets' delta (netgame.c ng_puppets_send): cur against base, a copy the receiver has (NULL / 0: none), as their
+ * bytes XOR'd (base read as zeros past its end) in runs: the length, then { unchanged bytes skipped, changed bytes
+ * and those bytes } to the end, each count a LEB128 varint. A message much like its base (the street's objects
+ * standing still, a crowd's names) costs a few bytes. Lossless: decode gives back cur exactly. Both return the length
+ * written, -1 when out is too small or enc is not one (never reading or writing past either) */
+#define NET_DELTA_MAX(n) ((n) + (n) / 64 + 16)       /* room enough for the encoding of n bytes */
+int net_delta_encode(const uint8_t *base, int blen, const uint8_t *cur, int clen, uint8_t *out, int cap);
+int net_delta_decode(const uint8_t *base, int blen, const uint8_t *enc, int elen, uint8_t *out, int cap);
 
 uint32_t net_hash(const void *p, int n, uint32_t h);   /* FNV-1a, h = 2166136261 to start */
 

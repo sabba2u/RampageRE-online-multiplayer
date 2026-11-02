@@ -268,3 +268,88 @@ int net_rejoin_parse(const char *text, uint64_t *token, long long *when)
     *when = w;
     return 0;
 }
+
+/* ---- the puppets' delta (netwire.h) */
+static int dv_put(uint8_t *out, int cap, int at, uint32_t v)
+{
+    do {
+        if (at >= cap)
+            return -1;
+        out[at++] = (uint8_t)((v & 0x7F) | (v > 0x7F ? 0x80 : 0));
+        v >>= 7;
+    } while (v);
+    return at;
+}
+static int dv_get(const uint8_t *in, int len, int *at, uint32_t *v)
+{
+    uint32_t r = 0;
+    for (int sh = 0; sh < 32; sh += 7) {
+        if (*at >= len)
+            return -1;
+        uint8_t c = in[(*at)++];
+        r |= (uint32_t)(c & 0x7F) << sh;
+        if (!(c & 0x80)) {
+            *v = r;
+            return 0;
+        }
+    }
+    return -1;
+}
+static uint8_t dv_x(const uint8_t *base, int blen, const uint8_t *cur, int i)
+{
+    return (uint8_t)(cur[i] ^ (base && i < blen ? base[i] : 0));
+}
+
+int net_delta_encode(const uint8_t *base, int blen, const uint8_t *cur, int clen, uint8_t *out, int cap)
+{
+    if (clen < 0 || (clen && !cur) || !out)
+        return -1;
+    int at = dv_put(out, cap, 0, (uint32_t)clen), i = 0;
+    while (at >= 0 && i < clen) {
+        int z = i;
+        while (z < clen && !dv_x(base, blen, cur, z))
+            z++;
+        int e = z;                                   /* the changed run, through gaps of under 3 unchanged bytes (a
+                                                      * skip costs 2) */
+        while (e < clen) {
+            if (dv_x(base, blen, cur, e)) {
+                e++;
+                continue;
+            }
+            int g = e;
+            while (g < clen && g - e < 3 && !dv_x(base, blen, cur, g))
+                g++;
+            if (g >= clen || g - e >= 3)
+                break;
+            e = g;
+        }
+        at = dv_put(out, cap, at, (uint32_t)(z - i));
+        if (at >= 0)
+            at = dv_put(out, cap, at, (uint32_t)(e - z));
+        if (at < 0 || at + (e - z) > cap)
+            return -1;
+        for (int k = z; k < e; k++)
+            out[at++] = dv_x(base, blen, cur, k);
+        i = e;
+    }
+    return at;
+}
+
+int net_delta_decode(const uint8_t *base, int blen, const uint8_t *enc, int elen, uint8_t *out, int cap)
+{
+    uint32_t n, z, l;
+    int at = 0;
+    if (!enc || !out || dv_get(enc, elen, &at, &n) < 0 || n > (uint32_t)cap)
+        return -1;
+    uint32_t i = 0;
+    while (i < n) {
+        if (dv_get(enc, elen, &at, &z) < 0 || dv_get(enc, elen, &at, &l) < 0 || z > n - i || l > n - i - z ||
+            (z == 0 && l == 0) || l > (uint32_t)(elen - at))
+            return -1;
+        for (uint32_t k = 0; k < z; k++, i++)
+            out[i] = base && (int)i < blen ? base[i] : 0;
+        for (uint32_t k = 0; k < l; k++, i++)
+            out[i] = (uint8_t)(enc[at++] ^ (base && (int)i < blen ? base[i] : 0));
+    }
+    return (int)n;
+}

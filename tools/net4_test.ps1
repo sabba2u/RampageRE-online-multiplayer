@@ -120,7 +120,7 @@ for ($k = 1; $k -le $Guests; $k++) {
     Report "scores (guest $k)" ($same -ge 10 -and $bad.Count -le [math]::Floor($same / 10)) `
         "$($bad.Count) of $same samples differ (first: $($bad | Select-Object -First 1))"
 }
-# the host's upload per guest, on average: a 2 player game's one guest costs 136 KB/s, a 4 player one's 199 (measured
+# the host's upload per guest, on average (NET_PROTO 6, deltas: about 35 KB/s a guest; before them a 2 player game's one guest cost 136 KB/s, a 4 player one's 199, measured
 # 2026-11-01: the snapshot carries 4 monsters, and 4 smash more); 230 allowed. Most of it is the world's puppets (people,
 # army, traffic) sent to each guest; fewer updates a second or deltas would cut it (docs/TODO.md).
 $rates = @($hostLog | ForEach-Object { if ($_ -match 'net: rate: snapshot (\d+) bytes, ([\d.]+) KB/s out') {

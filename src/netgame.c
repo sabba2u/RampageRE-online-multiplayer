@@ -833,6 +833,7 @@ static void ng_chat_frame(Viewer *v)
     }
 }
 
+static void ngd_on_acks(NetBuf *b);
 static void ng_handler(const uint8_t *data, int len)
 {
     if (!g_ngv)
@@ -843,6 +844,8 @@ static void ng_handler(const uint8_t *data, int len)
         ng_on_building(g_ngv, &b);
     else if ((type == NM_PUPPET || type == NM_PEVENT) && net_role() == NET_GUEST && net_live())
         ng_on_puppet(&b, type);
+    else if (type == NM_PACK && net_role() == NET_HOST)
+        ngd_on_acks(&b);
     else if (type == NM_EVENT && net_role() == NET_GUEST && net_live())
         ng_on_flow(&b);
     else if (type == NM_CHAT && net_state() == NETS_CONNECTED)
@@ -1709,6 +1712,51 @@ typedef struct {
 static NgPuppet ng_pup[NGP_N];
 static NetSnapBuf ng_pup_snaps[NGP_N];
 static double ng_pup_at[NGP_N];
+static double ng_pup_bytes[NGP_N];                  /* the host: each channel's bytes out since its last report */
+/* the puppets' delta (NET_PROTO 6, netwire.h net_delta_*): the host keeps each channel's last NGD_SENT snapshots by
+ * seq and sends each guest its snapshot against the newest that guest says it has (NM_PACK), else against nothing;
+ * the guest keeps the last NGD_GOT it made, drops a delta whose base it has not, and tells the host its newest. The
+ * guest's buffer gets the very bytes the channel's write made, as before */
+#define NGD_SENT 32
+#define NGD_GOT 64
+#define NGD_NONE 0xFFFF
+typedef struct { int seq, len; uint8_t *data; } NgdCopy;   /* seq -1: none */
+static NgdCopy ngd_sent[NGP_N][NGD_SENT], ngd_got[NGP_N][NGD_GOT];
+static uint16_t ngd_seq[NGP_N];                     /* the host: each channel's next seq */
+static int ngd_ack[NET_SLOTS][NGP_N];               /* the host: each guest's newest of each channel (-1 none) */
+static int ngd_latest[NGP_N];                       /* the guest: its newest of each channel (-1 none) */
+static double ngd_ack_at;
+
+static void ngd_keep(NgdCopy *c, int seq, const uint8_t *data, int len)
+{
+    if (len > 0) {                                   /* (ngd_find, then this: after ngd_clear) */
+        uint8_t *p = (uint8_t *)realloc(c->data, (size_t)len);
+        if (!p) { c->seq = -1; return; }
+        c->data = p;
+        memcpy(c->data, data, (size_t)len);
+    }
+    c->seq = seq;
+    c->len = len;
+}
+static int ngd_ready;
+static void ngd_clear(void);
+static const NgdCopy *ngd_find(const NgdCopy *ring, int n, int seq)
+{
+    if (!ngd_ready)                                  /* (the first use: the zeroed copies made none) */
+        ngd_clear();
+    const NgdCopy *c = seq >= 0 ? &ring[seq % n] : NULL;
+    return c && c->seq == seq ? c : NULL;
+}
+static void ngd_clear(void)                          /* a new world or block: every copy gone, so full ones next */
+{
+    ngd_ready = 1;
+    for (int c = 0; c < NGP_N; c++) {
+        for (int i = 0; i < NGD_SENT; i++) ngd_sent[c][i].seq = -1;
+        for (int i = 0; i < NGD_GOT; i++) ngd_got[c][i].seq = -1;
+        ngd_latest[c] = -1;
+        for (int k = 0; k < NET_SLOTS; k++) ngd_ack[k][c] = -1;
+    }
+}
 
 static int ng_guest(void) { return net_role() == NET_GUEST && net_live(); }
 static int ng_host(void) { return net_role() == NET_HOST && net_live(); }
@@ -1806,6 +1854,7 @@ static void ng_puppets_reset(Viewer *v, int new_world)
         if (kept || gone)
             net_log("block %d: %d events of it kept, %d of others dropped", v->block, kept, gone);
     }
+    ngd_clear();
     for (int c = 0; c < NGP_N; c++) {
         netsnap_clear(&ng_pup_snaps[c]);
         ng_pup_at[c] = 0;
@@ -1816,27 +1865,91 @@ static void ng_puppets_reset(Viewer *v, int new_world)
 
 static void ng_puppets_send(Viewer *v)
 {
-    static uint8_t m[NET_SNAP_MAX];
+    static uint8_t m[NET_SNAP_MAX], d[NET_DELTA_MAX(NET_SNAP_MAX) + 16];
+    if (!ngd_ready)
+        ngd_clear();
     for (int c = 0; c < NGP_N; c++) {
         float rate = ng_pup[c].rate * ng_rate / 20.0f;   /* (its share at 20 a second) */
         if (!ng_pup[c].write || rate <= 0 || net_now() - ng_pup_at[c] < 1.0 / rate - 0.002)
             continue;
         ng_pup_at[c] = net_now();
         NetBuf b = netbuf(m, sizeof m);
-        net_w_u8(&b, NM_PUPPET);
-        net_w_u8(&b, (uint32_t)c);
-        net_w_f64(&b, net_now());
-        int hdr = b.len;
-        if (ng_pup[c].write(v, &b) && !b.err && b.len > hdr)
-            net_send_msg(0, m, b.len);
-        else if (b.err)
+        int hdr = 0;                                 /* (the snapshot alone: its header goes with each guest's delta) */
+        if (ng_pup[c].write(v, &b) && !b.err && b.len > hdr) {
+            int seq = ngd_seq[c]++;
+            if (ngd_seq[c] == NGD_NONE)
+                ngd_seq[c] = 0;
+            for (int k = 1; k < net_slots(); k++) {  /* each guest its own: against what it has */
+                if (net_slot_state(k, NULL) != NSL_ONLINE)
+                    continue;
+                const NgdCopy *base = ngd_find(ngd_sent[c], NGD_SENT, ngd_ack[k][c]);
+                NetBuf o = netbuf(d, sizeof d);
+                net_w_u8(&o, NM_PUPPET);
+                net_w_u8(&o, (uint32_t)c);
+                net_w_f64(&o, net_now());
+                net_w_u16(&o, (uint32_t)seq);
+                net_w_u16(&o, base ? (uint32_t)base->seq : NGD_NONE);
+                int n = o.err ? -1 : net_delta_encode(base ? base->data : NULL, base ? base->len : 0, m, b.len,
+                                                      d + o.len, o.cap - o.len);
+                if (n < 0)
+                    continue;
+                net_send_msg_to(k, 0, d, o.len + n);
+                ng_pup_bytes[c] += o.len + n;
+            }
+            ngd_keep(&ngd_sent[c][seq % NGD_SENT], seq, m, b.len);
+        } else if (b.err)
             net_log("%s: snapshot too big (over %d bytes)", ng_pup[c].name, NET_SNAP_MAX);
+    }
+    static double at;                                /* every 5 s: each channel's share of the upload (all guests) */
+    if (net_now() - at >= 5) {
+        double s = at ? net_now() - at : 5;
+        char line[400];
+        int n = snprintf(line, sizeof line, "channels KB/s:");
+        for (int c = 0; c < NGP_N && n < (int)sizeof line - 32; c++)
+            if (ng_pup_bytes[c] > 0)
+                n += snprintf(line + n, sizeof line - (size_t)n, " %s %.1f", ng_pup[c].name, ng_pup_bytes[c] / 1024.0 / s);
+        if (at)
+            net_log("%s", line);
+        memset(ng_pup_bytes, 0, sizeof ng_pup_bytes);
+        at = net_now();
+    }
+}
+
+/* the guest: its newest of each channel to the host (NM_PACK), up to 30 a second */
+static void ngd_send_acks(void)
+{
+    if (!ngd_ready)
+        ngd_clear();
+    if (net_now() - ngd_ack_at < 1.0 / 30)
+        return;
+    ngd_ack_at = net_now();
+    uint8_t m[4 + 2 * NGP_N];
+    NetBuf b = netbuf(m, sizeof m);
+    net_w_u8(&b, NM_PACK);
+    net_w_u8(&b, NGP_N);
+    for (int c = 0; c < NGP_N; c++)
+        net_w_u16(&b, ngd_latest[c] < 0 ? NGD_NONE : (uint32_t)ngd_latest[c]);
+    if (!b.err)
+        net_send_msg(0, m, b.len);
+}
+static void ngd_on_acks(NetBuf *b)                   /* the host: a guest's NM_PACK */
+{
+    int k = net_msg_slot(), n = (int)net_r_u8(b);
+    if (k < 1 || k >= NET_SLOTS)
+        return;
+    if (!ngd_ready)
+        ngd_clear();
+    for (int c = 0; c < n && c < NGP_N; c++) {
+        int s = (int)net_r_u16(b);
+        if (!b->err)
+            ngd_ack[k][c] = s == NGD_NONE ? -1 : s;
     }
 }
 
 static void ng_puppets_apply(Viewer *v)
 {
     ng_queue_run(v);
+    ngd_send_acks();
     for (int c = 0; c < NGP_N; c++) {
         if (!ng_pup[c].apply)
             continue;
@@ -1854,9 +1967,25 @@ static void ng_on_puppet(NetBuf *b, int type)
     double t = net_r_f64(b);
     if (b->err || ch < 0 || ch >= NGP_N)
         return;
-    if (type == NM_PUPPET)
-        netsnap_push(&ng_pup_snaps[ch], t, net_now(), b->p + b->len, b->cap - b->len);
-    else {
+    if (type == NM_PUPPET) {                         /* (NET_PROTO 6: a delta; ngd_*) */
+        static uint8_t out[NET_SNAP_MAX];
+        if (!ngd_ready)
+            ngd_clear();
+        int seq = (int)net_r_u16(b), bs = (int)net_r_u16(b);
+        if (b->err)
+            return;
+        const NgdCopy *base = bs == NGD_NONE ? NULL : ngd_find(ngd_got[ch], NGD_GOT, bs);
+        if (bs != NGD_NONE && !base)
+            return;                                  /* (its base gone here: the next comes against our newest) */
+        int n = net_delta_decode(base ? base->data : NULL, base ? base->len : 0, b->p + b->len, b->cap - b->len, out,
+                                 (int)sizeof out);
+        if (n <= 0)
+            return;
+        ngd_keep(&ngd_got[ch][seq % NGD_GOT], seq, out, n);
+        if (ngd_latest[ch] < 0 || (int16_t)(uint16_t)(seq - ngd_latest[ch]) > 0)
+            ngd_latest[ch] = seq;
+        netsnap_push(&ng_pup_snaps[ch], t, net_now(), out, n);
+    } else {
         int block = (int)net_r_u8(b);
         if (!b->err)
             ng_queue_push(ch, t, block, b->p + b->len, b->cap - b->len);

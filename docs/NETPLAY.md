@@ -134,7 +134,23 @@ card of the eight (docs/NATIVE.md "Eight players"). The "in a menu" / "typing" l
 now (a u16 in NM_SNAP). Steam lobbies and the room servers (lobby/, the launcher's) take 8. Checked on one PC with
 `tools
 et8_menu_test.ps1` (eight copies through the menus into King of the City, and five); never yet on eight PCs.
-The host's upload grows with each guest (about 200 KB/s each with the city's people and traffic).
+The host's upload grows with each guest: about 35 KB/s each since the deltas (below; 200 before).
+
+## The upload: deltas and compression
+
+`NET_PROTO` 6. The host sends each guest the monsters' snapshot (NM_SNAP) and every puppet channel's (NM_PUPPET) as a
+delta against the newest copy that guest has said it holds: the bytes XOR'd with that copy and the unchanged runs
+skipped (netwire.c `net_delta_encode`; a guest with none gets the snapshot against nothing). The guest says which it
+holds in its NM_PAD's last u16 (the monsters') and NM_PACK (the channels', up to 30 a second); it keeps the last 64 it
+made, rebuilds each snapshot exactly and drops one whose base it has not (`RAMPAGE_NET_DELTA_LOG=1` counts them each
+second; none dropped in the tests). A new block or world, or a new guest in a seat, starts from full snapshots. ENet
+packets are compressed both ways (`enet_host_compress_with_range_coder`; Steam's transport sends them as they are). The
+host's log names each channel's share every 5 s (`net: channels KB/s: ...`).
+
+Measured with `tools
+et4_test.ps1 -Guests 3` (Chicago 1, four players, the host's upload in all): 615 KB/s before;
+272 with the channels' deltas; 248 with compression; 104 with the monsters' deltas too (about 35 KB/s a guest, so 8
+players about 250 KB/s, 2 Mbit/s). Every check the same (digests, monsters, tails, scores).
 
 ## Re-synchronizing
 

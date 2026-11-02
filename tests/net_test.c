@@ -446,8 +446,43 @@ static void test_stun(void)
     CHECK(netstun_parse_knocks("", k, 8) == 0);
 }
 
+/* the puppets' delta (netwire.c net_delta_*): the receiver gets back exactly the bytes sent, whatever the base */
+static int delta_round(const uint8_t *base, int blen, const uint8_t *cur, int clen, int *enc_len)
+{
+    static uint8_t enc[NET_DELTA_MAX(4096)], out[4096];
+    int n = net_delta_encode(base, blen, cur, clen, enc, (int)sizeof enc);
+    if (enc_len) *enc_len = n;
+    if (n < 0) return 0;
+    int m = net_delta_decode(base, blen, enc, n, out, (int)sizeof out);
+    return m == clen && memcmp(out, cur, (size_t)clen) == 0;
+}
+static void test_delta(void)
+{
+    static uint8_t a[3000], b[3000];
+    for (int i = 0; i < 3000; i++) a[i] = b[i] = (uint8_t)(i * 7 + 3);
+    int n = 0;
+    CHECK(delta_round(a, 3000, b, 3000, &n));                    /* unchanged: a few bytes */
+    CHECK(n > 0 && n <= 8);
+    b[10] ^= 0x55; b[11] ^= 1; b[2000] = 0; b[2999] ^= 0x80;     /* a few changed */
+    CHECK(delta_round(a, 3000, b, 3000, &n));
+    CHECK(n < 40);
+    CHECK(delta_round(a, 1000, b, 3000, NULL));                  /* longer than its base */
+    CHECK(delta_round(a, 3000, b, 1200, NULL));                  /* shorter */
+    CHECK(delta_round(NULL, 0, b, 3000, NULL));                  /* no base: everything */
+    CHECK(delta_round(a, 3000, b, 0, NULL));                     /* empty */
+    for (int i = 0; i < 3000; i++) b[i] = (uint8_t)(i * 31 + i / 7); /* all different: no worse than raw by much */
+    CHECK(delta_round(a, 3000, b, 3000, &n));
+    CHECK(n <= 3000 + 3000 / 64 + 16);
+    static uint8_t enc[64], out[64];                             /* garbage refused, never read or written past */
+    for (int i = 0; i < 64; i++) enc[i] = (uint8_t)(i * 37 + 11);
+    CHECK(net_delta_decode(a, 10, enc, 64, out, 16) < 0 || 1);
+    enc[0] = 0x7F;                                               /* says 127 bytes into a 16 byte buffer */
+    CHECK(net_delta_decode(a, 10, enc, 64, out, 16) < 0);
+}
+
 int main(void)
 {
+    test_delta();
     test_message_types_distinct();
     test_slot_pick();
     test_four_seats();

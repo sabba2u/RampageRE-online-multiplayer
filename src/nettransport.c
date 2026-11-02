@@ -62,8 +62,10 @@ static int nte_host(int port)
     a.host = ENET_HOST_ANY;
     a.port = (enet_uint16)port;
     g_host = enet_host_create(&a, NT_PEERS, 2, 0, 0);
-    if (g_host)
+    if (g_host) {
         g_host->intercept = nte_intercept;
+        enet_host_compress_with_range_coder(g_host);   /* (NET_PROTO 6: both ends compress; lossless) */
+    }
     return g_host ? 0 : -1;
 }
 
@@ -80,6 +82,7 @@ static int nte_join(const char *ip, int port)
     if (!g_host)
         return -1;
     g_host->intercept = nte_intercept;
+    enet_host_compress_with_range_coder(g_host);     /* (the host's too: NET_PROTO 6) */
     if (enet_address_set_host(&a, ip) != 0)
         return -1;
     a.port = (enet_uint16)port;
