@@ -74,3 +74,56 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 | TCP 19980 | the room server (launcher or Node) | room codes and links from outside your home |
 
 Online play is up to 4 players: the host and three friends (Host on Steam: 2). More: [NETPLAY.md](NETPLAY.md).
+
+## An always-on room server (a VPS)
+
+A room server on a rented or free Linux machine stays up when your PC is off, so friends can always find rooms
+there. It is the Node copy (`lobby/`); the game host still runs in the host's RampageRE.exe as always. The server
+uses little: any 1 GB machine does.
+
+**Install** (Ubuntu or Debian; copy the `lobby` folder to the machine, or `git clone` this repo there):
+
+```sh
+cd lobby
+sudo sh deploy/install.sh
+```
+
+It installs Node.js 20 if needed, copies the server to `/opt/rampage-lobby`, runs it as its own `rampage` user, and
+sets up:
+
+- `rampage-lobby.service` (systemd): started at boot, **started again 3 s after any crash or stop**, forever;
+- `rampage-lobby-health.timer`: every minute it asks `/health`, and **restarts the server if it is running but stuck**;
+- TCP 19980 opened in the machine's own firewall (ufw or iptables).
+
+Check on it: `systemctl status rampage-lobby`, its log: `journalctl -u rampage-lobby -f`. Update it later: pull or copy
+the new `lobby` folder and run `install.sh` again (your `config.json` is kept).
+
+Then friends use the server's address: the launcher's **Join a room → Connect** with it, or links
+`rampage://join/K7PQ2@your.server`. The room list page is `http://your.server:19980/`. A host lists their game there
+with the game's `--lobby http://your.server:19980` (or the launcher, once it offers a shared server).
+
+### Free: Oracle Cloud "Always Free"
+
+Oracle gives two small AMD VMs (and Arm ones) free with no time limit; a card is asked for at sign-up to check who you
+are, and nothing is charged while you stay on Always Free.
+
+1. Sign up at cloud.oracle.com, pick a **home region** near your friends (it can't be changed later).
+2. **Compute → Instances → Create instance**: image **Ubuntu 22.04 or 24.04**, shape **VM.Standard.E2.1.Micro**
+   (Always Free). Keep "Assign a public IPv4 address". Save the SSH key it offers.
+3. Open the port in Oracle's own firewall: the instance's **Subnet → Security List → Add Ingress Rules**: source
+   `0.0.0.0/0`, protocol **TCP**, destination port **19980**.
+4. SSH in (`ssh -i the-key ubuntu@<public IP>`), then:
+   ```sh
+   sudo apt-get update && sudo apt-get install -y git
+   git clone https://github.com/sabba2u/RampageRE-online-multiplayer.git
+   cd RampageRE-online-multiplayer && git checkout online-multiplayer
+   cd lobby && sudo sh deploy/install.sh
+   ```
+   (Oracle's Ubuntu also blocks ports in iptables; install.sh opens 19980 there too.)
+5. Open `http://<public IP>:19980/` in a browser: the rooms page means it works.
+
+Other always-free or cheap choices work the same (any Ubuntu VPS: Hetzner, DigitalOcean, a Raspberry Pi at home with
+the port forwarded): run `install.sh`, open TCP 19980.
+
+On Windows or macOS without systemd: `lobby\start.bat` / `lobby/start.sh` runs it; keep it up with a scheduled task
+(Windows) or `pm2 start start.sh --name rampage-lobby && pm2 save && pm2 startup` (any system with Node).

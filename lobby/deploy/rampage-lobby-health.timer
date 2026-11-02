@@ -1,0 +1,10 @@
+# Every minute: rampage-lobby-health.service.
+[Unit]
+Description=RampageRE room server health check, every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

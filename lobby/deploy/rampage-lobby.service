@@ -1,0 +1,28 @@
+# The RampageRE room server, always on: started at boot, started again whenever it stops or crashes.
+# Installed by install.sh as /etc/systemd/system/rampage-lobby.service.
+[Unit]
+Description=RampageRE room server (TCP 19980)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rampage
+Group=rampage
+WorkingDirectory=/opt/rampage-lobby
+Environment=NODE_ENV=production
+# Environment=PORT=19980
+# Environment=RAMPAGE_LOBBY_PUBLIC=your.server.address
+ExecStart=/usr/bin/env npm start
+Restart=always
+RestartSec=3
+# (a crash loop is never given up on: Restart=always with no start limit)
+StartLimitIntervalSec=0
+# a little hardening: no new privileges, its own /tmp, the system read-only but for its folder
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/rampage-lobby
+
+[Install]
+WantedBy=multi-user.target
