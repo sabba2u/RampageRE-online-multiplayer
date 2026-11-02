@@ -1636,6 +1636,23 @@ static void ng_apply_snap(Viewer *v)
             if (want && (!now || strcmp(want, now)))
                 scene_monster_play(&v->scene, k, want);
         }
+        {   /* (RAMPAGE_NET_FLOAT_LOG: the other monsters here moving with their clip standing still, each 5 s) */
+            static float px[8], py[8], pt[8]; static int pst[8], have[8]; static double at5; static int fl[8], mv[8];
+            if (k < 8) {
+                float d = have[k] ? sqrtf((mo->mx - px[k]) * (mo->mx - px[k]) + (mo->my - py[k]) * (mo->my - py[k])) : 0;
+                int same = have[k] && pst[k] == mo->run.state && fabsf(mo->run.time - pt[k]) < 1e-5f;
+                if (d > 0.01f) { mv[k]++; if (same) { fl[k]++;
+                    static double said; if (getenv("RAMPAGE_NET_FLOAT_LOG") && net_now() - said > 0.5) { said = net_now();
+                        net_log("floating m%d: state %s time %.3f moved %.3f ai %d pad %.2f %.2f snap-time %.3f", k, mo->graph.states[mo->run.state].name, mo->run.time, d, mo->is_ai, mo->pad.lx, mo->pad.ly, hi->time); } } }
+                px[k] = mo->mx; py[k] = mo->my; pt[k] = mo->run.time; pst[k] = mo->run.state; have[k] = 1;
+            }
+            if (net_now() - at5 >= 5) {
+                if (at5 && getenv("RAMPAGE_NET_FLOAT_LOG"))
+                    net_log("floating: m0 %d/%d m1 %d/%d m2 %d/%d m3 %d/%d (frames moved with the clip still / moved)",
+                            fl[0], mv[0], fl[1], mv[1], fl[2], mv[2], fl[3], mv[3]);
+                memset(fl, 0, sizeof fl); memset(mv, 0, sizeof mv); at5 = net_now();
+            }
+        }
         if (mo->mirror != hi->mirror)
             scene_monster_mirror(&v->scene, k, hi->mirror);
         mo->mode = hi->mode;
@@ -2649,8 +2666,14 @@ static void ng_slots_pads(Viewer *v, const Window *w)
                 ng_pad_in(&np, &mo->pad, 1);
             else
                 memset(&mo->pad, 0, sizeof mo->pad);
-            if (mo->drive == DRIVE_COMPUTER)
+            if (mo->drive == DRIVE_COMPUTER) {       /* a seat the computer had (no controller at the start): the
+                                                      * guest's, and the computer's flag off (setIsAI gave it for the
+                                                      * seat alone): else the host's AI moved it and every guest showed
+                                                      * it walking with its clip still, floating (the snapshot's ai) */
                 mo->drive = DRIVE_KEYS2;
+                if (!mo->bot && !mo->boss)
+                    mo->is_ai = mo->ai_set;
+            }
             continue;
         }
         if (st == NSL_LOCAL) {                       /* this PC's: the source that took it plays it */

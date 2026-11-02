@@ -121,6 +121,7 @@ typedef struct Mon {
     int slot;                                        /* 0 .. 3 */
     int monster;                                     /* which of the 30 (Viewer.monsters), -1 none */
     int bot;                                         /* a bot: the last num_bots of the players (setIsAI in each block) */
+    int ai_set;                                      /* the last setIsAI's own wish (GE_AI a), apart from a computer's seat */
     int boss;                                        /* (port extra) Boss Rumble's boss: in a slot after the players, not
                                                       * a game player (no lives, no points), a hunter of the players */
     float boss_factor;                               /* its health and hits x this (rumble_factor) */
@@ -4083,6 +4084,7 @@ static void game_step(Viewer *v, float dt)
                 }
                 break;
             case GE_AI:                              /* setIsAI; a bot's destroyBuildings, the computer's players' */
+                mo->ai_set = e->a != 0;
                 mo->is_ai = e->a || mo->drive == DRIVE_COMPUTER;
                 if ((e->b || (!e->a && mo->drive == DRIVE_COMPUTER)) && mo->have_graph) {
                     dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)mo->slot);

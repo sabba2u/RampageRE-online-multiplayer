@@ -34,6 +34,7 @@ $env:RAMPAGE_NET_UPNP = "0"; $env:RAMPAGE_STUN = "0"; $env:RAMPAGE_NET_TAILS = "
 $env:RAMPAGE_NET_HOSTDO = if ($HostDo) { $HostDo } else { $null }
 $env:RAMPAGE_NET_HOSTMOVES = if ($HostMoves) { "1" } else { $null }
 $env:RAMPAGE_NET_TESTPAD = $null
+$env:RAMPAGE_NET_FLOAT_LOG = "1"                       # (the guests count the others floating: the check below)
 if ($JoinLate) { $GameArgs = $GameArgs -replace '--players \d', '--players 1' }
 $h = Start-Process $exe -ArgumentList "$GameArgs --host $Port" -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\host.out" -RedirectStandardError "$out\host.err"
@@ -103,7 +104,9 @@ for ($k = 1; $k -le $Guests; $k++) {
     $gn = if ($gt) { ($gt | Measure-Object k -Maximum).Maximum + 1 } else { 0 }
     Report "monsters (guest $k)" ($gn -eq $hn -and $hn -gt 0) "host $hn, guest $gn"
     $walks = @($gt | Where-Object { $_.links -gt 0 -and $_.state -like "*Walk*" })
-    $stiff = @($walks | Where-Object { $_.weight -le 0 })
+    # (springs off where the host's own were on that second: a state whose node turns them off, Ground_Hold_Walk, is
+    # off on both and the game's own)
+    $stiff = @($walks | Where-Object { $_.weight -le 0 -and -not ($hAt["$($_.wall)/$($_.k)"] -and $hAt["$($_.wall)/$($_.k)"].weight -le 0) })
     Report "tails (guest $k)" ($walks.Count -gt 0 -and $stiff.Count -le [math]::Floor($walks.Count / 10)) `
         "$($stiff.Count) of $($walks.Count) walking samples with the springs off (monsters $((@($stiff | ForEach-Object k) | Sort-Object -Unique) -join ', '))"
     # the same second of the PC's clock, both in the same block: points within 600 (the guest shows the host a moment
@@ -128,6 +131,17 @@ $rates = @($hostLog | ForEach-Object { if ($_ -match 'net: rate: snapshot (\d+) 
 $avg = if ($rates) { [math]::Round(($rates | Measure-Object kb -Average).Average, 1) } else { -1 }
 $top = if ($rates) { ($rates | Measure-Object kb -Maximum).Maximum } else { -1 }
 $big = if ($rates) { ($rates | Measure-Object bytes -Maximum).Maximum } else { -1 }
+# floating: on each guest, the other players' monsters moving with their clip standing still (netgame.c, each 5 s
+# "net: floating: m0 a/b ..."): a seat the computer had kept its ai flag and walked with frozen legs (fixed 2026-11-02);
+# at most 2 in 100 moving frames
+for ($k = 1; $k -le $Guests; $k++) {
+    $file = if ($Rejoin -eq $k) { "$out\guest${k}b.out" } else { "$out\guest$k.out" }
+    $fl = 0; $mv = 0
+    foreach ($l in (Get-Content $file -ErrorAction SilentlyContinue | Select-String "^net: floating: ")) {
+        foreach ($m in [regex]::Matches($l.Line, 'm\d (\d+)/(\d+)')) { $fl += [int]$m.Groups[1].Value; $mv += [int]$m.Groups[2].Value }
+    }
+    Report "floating (guest $k)" ($mv -gt 0 -and $fl * 50 -le $mv) "$fl of $mv frames moved with the clip still"
+}
 Report "upload" ($avg -ge 0 -and $avg / [math]::Max(1, $Guests) -le 230) "the host sent $avg KB/s on average to $Guests guest(s)"
 "  (the host: $avg KB/s on average, $top at most; snapshots up to $big bytes)"
 if ($Rejoin -gt 0) {

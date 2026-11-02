@@ -152,6 +152,17 @@ et4_test.ps1 -Guests 3` (Chicago 1, four players, the host's upload in all): 615
 272 with the channels' deltas; 248 with compression; 104 with the monsters' deltas too (about 35 KB/s a guest, so 8
 players about 250 KB/s, 2 Mbit/s). Every check the same (digests, monsters, tails, scores).
 
+### Fixed: guests' monsters floating (2026-11-02)
+
+A seat with no controller on the host at a block's start is the computer's (`DRIVE_COMPUTER`), and setIsAI flags its
+monster `is_ai`. A guest taking that seat changed its drive but kept the flag, so the host's AI could steer it, and every
+guest (the snapshot's `ai`) stepped it with the AI's empty stick: its graph left the walk, the snapshot forced it back
+at the snapshot's clip time, and it slid along with its legs still ("floating"). Now the flag is set back to setIsAI's
+own wish (`Mon.ai_set`) when a guest takes such a seat. `RAMPAGE_NET_FLOAT_LOG=1` counts, on a guest, the frames another
+monster moved with its clip still (each 5 s); `tools
+et4_test.ps1` checks it ("floating": at most 2 in 100): 18-27 in
+100 before, 0-2 in 1000s after. `RAMPAGE_NET_PRED_LOG=1` prints the guest's prediction error of its own monster.
+
 ## Re-synchronizing
 
 A safety net for a difference the digest finds and nothing else mends: **Re-synchronize players** in the host's panel
