@@ -1628,6 +1628,7 @@ struct Hud {
     Layout *hud, *clock, *attract;
     /* Hud.scr's objects and state */
     Node *health, *rage, *score, *heads, *blocks, *num_text, *block_text, *block;
+    float group_p[3];                                    /* player 2's "group" where Hud1.ifc has it (hud_set_players) */
     float hp, hp_max, energy, energy_max;
     int points, lives, blocks_won;
     int prev_points, prev_lives;
@@ -1687,6 +1688,22 @@ static void find_head(Hud *h, int again)
         h->blocks->has_tex = tex_find(&h->gui, tname, &h->blocks->tex);
 }
 
+/* the players in the game: player 2's panel stands at 502, 60 in a 2 player game, where Hud1.ifc puts it with 3 or 4
+ * (NET: a player joining mid-block makes 2 into 3, and the panel goes back) */
+void hud_set_players(Hud *h, int num_players)
+{
+    if (!h || !h->hud)
+        return;
+    h->cfg.num_players = num_players;
+    Node *g = h->cfg.player == 1 ? layout_find(h->hud->root, "group") : NULL;
+    if (!g)
+        return;
+    if (num_players == 2) {
+        g->p[0] = 502; g->p[1] = 60; g->p[2] = 0;
+    } else
+        memcpy(g->p, h->group_p, sizeof h->group_p);
+}
+
 Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg)
 {
     if (!worldgui || !cfg)
@@ -1737,10 +1754,12 @@ Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg
     }
     if (h->num_text)
         h->num_text->visible = gt == HUD_PLAY_CAMPAIGN;
-    if (cfg->player == 1 && cfg->num_players == 2) {
+    if (cfg->player == 1) {
         Node *g = layout_find(r, "group");
-        if (g) { g->p[0] = 502; g->p[1] = 60; g->p[2] = 0; }
+        if (g)
+            memcpy(h->group_p, g->p, sizeof h->group_p);
     }
+    hud_set_players(h, cfg->num_players);
     h->hp_max = 200;
     h->energy_max = 100;
     h->prev_lives = -1;
@@ -1856,6 +1875,8 @@ void hud_show(Hud *h, float fade)
     if (h->cs.L)
         h->cs.L->root->fade = fade;
 }
+
+float hud_fade(const Hud *h) { return h && h->hud ? h->hud->root->fade : 0; }
 
 void hud_hide(Hud *h)
 {

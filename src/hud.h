@@ -50,6 +50,7 @@ typedef struct Hud Hud;
  * ArialBlack24 and Atrox60 fonts, frame and button pictures). The bundles must outlive the Hud. NULL when a layout or
  * a font is missing. Player 0's Hud also loads ChallengeStatus.ifc (the city scripts load it with the HUDs [R]). */
 Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg);
+void hud_set_players(Hud *h, int num_players);    /* the panels laid out for that many players (a mid-block join) */
 void hud_close(Hud *h);
 /* one more bundle to look in for pictures and texts (.loc): the city's (<City>.bdp holds <City>.loc: the block names
  * the results show, the challenge texts) and any other; up to 6. It must outlive the Hud */
@@ -72,6 +73,7 @@ void hud_show(Hud *h, float fade);
 /* the city's start (every <City>.scr onPostInit: Hud<i>.ifc loaded and setVisible(0) [R]): the player's HUD hidden till
  * BeginBlockNI shows it (hud_show 1), through the level's intro; the ChallengeStatus is not touched */
 void hud_hide(Hud *h);
+float hud_fade(const Hud *h);                     /* how shown it is (hud_show's fade; 0 hidden) */
 
 /* where a world point lands: screen in the reference 640 x 480 pixels, *px_per_unit the pixels one world unit spans
  * there (for a perspective camera: focal_px / depth). Return 0 when it is behind the camera. */

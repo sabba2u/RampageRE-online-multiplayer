@@ -15,9 +15,11 @@ build\nettest\host.out and guest<k>.out. Checks, one PASS / FAIL line each (exit
   scores    each guest's last points per monster are the host's (within 600: the copies log a moment apart) and
             the lives equal
   rejoin    (-Rejoin k) the guest started again took seat k back
+  joinlate  (-JoinLate: the host plays alone, the guests come 10 s apart) each joined mid-block: no block started
+            again on the host, and every guest loaded the host's game once
 #>
 param([int]$Seconds = 40, [int]$Guests = 3, [int]$Shots = 2, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0,
-      [int]$Rejoin = 0, [switch]$HostMoves, [string]$HostDo = "", [string]$GuestArgs = "--four-players",
+      [int]$Rejoin = 0, [switch]$HostMoves, [switch]$JoinLate, [string]$HostDo = "", [string]$GuestArgs = "--four-players",
       [string]$GameArgs = "Chicago 1 --four-players --players 4 --monster Lizzie --monster2 Ralph --monster3 Icky --monster4 Kingston")
 $root = Split-Path $PSScriptRoot -Parent
 $exe = Join-Path $root "RampageRE-dev.exe"
@@ -32,6 +34,7 @@ $env:RAMPAGE_NET_UPNP = "0"; $env:RAMPAGE_STUN = "0"; $env:RAMPAGE_NET_TAILS = "
 $env:RAMPAGE_NET_HOSTDO = if ($HostDo) { $HostDo } else { $null }
 $env:RAMPAGE_NET_HOSTMOVES = if ($HostMoves) { "1" } else { $null }
 $env:RAMPAGE_NET_TESTPAD = $null
+if ($JoinLate) { $GameArgs = $GameArgs -replace '--players \d', '--players 1' }
 $h = Start-Process $exe -ArgumentList "$GameArgs --host $Port" -WorkingDirectory $root -PassThru `
     -RedirectStandardOutput "$out\host.out" -RedirectStandardError "$out\host.err"
 Start-Sleep 6
@@ -44,7 +47,7 @@ function Start-Guest([int]$k, [string]$suffix = "") {
         -RedirectStandardOutput "$out\guest$k$suffix.out" -RedirectStandardError "$out\guest$k$suffix.err"
 }
 $g = @{}
-for ($k = 1; $k -le $Guests; $k++) { $g[$k] = Start-Guest $k; Start-Sleep 1 }
+for ($k = 1; $k -le $Guests; $k++) { $g[$k] = Start-Guest $k; Start-Sleep $(if ($JoinLate) { 10 } else { 1 }) }
 
 $t0 = Get-Date
 $every = if ($Shots -gt 0) { [math]::Max(1, [int](($Seconds - 10) / $Shots)) } else { 0 }
@@ -53,7 +56,7 @@ while (((Get-Date) - $t0).TotalSeconds -lt $Seconds) {
     $el = ((Get-Date) - $t0).TotalSeconds
     if ($Rejoin -gt 0 -and -not $rejoined -and $el -ge 15) {
         $g[$Rejoin] | Stop-Process -Force   # (the host notices in 5 to 10 s: ENet's timeout; its seat is kept from then)
-        Start-Sleep 12
+        Start-Sleep 3                                # (before the host notices: the old connection is let go when it comes back)
         $g[$Rejoin] = Start-Guest $Rejoin "b"
         $rejoined = $true
     }
@@ -130,6 +133,14 @@ Report "upload" ($avg -ge 0 -and $avg / [math]::Max(1, $Guests) -le 230) "the ho
 if ($Rejoin -gt 0) {
     $back = @($hostLog | Select-String -SimpleMatch "slot ${Rejoin}: online").Count
     Report "rejoin (seat $Rejoin)" ($back -ge 2) "seat $Rejoin went online $back time(s)"
+}
+if ($JoinLate) {
+    $starts = @($hostLog | Select-String -SimpleMatch "flow: state 6 (block").Count
+    $mid = @($hostLog | Select-String -SimpleMatch "(mid-block: nothing started again)").Count
+    $loads = @(); for ($k = 1; $k -le $Guests; $k++) {
+        $loads += @(Get-Content "$out\guest$k.out" -ErrorAction SilentlyContinue | Select-String -SimpleMatch "loading the host's game").Count }
+    Report "joinlate" ($mid -eq $Guests -and $starts -le 1 -and -not ($loads | Where-Object { $_ -ne 1 })) `
+        "joined mid-block $mid of $Guests, the host's block starts $starts, the guests' loads $($loads -join ', ')"
 }
 if ($Shots -gt 0) { "screenshots: $out\net4_1.png .. net4_$Shots.png" }
 if ($fail) { exit 1 }

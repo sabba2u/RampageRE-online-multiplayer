@@ -195,7 +195,8 @@ typedef struct {
 
 typedef struct {
     const Bundle *city;
-    Bundle *own[2 * SCENE_MONSTERS]; int nown;        /* bundles loaded for this scene (the monsters and their clips) */
+    Bundle *own[2 * (SCENE_MONSTERS + 1)]; int nown;  /* bundles loaded for this scene (the monsters and their clips;
+                                                       * one more: a player joining past the monster to reveal, NET) */
     SceneMesh *meshes; uint32_t nmeshes, meshes_cap;
     int32_t *mesh_of_entry;                           /* per city bundle entry: its SceneMesh, -1 = not loaded */
     Instance *instances; uint32_t ninstances, instances_cap;

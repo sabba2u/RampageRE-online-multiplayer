@@ -283,6 +283,21 @@ static void status_reset(Game *g)                    /* 0x33DB90 [R] */
     }
 }
 
+/* NET: a player joining mid-block (a guest online): one more player, no points yet, lives as a new city gives them
+ * (the campaign's 3; the King modes and the Timed Run none); the rules that count players (np) count it from now on.
+ * Its index, -1 when the game has GAME_PLAYERS already */
+int game_add_player(Game *g)
+{
+    if (!g || np(g) >= GAME_PLAYERS)
+        return -1;
+    int k = g->cfg.num_players++;
+    clear_points(&g->p[k]);
+    g->lives[k] = g->cfg.play_type == GP_CAMPAIGN ? 3 : 0;
+    if (g->cfg.play_type == GP_KING_CITY || g->cfg.play_type == GP_KING_WORLD)
+        g->p[k].blocks_won = 0;
+    return k;
+}
+
 static void checkpoint_save(Game *g)                 /* 0x33E290: the campaign only [R] */
 {
     if (g->cfg.play_type != GP_CAMPAIGN)

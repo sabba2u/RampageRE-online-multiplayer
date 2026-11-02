@@ -227,6 +227,7 @@ int game_weapons_on(const Game *g);
 int game_time_up(const Game *g);                     /* 0x347D70: the block's clock armed or running, the bonus time past */
 int game_left(const Game *g);                        /* a GE_EXIT was given: nothing runs until game_load_city */
 int game_play_type(const Game *g);
+int game_add_player(Game *g);                         /* NET: one more player mid-block (its index, -1 full) */
 int game_lives(const Game *g, int slot);             /* GameStatus.getNumLives (the HUD's "xN") */
 /* gWorld.getGameClockTime (seconds left, 0x347DC0) and isGameClockVisible (ClockVisible, states 5 and 6) */
 float game_clock(const Game *g, int *visible);

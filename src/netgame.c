@@ -93,13 +93,13 @@ typedef struct {
 static int ng_world_of(const Viewer *v, NgWorld *w)
 {
     memset(w, 0, sizeof *w);
-    /* (a host's 1 player game counts: a guest that joins it is added as player 2, ng_dropin) */
+    /* (a 1 player game counts: a guest that joins it is added mid-block, mon_add_player) */
     int why = !v->play ? 1 : !v->have_scene ? 2 : !have_monster(v) ? 3 : !v->game ? 4 : v->shell ? 5 :
-              v->nmon < (net_role() == NET_HOST ? 1 : 2) ? 6 : v->attract ? 7 : 0;
+              v->nmon < 1 ? 6 : v->attract ? 7 : 0;
     static int said = -1;
     if (why != said && net_role() != NET_OFF) {
         static const char *const WHY[] = { "in a game", "not playing", "no city", "no monster", "no game", "in the menus",
-                                           "fewer than 2 players", "the attract mode's demo" };
+                                           "no players", "the attract mode's demo" };
         net_log("this copy: %s", WHY[why]);
         said = why;
     }
@@ -118,12 +118,15 @@ static int ng_world_of(const Viewer *v, NgWorld *w)
     return 1;
 }
 
-/* the id both compare: the world without its block (the game moves on to the next block by itself on both) */
+/* the id both compare: the world without its block (the game moves on to the next block by itself on both) and
+ * without its players (one joining mid-block is added on every copy, mon_add_player: no copy loads the world again) */
 static uint32_t ng_world_id(const NgWorld *w)
 {
     NgWorld k = *w;
     k.block = 0;
     k.bot_seed = 0;
+    k.nmon = 0;
+    memset(k.monster, 0, sizeof k.monster);
     uint32_t h = net_hash(&k, (int)sizeof k, 2166136261u);
     return h ? h : 1;
 }
@@ -179,10 +182,21 @@ static void ng_follow(Viewer *v)
 {
     int len;
     const NgWorld *w = (const NgWorld *)net_host_world_info(&len);
-    if (!w || len != (int)sizeof *w || net_host_world() == ng_followed)
+    if (!w || len != (int)sizeof *w)
         return;
+    if (net_host_world() == ng_followed) {           /* the same world: a player who joined mid-block, added here too */
+        while (v->play && v->game && v->nmon < w->nmon && v->nmon < MONSTERS) {
+            int m = w->monster[v->nmon];
+            if (m < 0 || m >= (int)v->nmonsters || mon_add_player(v, m) < 0) {
+                net_log("cannot add the host's player %d", v->nmon + 1);
+                break;
+            }
+            net_log("player %d joined: %s (added here mid-block)", v->nmon, v->monsters[m]);
+        }
+        return;
+    }
     ng_followed = net_host_world();
-    if (w->city >= NCITIES + 1 || w->nmon < 2 || w->nmon > MONSTERS) {
+    if (w->city >= NCITIES + 1 || w->nmon < 1 || w->nmon > MONSTERS) {
         net_log("cannot load the host's game (city %d, %d players)", w->city, w->nmon);
         return;
     }
@@ -1597,6 +1611,11 @@ static void ng_digest_send(Viewer *v)
     const NetSnapSample *n = netsnap_newest(mb);
     if (!n || !mb->have_offset || net_now() - ng_digest_at < NG_DIGEST_EVERY)
         return;
+    int len;                                         /* (a player who joined mid-block not added here yet: the host's
+                                                      * world counts them already, so not compared till then) */
+    const NgWorld *w = (const NgWorld *)net_host_world_info(&len);
+    if (w && len == (int)sizeof *w && w->nmon != v->nmon)
+        return;
     ng_digest_at = net_now();
     NetDigest d;
     ng_digest(v, &d);
@@ -2163,8 +2182,8 @@ static void netgame_frame(Viewer *v, Window *w, double now)
     net_world_paused = ngm_host_paused();             /* the host's Pause menu: the guest's world stops too */
     edible_net_no_spawn = ng_guest();                /* the guest's edibles: the host's alone (netrep_people.c) */
     if (net_role() == NET_GUEST && net_state() == NETS_CONNECTED && net_host_world() &&
-        net_host_world() != net_world())
-        ng_follow(v);
+        (net_host_world() != net_world() || net_host_world() == ng_followed))
+        ng_follow(v);                                /* (a new world; or the same one's players: one joined) */
     ngr_menu_frame(v);                               /* the menus: the host's state told, the guest back to its own */
     if (netui_wants_input()) {                       /* the panel has the keys */
         memset(w->keys, 0, sizeof w->keys);
@@ -2243,7 +2262,7 @@ static int netgame_shielded(const Mon *mo)
     return 1;
 }
 
-static void ng_dropin(Viewer *v, int k);
+static void ng_join_midblock(Viewer *v, int k);
 
 /* the host's PC's other players: source s (1 the numpad and controller 1, 2 and 3 controllers 2 and 3) as a pad */
 static void ng_local_source(Viewer *v, const Window *w, int s, Pad *p)
@@ -2289,9 +2308,9 @@ static void ng_slots_pads(Viewer *v, const Window *w)
             }
         }
     }
-    for (int k = 1; k < net_slots() && k < MONSTERS; k++)   /* a guest in a slot the game has no player for: added */
+    for (int k = 1; k < net_slots() && k < MONSTERS; k++)   /* a guest in a seat the game has no player for: added */
         if (k == v->nmon && net_slot_state(k, NULL) == NSL_ONLINE)
-            ng_dropin(v, k);
+            ng_join_midblock(v, k);
     ng_guest_menu = 0;
     ng_guest_typing = 0;
     for (int k = 1; k < v->nmon && k < net_slots(); k++) {
@@ -2324,71 +2343,36 @@ static void ng_slots_pads(Viewer *v, const Window *w)
     }
 }
 
-/* a guest in slot k of a game with k players (a 1 player game hosted): the block set up again with it as player k + 1,
- * the way a game with that many players starts (setup_players and open_city, as the guest's ng_follow does: the
- * scene's monster, the game's players and lives, the HUD's panels), what was played kept: every building as it is
- * (Building is plain data: as a late guest takes the host's, ng_state_building), player 1's place, health, energy,
- * score and lives. The people, the army, the traffic and the edibles start the block afresh; the block's intro plays
- * again. The new player's monster is the one its guest asked for in its hello (its last), else one not the host's */
-static void ng_building_put(Viewer *v, uint32_t i, const Building *nb);
-
-static void ng_dropin(Viewer *v, int k)
+/* a guest in seat k of a game with k players (seats fill in order): its monster added to the block as it is, on the
+ * host here and on every guest (ng_follow: the world's players told again, the same world), nothing started again.
+ * Its monster is the one its hello asked for (the monster it played last), else one nobody plays */
+static void ng_join_midblock(Viewer *v, int k)
 {
     if (k != v->nmon || k < 1 || k >= MONSTERS || v->attract)
         return;
-    int m = net_slot_monster(k);
-    if (m < 0 || m >= (int)v->nmonsters || m == v->mon[0].monster) {
-        static const char *const PICK[] = { "Lizzie", "George", "Ralph" };
+    int m = net_slot_monster(k), taken = 0;
+    for (int i = 0; i < k; i++)
+        taken |= m >= 0 && v->mon[i].monster == m;
+    if (m < 0 || m >= (int)v->nmonsters || taken) {
+        static const char *const PICK[] = { "Lizzie", "George", "Ralph", "Ramsey", "Gilman" };
         m = -1;
-        for (int i = 0; i < 3 && m < 0; i++) {
+        for (int i = 0; i < 5 && m < 0; i++) {
             int c = monster_index(v, PICK[i]);
-            if (c >= 0 && c != v->mon[0].monster)
+            int used = 0;
+            for (int j = 0; j < k; j++)
+                used |= v->mon[j].monster == c;
+            if (c >= 0 && !used)
                 m = c;
         }
         if (m < 0)
             m = v->mon[0].monster;
     }
-    net_log("drop-in: %s joins as player %d (%s block %d set up again with %d players)", v->monsters[m], k + 1,
-            CITIES[v->city_index], v->block, k + 1);
-    uint32_t nb = v->scene.nbuildings;
-    Building *kept = nb ? malloc(sizeof(Building) * nb) : NULL;
-    for (uint32_t i = 0; kept && i < nb; i++)
-        kept[i] = v->scene.buildings[i].b;
-    GameNetSync gs;
-    game_net_get(v->game, &gs);
-    Mon was = v->mon[0];
-    int pick[MONSTERS];
-    for (int i = 0; i < MONSTERS; i++)
-        pick[i] = i < k ? v->mon[i].monster : i == k ? m : -1;
-    game_free(v->game);
-    v->game = NULL;
-    v->game_built = 0;
-    setup_players(v, k + 1, 0, pick);
-    if (open_city(v, v->city_index, v->block, -1) != 0) {
-        net_log("drop-in: cannot open %s", CITIES[v->city_index]);
-        free(kept);
+    if (mon_add_player(v, m) != k) {
+        net_log("drop-in: cannot add %s as player %d", v->monsters[m], k + 1);
         return;
     }
-    v->play = have_monster(v);
-    for (int i = 0; v->play && i < v->nmon; i++)
-        if (v->mon[i].have_graph)
-            play_state(&v->mon[i]);
-    for (uint32_t i = 0; kept && i < nb && i < v->scene.nbuildings; i++)
-        ng_building_put(v, i, &kept[i]);
-    free(kept);
-    game_net_put(v->game, &gs, 1);                   /* (player 1's score and lives) */
-    Mon *mo = &v->mon[0];
-    mo->mx = was.mx; mo->my = was.my; mo->mz = was.mz < 0 ? 0 : was.mz;
-    mo->heading = was.heading;
-    mo->hp = was.hp;
-    mo->power.energy = was.power.energy;
-    scene_monster_place(&v->scene, 0, mo->mx, mo->my, mo->mz, mo->heading);
-    Mon *nw = &v->mon[k];                            /* the new one beside player 1, in the street */
-    nw->mx = was.mx + 17;
-    nw->my = -18;
-    nw->mz = 0;
-    scene_monster_place(&v->scene, k, nw->mx, nw->my, nw->mz, nw->heading);
-    ng_set_world(v);                                 /* (the guest is told the new world: it loads it) */
+    net_log("drop-in: %s joins as player %d (mid-block: nothing started again)", v->monsters[m], k + 1);
+    ng_set_world(v);                                 /* (the guests are told the players: they add it too) */
 }
 
 /* the players' pads are set (keys_pad / pad_to_pad): the host's player 2 is the guest's pad; the guest sends its own

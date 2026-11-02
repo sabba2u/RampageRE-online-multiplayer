@@ -1052,6 +1052,112 @@ static void reveal_events(Viewer *v)
 
 static void block_left(Viewer *v);
 
+/* player k's HUD (Hud<k>.ifc), laid out for v->nmon players; player 1's has the screens (the block's build, and NET: a
+ * player joining mid-block) */
+static void hud_open_player(Viewer *v, int k)
+{
+    Mon *mo = &v->mon[k];                    /* each player's HUD (Hud<k>.ifc); player 1's has the screens */
+    int pt = play_type(v);                   /* (GP_* and HUD_PLAY_* agree) the King modes: the blocks to win */
+    HudConfig hc = { k, v->nmon, pt, v->game && (pt == GP_KING_CITY || pt == GP_KING_WORLD) ?
+                     game_blocks_to_win(v->game) : 0, v->monsters[mo->monster] };
+    mo->hud = hud_open(&v->gui_world, &v->gui_common, &hc);
+    if (k == 0)
+        v->hud = mo->hud;
+    if (mo->hud) {
+        /* three lives: the campaign's start [G] */
+        hud_set(mo->hud, mo->hp, mon_hp_max(mo), mo->energy, 100, 0, 3, -1);
+        hud_set_project(mo->hud, hud_project, v);
+        if (v->game)                         /* the city's onPostInit: hidden till BeginBlockNI */
+            hud_hide(mo->hud);
+        hud_set_language(mo->hud, v->lang);
+        hud_set_settings(mo->hud, profile_sound_volume(&v->prof), profile_music_volume(&v->prof),
+                         profile_rumble(&v->prof));
+        if (k == 0)                          /* the pads vibrate as the profile says [G] */
+            v->vibrate = profile_set_rumble(&v->prof, profile_rumble(&v->prof), 0);
+        hud_add_bundle(mo->hud, v->scene.city);   /* <City>.loc: the block names, the challenge texts */
+        if (v->have_fx_bundle)               /* the challenge icons that are fx.bdp's pictures (Chocolate_bar,
+                                              * Powerup_HotDog, moneybag, Ace_Sp ...: 20 of the 63 blocks') */
+            hud_add_bundle(mo->hud, &v->fx_bundle);
+        if (v->have_wii_world)               /* last: names only the Wii has (Hud_Boris_Head ...) */
+            hud_add_bundle(mo->hud, &v->wii_world);
+        if (v->have_wii_common)
+            hud_add_bundle(mo->hud, &v->wii_common);
+        if (v->have_wii_world && !strcmp(CITIES[v->city_index], "Dallas"))   /* Dallas::onPostInit's second
+                                              * boss bar (setChallengeHud2) */
+            hud_challenge_hud2(mo->hud, &v->wii_world);
+        hud_results_auto(mo->hud, v->unattended ? 2.0f : 0);
+    }
+}
+
+/* NET: one more player in the block as it is, mid-play (a guest joining online): its monster beside player 1, its
+ * moves, its HUD, the game's player; nothing else starts again. The monster to reveal (the extra, in the slot after
+ * the players) moves up a slot; with no slot after (three players and the extra: MONSTERS and SCENE_MONSTERS 4) it
+ * leaves the block, hidden, and its scene slot is the new player's. Monster k's slot index, -1 when it cannot */
+static int mon_add_player(Viewer *v, int monster)
+{
+    int k = v->nmon;
+    if (!v->have_scene || !v->city || k >= MONSTERS || monster < 0 || monster >= (int)v->nmonsters)
+        return -1;
+    int ex = v->extra;
+    if (ex >= 0 && (ex != k || v->scene.nmon != k + 1 || k + 1 >= MONSTERS || k + 1 >= SCENE_MONSTERS)) {
+        if (mon_in(&v->mon[ex]))
+            mon_in(&v->mon[ex])->hidden = 1;
+        if (ex == k && v->scene.nmon == k + 1)
+            v->scene.nmon = k;                       /* (its instance stays, hidden, till the block ends) */
+        v->extra = ex = -1;
+    }
+    int s = v->scene.nmon;                           /* the scene slot the new monster gets: k, or k + 1 past the extra */
+    if (s != (ex >= 0 ? k + 1 : k)) {
+        printf("mon_add_player: scene slot %d, players %d, extra %d\n", s, k, ex);
+        return -1;
+    }
+    Mon *mo = &v->mon[s];
+    mo->v = v;
+    mo->slot = s;
+    mo->monster = monster;
+    mo->bot = 0;
+    mo->drive = DRIVE_KEYS2;                         /* (a person's: the seat's pad, set by netgame.c) */
+    mo->hud = NULL;
+    mo->mx = v->mon[0].mx + 17;                      /* beside player 1, in the street */
+    mo->my = -18;
+    mo->mz = 0;
+    mo->heading = 180;
+    memset(&mo->pad, 0, sizeof mo->pad);
+    mo->human = mo->dropping = mo->defeated = 0;
+    mo->reveal = mo->shown = 0;
+    mo->is_ai = 0;
+    if (city_monster(v->city, &v->scene, v->monsters[monster], -1, mo->mx, mo->my, mo->heading) != s) {
+        printf("mon_add_player: %s not loaded in scene slot %d\n", v->monsters[monster], s);
+        return -1;
+    }
+    start_moves(mo);
+    mo->held_vehicle = mo->held_rail = mo->held_sobj = mo->held_parade = -1;
+    mo->streaker = -1;
+    shadow_monster_init(&mo->smon);
+    if (ex >= 0) {                                   /* the extra moves up: the new player in slot k */
+        Mon t = v->mon[k];
+        v->mon[k] = v->mon[k + 1];
+        v->mon[k + 1] = t;
+        v->mon[k].slot = k;
+        v->mon[k + 1].slot = k + 1;
+        SceneMonster sm = v->scene.mon[k];
+        v->scene.mon[k] = v->scene.mon[k + 1];
+        v->scene.mon[k + 1] = sm;
+        v->extra = k + 1;
+    }
+    v->nmon++;
+    if (v->game)
+        game_add_player(v->game);
+    for (int i = 0; i < k; i++)                      /* the panels laid out for one more */
+        hud_set_players(v->mon[i].hud, v->nmon);
+    if (v->have_gui && !v->no_hud) {
+        hud_open_player(v, k);
+        if (v->mon[k].hud)
+            hud_show(v->mon[k].hud, hud_fade(v->hud));   /* (mid-block: shown as player 1's is) */
+    }
+    return k;
+}
+
 static void build(Viewer *v)
 {
     if (v->have_scene)
@@ -1474,39 +1580,8 @@ static void build(Viewer *v)
     }
     if (!v->game_built || !v->hud) {                 /* the game's next block keeps the HUDs (their results going) */
         huds_close(v);
-        for (int k = 0; v->have_gui && v->have_scene && have_monster(v) && !v->no_hud && k < v->nmon; k++) {
-            Mon *mo = &v->mon[k];                    /* each player's HUD (Hud<k>.ifc); player 1's has the screens */
-            int pt = play_type(v);                   /* (GP_* and HUD_PLAY_* agree) the King modes: the blocks to win */
-            HudConfig hc = { k, v->nmon, pt, v->game && (pt == GP_KING_CITY || pt == GP_KING_WORLD) ?
-                             game_blocks_to_win(v->game) : 0, v->monsters[mo->monster] };
-            mo->hud = hud_open(&v->gui_world, &v->gui_common, &hc);
-            if (k == 0)
-                v->hud = mo->hud;
-            if (mo->hud) {
-                /* three lives: the campaign's start [G] */
-                hud_set(mo->hud, mo->hp, mon_hp_max(mo), mo->energy, 100, 0, 3, -1);
-                hud_set_project(mo->hud, hud_project, v);
-                if (v->game)                         /* the city's onPostInit: hidden till BeginBlockNI */
-                    hud_hide(mo->hud);
-                hud_set_language(mo->hud, v->lang);
-                hud_set_settings(mo->hud, profile_sound_volume(&v->prof), profile_music_volume(&v->prof),
-                                 profile_rumble(&v->prof));
-                if (k == 0)                          /* the pads vibrate as the profile says [G] */
-                    v->vibrate = profile_set_rumble(&v->prof, profile_rumble(&v->prof), 0);
-                hud_add_bundle(mo->hud, v->scene.city);   /* <City>.loc: the block names, the challenge texts */
-                if (v->have_fx_bundle)               /* the challenge icons that are fx.bdp's pictures (Chocolate_bar,
-                                                      * Powerup_HotDog, moneybag, Ace_Sp ...: 20 of the 63 blocks') */
-                    hud_add_bundle(mo->hud, &v->fx_bundle);
-                if (v->have_wii_world)               /* last: names only the Wii has (Hud_Boris_Head ...) */
-                    hud_add_bundle(mo->hud, &v->wii_world);
-                if (v->have_wii_common)
-                    hud_add_bundle(mo->hud, &v->wii_common);
-                if (v->have_wii_world && !strcmp(CITIES[v->city_index], "Dallas"))   /* Dallas::onPostInit's second
-                                                      * boss bar (setChallengeHud2) */
-                    hud_challenge_hud2(mo->hud, &v->wii_world);
-                hud_results_auto(mo->hud, v->unattended ? 2.0f : 0);
-            }
-        }
+        for (int k = 0; v->have_gui && v->have_scene && have_monster(v) && !v->no_hud && k < v->nmon; k++)
+            hud_open_player(v, k);
     }
     challenge_init(&v->challenge);                   /* the block's challenge (0x3468F0, at its activation) */
     challenge_upgrade_props(&v->challenge, city_template(v->city, "MonsterUpgrade"));

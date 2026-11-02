@@ -42,6 +42,7 @@ typedef struct {
     int have_remote;
     int sys_run[NET_DSYS];                           /* its digests' systems that differed in a row */
     char addr[64];                                   /* NSL_ONLINE: its guest's "ip:port" (the launcher's list) */
+    double heard;                                    /* NSL_ONLINE: when its guest's pad last came */
 } Slot;
 
 static struct {
@@ -483,8 +484,16 @@ static uint64_t new_token(int k)
 
 void net_set_world(uint32_t id, const void *info, int len)
 {
-    if (id == g.world)
+    if (id == g.world) {                             /* the same world: its players may have changed (one joined) */
+        int n = info && len > 0 && len <= NET_WORLD_INFO ? len : 0;
+        if (n && (n != g.info_len || memcmp(g.info, info, (size_t)n))) {
+            g.info_len = n;
+            memcpy(g.info, info, (size_t)n);
+            if (g.role == NET_HOST)
+                send_world();                        /* (the guests add the player; nothing else starts again) */
+        }
         return;
+    }
     g.world = id;
     g.info_len = info && len > 0 && len <= NET_WORLD_INFO ? len : 0;
     if (g.info_len)
@@ -634,6 +643,22 @@ static void on_hello(int peer, NetBuf *b)
         snprintf(why, sizeof why, "The host removed you from the game");
     int k = -1;
     if (!why[0]) {
+        /* its token on a seat still online whose guest has been silent 2 s: the same player back after a crash, before
+         * the old connection timed out (5 to 10 s): that one is let go, and the seat is its again (below). One still
+         * playing with that token is another copy sharing its folder's netrejoin.cfg: a seat of its own */
+        for (int i = 1; h.token && i < NET_SLOTS; i++)
+            if (g.slot[i].state == NSL_ONLINE && g.slot[i].token == h.token && g.now - g.slot[i].heard > 2.0) {
+                int old = g.slot[i].peer;
+                if (old >= 0 && old < NT_PEERS && old != peer) {
+                    nt_drop(old);
+                    g.peer_on[old] = 0;
+                    g.peer_slot[old] = -1;
+                }
+                net_log("the guest of slot %d is back (its old connection silent %.0f s: let go)", i, g.now - g.slot[i].heard);
+                g.slot[i].until = g.now + NET_RESERVE_S;
+                g.slot[i].peer = -1;
+                slot_set(i, NSL_RESERVED);
+            }
         NetSlotPick pk[NET_SLOTS];
         for (int i = 0; i < NET_SLOTS; i++) {
             pk[i].state = (uint8_t)g.slot[i].state;
@@ -664,6 +689,7 @@ static void on_hello(int peer, NetBuf *b)
     s->peer = peer;
     snprintf(s->addr, sizeof s->addr, "%s", addr);
     s->have_remote = 0;
+    s->heard = g.now;                               /* (just in: not a silent one) */
     s->remote_frame = 0;
     s->remote_pressed = 0;
     g.peer_slot[peer] = k;
@@ -695,6 +721,7 @@ static void on_pad(Slot *sl, NetBuf *b)
             sl->remote_pressed |= p[i].pressed;
     sl->remote = p[0];
     sl->remote_frame = frame;
+    sl->heard = g.now;
     if (!sl->have_remote)
         g.slots_dirty = 1;                           /* (its first: no longer joining, the guests told) */
     sl->have_remote = 1;
@@ -849,11 +876,15 @@ static void on_data(int peer, const uint8_t *data, int len)
             remove(rejoin_path());
         }
         break;
-    case NM_WORLD:
+    case NM_WORLD: {
+        uint32_t was = g.host_world;
         r_world(&b);
-        netsnap_clear(&g.snaps);
-        net_log("the host's world is now %08X", g.host_world);
+        if (g.host_world != was) {                   /* (the same world told again: its players; the snapshots go on) */
+            netsnap_clear(&g.snaps);
+            net_log("the host's world is now %08X", g.host_world);
+        }
         break;
+    }
     case NM_SNAP: {
         double t = net_r_f64(&b);
         if (!b.err && net_live()) {
