@@ -1,8 +1,24 @@
 # RampageRE: Online Multiplayer
 
-> **This fork adds online 2-player to [jjmhalew/RampageRE](https://github.com/jjmhalew/RampageRE).** Everything
-> below this box is the original project's README. All credit for the port itself goes to jjmhalew; this fork only adds
-> the online play on top (branch `online-multiplayer`).
+> **This fork adds online play for up to 4, a launcher, Boss Rumble and more to
+> [jjmhalew/RampageRE](https://github.com/jjmhalew/RampageRE).** Everything below the line is the original project's
+> README. All credit for the port itself goes to jjmhalew; this fork only adds what this first part describes (branch
+> `online-multiplayer`).
+
+## Getting started
+
+1. Download **all.zip** from this fork's [Releases](https://github.com/sabba2u/RampageRE-online-multiplayer/releases)
+   and unzip it anywhere.
+2. Double-click **RampageRE-Launcher.exe**. Windows may say "Windows protected your PC" (the exes are not signed):
+   *More info*, then *Run anyway*.
+3. Click **Play Local**. The first time, the game asks for your own disc image of *Rampage: Total Destruction* (the
+   European or USA PS2 `.iso`); it reads it where it is and remembers it. Nothing from the game is in the zip.
+4. Optional: the Wii version's ten extra monsters and Dallas from your own extracted Wii disc (the game asks once;
+   see "The Wii's monsters and Dallas" below).
+
+The zip holds `RampageRE.exe` (the game), `RampageRE-dev.exe` (the same game with a console, for the command line),
+`RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), the `lobby/` room
+server, and the docs this README links to.
 
 ## Online, up to 4 players (work in progress)
 
@@ -24,7 +40,22 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
   right-click your friend in Steam's friends list and pick **Join Game**). Steam play borrows Valve's free test app
   **Spacewar** (the launcher explains it): add it to your Steam library once.
 - The first time, click **REGISTER RAMPAGE:// LINKS** so a link from a friend opens the game straight away.
-- **Settings**: join links, servers, banned players, **Unlock all monsters** and **Unlock all moves** (every monster's upgrade moves from the start; both on by default, untick to play as your profile has them).
+- **Settings**: join links, servers, banned players, and the **Game** options below.
+
+**The launcher's Game options** (Settings; each is passed to the game every time it starts, so nothing in your profile
+changes):
+
+| Option | What it does |
+|---|---|
+| **Unlock all monsters** (on) | every monster (all 40 with the Wii data) and every city |
+| **Unlock all moves** (on) | every monster's upgrade moves from the start; untick it and each monster has only the upgrades it earned |
+| **Shuffle the city's buildings** | every game a new street: each lot gets another of the city's buildings of its size (online, the host's) |
+| **Time of day** | As the game picks / Always day / Always night |
+| **Weather** | Clear / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes as an x-ray) |
+| **Look** | Normal / 1950s monster movie (black and white, scratches, grain) |
+| **Smooth edges** | Game's setting / Medium / High (anti-aliasing) |
+
+**Play Local**'s **Players** choice (1 to 4) sets how many the game's menus offer.
 
 **Which "server" is which:** the game host is inside **RampageRE.exe** (every way of hosting uses it); the room server
 (codes, links, the player list) is in the launcher, or the Node `lobby/` for a VPS, and is not in the game. Read
@@ -107,6 +138,37 @@ and offline, each player sets their own, and they are kept in `lookfx.cfg` for n
 The score and timer always stay sharp. The blurs switch themselves off while MSAA is on (F7); SMAA is fine. The camera
 change is only what you see: the game still spawns things for its own camera, so zoomed far out you may see people or
 cars appear at the edges.
+
+### Boss Rumble (new game type)
+
+A survival mode for 1 to 4 players on the same side, offline or online, made for this fork.
+
+- **Start it:** on the main menu, press **left or right** to the fifth icon (the ape and the lizard): **BOSS RUMBLE**.
+  Pick players, bots (they fight with you) and monsters; there is no City Select, the game picks a random city and
+  block. From the command line: `RampageRE-dev.exe <iso> --play rumble`.
+- **The run:** 12 waves of bosses, 1, 1, 1, then 2, 2, 2, then 3, 3, 3, then 4, 4, 4 at once. Any monster can be a
+  boss; bosses have a **red glowing outline** and a health bar with their head and name under the clock. Every three
+  waves they get 25 % more health and hit 25 % harder. A "WAVE N" banner comes between waves.
+- **The clock counts up:** how long you last is your score. The team shares 3 lives, as in the campaign.
+- **Power-ups:** the game's own food and items appear on the street and on rooftops (up to 4 at a time, each gone after
+  20 s); walk into one to take it.
+- **The bosses' manners:** a boss catches its breath for a second or so after each attack, and a player knocked down
+  or hit three times in a row is left alone for 2 seconds, so nobody gets juggled against a wall.
+- **The end:** clear wave 12 and it's a **VICTORY**; lose every life and it's Game Over. Both screens show the time,
+  the wave and your **best time** (kept in `rumble_best.txt` beside your profile; online, each PC keeps its own).
+- **Online:** the host runs the bosses; guests see the same waves, bars and power-ups. Everyone must be in before the
+  run starts: once the waves have begun, new players are told the game is full (a player who drops can rejoin).
+
+### Other changes in this fork
+
+- **Outlines:** a boss glows red; an online seat nobody is playing (disconnected) is drawn grey.
+- **Up to 8 monsters on screen** (bosses in Boss Rumble). An experimental 8-player build (`build.bat dev8`) exists;
+  the release has the 4-player game.
+- **Results screens** list 6 and 8 players.
+- **Fixed:** the tentacles of Cal, Eyegore, Venus, Natalie and Jill were frozen straight (the face animation
+  overrode them; their tips sank into the street). They now curl, stretch and plant as on the console.
+- **Texture and model mods:** PNGs in `mods/textures/` ([docs/TEXTURES.md](docs/TEXTURES.md)), glTF models in
+  `mods/models/` ([docs/MODELS.md](docs/MODELS.md)).
 
 ### Please read: what has and has not been tested
 

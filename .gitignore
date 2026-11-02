@@ -63,3 +63,6 @@ netrejoin.cfg
 # the launcher's build output
 launcher/target/
 launcher/target-alt/
+
+# Boss Rumble's best survival time, kept beside the profile (src/main.c rumble_finish)
+rumble_best.txt
