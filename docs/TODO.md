@@ -19,8 +19,9 @@ Ideas the owner wants, not started. Newest at the bottom.
 - (prototype 2026-11-02) **More than 4 players**: `build.bat dev8` makes RampageRE-dev8.exe with up to 8
   (RAMPAGE_MAX_PLAYERS: the monsters, the scene's, the game's players, the seats; the controllers stay 4). Offline 8
   monsters (--players 8 --monster5 .. --monster8) played three campaign blocks with no problem; online a host and 5
-  guests on one PC passed every net4_test check (-Exe RampageRE-dev8.exe). Not done: the HUD (4 panels: players 5-8
-  have none), the results screens (the first 4), the menus (Monster Select's 4 cards), the launcher; the host's
+  guests on one PC passed every net4_test check (-Exe RampageRE-dev8.exe). The HUD (2026-11-02): players 5-8 have
+  Hud1.ifc's panel in a second row under the clock, centred by how many it holds (hud.c hud_set_players); --players 5+
+  without --monsterN takes monsters not taken yet (it crashed). Not done: the results screens (the first 4), the menus (Monster Select's 4 cards), the launcher; the host's
   upload with 5 guests about 880 KB/s (7 Mbit/s).
 - (done 2026-11-02: docs/MODELS.md) **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
   textures. Re-skinning a monster on its own skeleton keeps all its moves; a new skeleton needs new animations and a

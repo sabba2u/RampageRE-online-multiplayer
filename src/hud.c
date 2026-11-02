@@ -1629,6 +1629,8 @@ struct Hud {
     /* Hud.scr's objects and state */
     Node *health, *rage, *score, *heads, *blocks, *num_text, *block_text, *block;
     float group_p[3];                                    /* player 2's "group" where Hud1.ifc has it (hud_set_players) */
+    int middle;                                          /* port extra: players 5 .. 8 (RAMPAGE_MAX_PLAYERS 8): their
+                                                          * panels in a row under the clock, kept in the middle */
     float hp, hp_max, energy, energy_max;
     int points, lives, blocks_won;
     int prev_points, prev_lives;
@@ -1695,6 +1697,20 @@ void hud_set_players(Hud *h, int num_players)
     if (!h || !h->hud)
         return;
     h->cfg.num_players = num_players;
+    /* port extra: players 5 .. 8 (a build with more than 4, RAMPAGE_MAX_PLAYERS): Hud1.ifc's panel, four to a row
+     * under the clock (the first row's panels at 60, the clock between players 2 and 3), a step of 110 (the panels'
+     * in Hud0 .. 3), the row's panels together in the screen's middle; in a wide window kept there (hud_quads) */
+    if (h->cfg.player >= 4) {
+        Node *g = layout_find(h->hud->root, "group");
+        int i = (h->cfg.player - 4) % 4, row = (h->cfg.player - 4) / 4;
+        int in_row = num_players - 4 - 4 * row;
+        in_row = in_row < 1 ? 1 : in_row > 4 ? 4 : in_row;
+        if (g) {
+            g->p[0] = HUD_SCREEN_W / 2 - 55.0f * in_row + 110.0f * i + 5;
+            g->p[1] = 116 + 56.0f * row;
+        }
+        return;
+    }
     Node *g = h->cfg.player == 1 ? layout_find(h->hud->root, "group") : NULL;
     if (!g)
         return;
@@ -1718,7 +1734,7 @@ Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg
     if (common)
         h->gui.bundles[h->gui.nb++] = common;
     char name[32];
-    snprintf(name, sizeof name, "Hud%d.ifc", cfg->player >= 0 && cfg->player < 4 ? cfg->player : 0);
+    snprintf(name, sizeof name, "Hud%d.ifc", cfg->player >= 0 && cfg->player < 4 ? cfg->player : cfg->player >= 4 ? 1 : 0);
     h->hud = layout_load(&h->gui, worldgui, name);
     h->clock = layout_load(&h->gui, worldgui, "Clock.ifc");
     /* gWorld.setBannerFont("PointsBanner") [R build/scripts/<City>.scr] */
@@ -1759,6 +1775,10 @@ Hud *hud_open(const Bundle *worldgui, const Bundle *common, const HudConfig *cfg
         if (g)
             memcpy(h->group_p, g->p, sizeof h->group_p);
     }
+    /* port extra: players 5 .. 8 (a build with more than 4, RAMPAGE_MAX_PLAYERS): Hud1.ifc's panel, four to a row of
+     * its width (110: the panels' step in Hud0 .. 3), the row's middle the screen's, under the clock (the first row's
+     * panels at 60, the clock between players 2 and 3); in a wide window kept in the middle (hud_quads) */
+    h->middle = cfg->player >= 4;
     hud_set_players(h, cfg->num_players);
     h->hp_max = 200;
     h->energy_max = 100;
@@ -4911,7 +4931,8 @@ int hud_quads(const Hud *h, HudQuad *out, int max)
     if (!h || !out || max <= 0)
         return 0;
     int n = banners_emit(h, out, max);
-    n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->hud));
+    int nh = emit_layout(out + n, max - n, &h->gui, h->hud);
+    n += h->middle ? nh : to_side(out + n, nh);          /* (players 5 .. 8: in the middle) */
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->clock));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->attract));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->cs.L));

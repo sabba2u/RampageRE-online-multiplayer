@@ -9127,6 +9127,16 @@ static int viewer_main(int argc, char **argv)
                 if (!taken)
                     pick[k] = c;
             }
+            for (int c = 0; k >= 4 && pick[k] < 0 && c < (int)v.nmonsters; c++) {   /* (more than 4: RAMPAGE_MAX_PLAYERS,
+                                                      * the four taken: the next one not taken, else player 1's) */
+                int taken = 0;
+                for (int q = 0; q < k; q++)
+                    taken |= pick[q] == c;
+                if (!taken)
+                    pick[k] = c;
+            }
+            if (k >= 4 && pick[k] < 0)
+                pick[k] = pick[0];
         }
         if (pick[0] < 0)                             /* no monster: the free camera only */
             players = 1;
