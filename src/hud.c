@@ -1646,6 +1646,8 @@ struct Hud {
     void *project_ctx;
     /* the screen's other interfaces */
     ChStatus cs;
+    struct { Layout *L; Node *group, *health, *icon, *name; char monster[32]; } rb[4];   /* (Boss Rumble's bars) */
+    int nrb;
     ChText *ct;
     HudChallenge ch;
     char ch_identifier[64], ch_icon[64];
@@ -1825,6 +1827,8 @@ void hud_close(Hud *h)
     free(h->attract);
     free(h->cs.L);
     free(h->cs.L2);
+    for (int i = 0; i < 4; i++)
+        free(h->rb[i].L);
     ctext_free(h->ct);
     for (int i = 0; i < h->nrages; i++)
         rage_free(h->rages[i]);
@@ -2213,6 +2217,75 @@ void hud_banner_text2(Hud *h, const char *name, const char *name2, const float r
 void hud_banner_text(Hud *h, const char *name, const float rgba[4], float scale, const char *snd)
 {
     hud_banner_text2(h, name, NULL, rgba, scale, 0.35f, snd);   /* setPointsBannerData: fHoldTime 0.35 */
+}
+
+/* ChallengeStatus.ifc's boss_group (a black quad, the bar, the head) once a boss, its name a copy of the challenge's
+ * title above the bar; the rest of the layout hidden */
+#define RB_STEP 140.0f
+void hud_set_bosses(Hud *h, int n, const char *const name[], const float frac[])
+{
+    if (!h || h->cfg.player != 0)
+        return;
+    if (n < 0) n = 0;
+    if (n > 4) n = 4;
+    for (int i = 0; i < n; i++) {
+        if (!h->rb[i].L) {
+            Layout *L = layout_load(&h->gui, h->gui.bundles[0], "ChallengeStatus.ifc");
+            if (!L)
+                break;
+            h->rb[i].L = L;
+            Node *cg = layout_find(L->root, "challenge_group"), *title = layout_find(L->root, "challenge");
+            h->rb[i].group = layout_find(L->root, "boss_group");
+            h->rb[i].health = layout_find(L->root, "bossHealth");
+            h->rb[i].icon = h->rb[i].group ? layout_find(h->rb[i].group->child, "icon") : NULL;
+            h->rb[i].name = h->rb[i].group && title ? node_copy(L, title, h->rb[i].group) : NULL;
+            if (h->rb[i].name) {
+                h->rb[i].name->p[0] = 76;            /* over the bar's middle */
+                h->rb[i].name->p[1] = 2;
+                h->rb[i].name->visible = 1;
+            }
+            show(cg, 0);
+            show(h->rb[i].group, 1);
+            set_fade(h->rb[i].group, 1);
+            L->root->fade = 1;
+            L->root->visible = 1;
+            h->rb[i].monster[0] = 0;
+        }
+        if (!h->rb[i].group)
+            continue;
+        h->rb[i].group->p[0] = 320.0f - RB_STEP * (float)n / 2 + RB_STEP * (float)i - 8;   /* side by side, centred */
+        h->rb[i].group->p[1] = 88;                    /* (under the clock and the players' panels) */
+        if (h->rb[i].health)
+            h->rb[i].health->val = 100.0f * (frac[i] < 0 ? 0 : frac[i] > 1 ? 1 : frac[i]);
+        const char *nm = name[i] ? name[i] : "";
+        if (strcmp(h->rb[i].monster, nm)) {          /* a new boss in this bar: its name and head */
+            snprintf(h->rb[i].monster, sizeof h->rb[i].monster, "%s", nm);
+            const char *shown = loc_find(&h->gui, nm);
+            char up[64];
+            snprintf(up, sizeof up, "%s", shown ? shown : nm);
+            for (char *c = up; *c; c++)
+                *c = (char)toupper((unsigned char)*c);
+            node_text(h->rb[i].name, up);
+            char tname[64];
+            snprintf(tname, sizeof tname, "Hud_%s_Head", nm);
+            if (h->rb[i].icon)
+                h->rb[i].icon->has_tex = tex_find(&h->gui, tname, &h->rb[i].icon->tex);
+        }
+    }
+    h->nrb = n;
+}
+
+void hud_wave_banner(Hud *h, int wave, int last)
+{
+    if (!h || h->cfg.player != 0)
+        return;
+    char t[32];
+    if (last)
+        snprintf(t, sizeof t, "#FINAL WAVE");
+    else
+        snprintf(t, sizeof t, "#WAVE %d", wave);
+    static const float red[4] = { 1.0f, 0.15f, 0.08f, 1.0f };
+    hud_banner_text2(h, t, NULL, red, 1.0f, 1.5f, NULL);
 }
 
 void hud_banner_rage(Hud *h)
@@ -4999,6 +5072,13 @@ int hud_quads(const Hud *h, HudQuad *out, int max)
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->attract));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->cs.L));
     n += to_side(out + n, emit_layout(out + n, max - n, &h->gui, h->cs.L2));
+    for (int i = 0; i < h->nrb; i++) {                   /* Boss Rumble's bars: under the clock (in the row's
+                                                          * layout, under it where it moved) */
+        int nb = emit_layout(out + n, max - n, &h->gui, h->rb[i].L);
+        if (row)
+            shift_quads_y(out + n, nb, 18 + 42 * row_scale(h->cfg.num_players) + 46 * row_scale(h->cfg.num_players) - 36);
+        n += nb;
+    }
     if (h->ct)
         n += emit_layout(out + n, max - n, &h->gui, h->ct->L);
     for (int i = 0; i < h->nrages; i++)

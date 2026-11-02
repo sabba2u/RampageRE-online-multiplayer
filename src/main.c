@@ -286,6 +286,7 @@ typedef struct Viewer {
     int boss_block;                                  /* the block has a boss (the HUD's boss bar) */
     struct {                                         /* (port extra) Boss Rumble's run (rumble_driver_step) */
         int wave, players, nboss, won;               /* the wave (0 before the first), the players' slots, its bosses */
+        int bannered;                                /* the wave whose banner is up */
         float pause;                                 /* seconds since the last wave was cleared */
         uint32_t seed;
     } rumble;
@@ -8907,9 +8908,34 @@ static void rumble_driver_step(Viewer *v, float dt)
         printf("rumble: won at %.1f s\n", game_clock(v->game, NULL));
         return;
     }
+    if (v->rumble.bannered != v->rumble.wave + 1) {  /* the next wave's banner, as the pause begins */
+        v->rumble.bannered = v->rumble.wave + 1;
+        hud_wave_banner(v->hud, v->rumble.wave + 1, v->rumble.wave + 1 == RUMBLE_WAVES);
+    }
+    if (v->ap && getenv("RAMPAGE_RUMBLE_SHOTS") && v->rumble.pause < 0.8f && v->rumble.pause + dt >= 0.8f &&
+        v->rumble.wave >= 1)                         /* (testing: the banner's shot, the waves after the first) */
+        ap_want_shot(v->ap, "banner");
     v->rumble.pause += dt;
     if (v->rumble.pause >= RUMBLE_WAVE_PAUSE)
         rumble_wave(v, v->rumble.wave + 1);
+}
+
+/* player 1's HUD: a bar for each boss still standing (the guest's too: its bosses are the host's) */
+static void rumble_hud(Viewer *v)
+{
+    if (play_type(v) != GP_BOSS_RUMBLE || !v->hud)
+        return;
+    const char *name[RUMBLE_MAX_BOSSES];
+    float frac[RUMBLE_MAX_BOSSES];
+    int n = 0;
+    for (int k = 0; k < v->nmon && n < RUMBLE_MAX_BOSSES; k++) {
+        const Mon *mo = &v->mon[k];
+        if (!mo->boss || mo->boss_beaten || mo->monster < 0)
+            continue;
+        name[n] = v->monsters[mo->monster];
+        frac[n++] = mo->hp / mon_hp_max(mo);
+    }
+    hud_set_bosses(v->hud, n, name, frac);
 }
 
 /* (testing: RAMPAGE_RESULTS_SHOTS with --autoplay --ap-shots) the results screen's shots, 3, 7 and 11 s after it
@@ -9701,6 +9727,7 @@ static int viewer_main(int argc, char **argv)
                     netgame_weather_strike(wx, wseed, lightning_pick(&v, wseed));
                 lightning_step(&v, wdt);
                 rumble_driver_step(&v, wdt);
+                rumble_hud(&v);
                 results_shots(&v, dt);
             }
             netgame_after_step(&v);                  /* NET: the host's snapshot, the guest's taking it */

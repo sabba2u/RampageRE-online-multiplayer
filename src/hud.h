@@ -96,6 +96,11 @@ void hud_float(Hud *h, int amount, const float pos[3], int building, float scale
  * starts, "" / NULL none, "Default" keeps "v_rampage". Edible.scr's "\n" in the name (two characters) is made a line
  * break here. Use it for edible.h EE_MESSAGE (name, v, amount, name2). */
 void hud_banner_text(Hud *h, const char *name, const float rgba[4], float scale, const char *sound);
+/* (port extra) Boss Rumble, player 1's HUD: n bosses' bars (0 .. 4), each its monster's head, its name (a .loc key or
+ * the name itself) and its health (0 .. 1), side by side under the clock (ChallengeStatus.ifc's boss bar); and a
+ * wave's banner ("WAVE 2", "FINAL WAVE") */
+void hud_set_bosses(Hud *h, int n, const char *const name[], const float frac[]);
+void hud_wave_banner(Hud *h, int wave, int last);
 /* createAndStartText2 (0x2B14E0): a second line (Rage.ifc's line2, ArialBlack24) and the hold time */
 void hud_banner_text2(Hud *h, const char *name, const char *name2, const float rgba[4], float scale, float hold,
                       const char *sound);
