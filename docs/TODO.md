@@ -37,3 +37,11 @@ Ideas the owner wants, not started. Newest at the bottom.
   onto it, the thunder at once, React_Front_Zap (React_Side_L_Zap on a wall) and 15 HP, and for 1.2 s it flickers
   between its look and an electric-blue x-ray with its skeleton's bones white. Not yet: the same on the game's own
   shocks (an electric sign, Hazard_Shock, the blimp's barriers: Instance.xray set as their React_*_Zap starts).
+- **Boss mode** (asked 2026-11-02, not started): a mode where a monster (or up to 3) is spawned as a boss whose only
+  goal is to attack the players, not the buildings. Each boss gets a health bar at the top of the screen with its
+  name, and the block's objective is to defeat it (all of them). Things to settle: which monsters can be bosses (any
+  of the roster, maybe bigger and tougher: more HP, a scale-up), how it fights (the bots' AI with its target the
+  nearest player instead of DestroyBuildings, director.c), what happens when the players lose (all defeated: Game
+  Over or the block again), where its bars go with the players' HUD (the challenge's boss bar, ChallengeBoss2.ifc,
+  is one already: a second for the Wii's Dallas), online (the host runs the bosses like bots, their HP in the
+  snapshot), and whether it is its own mode in the menus / launcher or a block option.
