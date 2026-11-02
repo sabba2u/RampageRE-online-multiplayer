@@ -126,9 +126,24 @@ fn unlock_all_on_by_default_and_passed() {
     assert!(old.unlock_all, "a settings file from before the box: on");
     let off: Settings = serde_json::from_str(r#"{"unlock_all": false}"#).unwrap();
     assert!(!off.unlock_all);
-    let a = start_args(&Start::Offline { four_players: false }, true);
+    let a = start_args(&Start::Offline { four_players: false }, true, false);
     assert_eq!(&a[a.len() - 2..], ["--cheat", "141421"]);
-    assert!(!start_args(&Start::Offline { four_players: false }, false).contains(&"--cheat".to_string()));
+    assert!(!start_args(&Start::Offline { four_players: false }, false, false).contains(&"--cheat".to_string()));
+}
+
+#[test]
+fn unlock_moves_on_by_default_and_passed() {
+    assert!(Settings::default().unlock_moves);
+    let old: Settings = serde_json::from_str(r#"{"servers": []}"#).unwrap();
+    assert!(old.unlock_moves, "a settings file from before the box: on");
+    let off: Settings = serde_json::from_str(r#"{"unlock_moves": false}"#).unwrap();
+    assert!(!off.unlock_moves);
+    let o = Start::Offline { four_players: false };
+    let a = start_args(&o, false, true);
+    assert_eq!(&a[a.len() - 2..], ["--cheat", "011235"]);
+    let both = start_args(&o, true, true);
+    assert_eq!(&both[both.len() - 2..], ["--cheat", "141421,011235"]);
+    assert_eq!(both.iter().filter(|x| *x == "--cheat").count(), 1);
 }
 
 #[test]

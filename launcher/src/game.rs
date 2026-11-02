@@ -74,11 +74,18 @@ pub fn supports_online(exe: &Path) -> bool {
     std::fs::read(exe).is_ok_and(|b| b.windows(12).any(|w| w == b"--steam-host"))
 }
 
-/// What a start passes: args(s), and the cheat for every monster when Settings' Unlock all monsters is on.
-pub fn start_args(s: &Start, unlock_all: bool) -> Vec<String> {
+/// Settings' "Unlock all moves": the game's cheat for every upgrade move usable (MainMenu.activateCheat 011235)
+pub const UNLOCK_MOVES: &str = "011235";
+
+/// What a start passes: args(s), and the cheats of Settings' Unlock all monsters and Unlock all moves, as one --cheat
+/// (the game takes several codes comma separated).
+pub fn start_args(s: &Start, unlock_all: bool, unlock_moves: bool) -> Vec<String> {
     let mut a = args(s);
-    if unlock_all {
-        a.extend(UNLOCK_ALL.iter().map(|x| x.to_string()));
+    let codes: Vec<&str> = [(unlock_all, UNLOCK_ALL[1]), (unlock_moves, UNLOCK_MOVES)].iter()
+        .filter(|(on, _)| *on).map(|(_, c)| *c).collect();
+    if !codes.is_empty() {
+        a.push("--cheat".to_string());
+        a.push(codes.join(","));
     }
     a
 }
@@ -121,7 +128,7 @@ pub fn start(exe: &Path, s: &Start) -> io::Result<Child> {
     }
     let mut c = Command::new(exe);
     let settings = crate::settings::Settings::load();
-    c.args(start_args(s, settings.unlock_all));
+    c.args(start_args(s, settings.unlock_all, settings.unlock_moves));
     c.args(game_options(&settings));
     if let Some(dir) = exe.parent() {
         c.current_dir(dir);

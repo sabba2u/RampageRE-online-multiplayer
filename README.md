@@ -24,7 +24,7 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
   right-click your friend in Steam's friends list and pick **Join Game**). Steam play borrows Valve's free test app
   **Spacewar** (the launcher explains it): add it to your Steam library once.
 - The first time, click **REGISTER RAMPAGE:// LINKS** so a link from a friend opens the game straight away.
-- **Settings**: join links, servers, banned players, and **Unlock all monsters** (on by default).
+- **Settings**: join links, servers, banned players, **Unlock all monsters** and **Unlock all moves** (every monster's upgrade moves from the start; both on by default, untick to play as your profile has them).
 
 **Which "server" is which:** the game host is inside **RampageRE.exe** (every way of hosting uses it); the room server
 (codes, links, the player list) is in the launcher, or the Node `lobby/` for a VPS, and is not in the game. Read

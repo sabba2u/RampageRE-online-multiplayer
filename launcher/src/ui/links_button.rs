@@ -170,6 +170,12 @@ impl App {
                 {
                     self.settings = Settings::update(|s| s.unlock_all = unlock);
                 }
+                let mut moves = self.settings.unlock_moves;
+                if ui.checkbox(&mut moves, RichText::new("Unlock all moves").strong())
+                    .on_hover_text("Every monster's upgrade moves from the start, each time the game starts. Untick it and each monster has only the upgrades it has earned.").changed()
+                {
+                    self.settings = Settings::update(|s| s.unlock_moves = moves);
+                }
                 let mut shuffle = self.settings.shuffle_buildings;
                 if ui.checkbox(&mut shuffle, RichText::new("Shuffle the city's buildings").strong())
                     .on_hover_text("Every game a new street: each lot gets another of the city's buildings of its size.").changed()
