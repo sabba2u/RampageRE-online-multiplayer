@@ -287,6 +287,11 @@ typedef struct Viewer {
     struct {                                         /* (port extra) Boss Rumble's run (rumble_driver_step) */
         int wave, players, nboss, won;               /* the wave (0 before the first), the players' slots, its bosses */
         int bannered;                                /* the wave whose banner is up */
+        struct { int id; float age; } pu[4];         /* the power-ups out in the city (edible ids), their ages */
+        int npu, ended;                              /* (ended: the end's banner and best time done) */
+        float pu_next;                               /* seconds to the next power-up */
+        int end_shot;                                /* (testing: frames to the end banner's shot) */
+        float won_t;                                 /* the clock as the last wave fell (the won block's is cleared) */
         float pause;                                 /* seconds since the last wave was cleared */
         uint32_t seed;
     } rumble;
@@ -1079,6 +1084,7 @@ static void reveal_events(Viewer *v)
 
 static void block_left(Viewer *v);
 static void rumble_reset(Viewer *v);
+static void rumble_finish(Viewer *v, float *t, int *wave, float *best);
 
 /* player k's HUD (Hud<k>.ifc), laid out for v->nmon players; player 1's has the screens (the block's build, and NET: a
  * player joining mid-block) */
@@ -4178,6 +4184,8 @@ static void game_step(Viewer *v, float dt)
                         profile_block_won(&v->prof, r.city_flags | PC_AVAILABLE, r.city_score, game_block(v->game, NULL),
                                           r.city_destroyed);
                     r.allow_save = v->prof.allow_save && v->prof_write;
+                    if (r.play_type == GP_BOSS_RUMBLE && v->rumble.players)   /* (its time, wave, best) */
+                        rumble_finish(v, &r.rumble_time, &r.rumble_wave, &r.rumble_best);
                     r.loaded = v->prof.loaded;
                     hud_results(v->hud, e->a, &r);
                     if (getenv("RAMPAGE_RESULTS_SHOTS"))
@@ -8870,6 +8878,8 @@ static void rumble_wave(Viewer *v, int w)
     printf("rumble: wave %d:%s\n", w, names);
 }
 
+static void rumble_pu_step(Viewer *v, float dt);
+
 static void rumble_driver_step(Viewer *v, float dt)
 {
     if (play_type(v) != GP_BOSS_RUMBLE || !v->game || game_state(v->game) != GS_PLAY || game_ni_on(v->game) ||
@@ -8900,10 +8910,12 @@ static void rumble_driver_step(Viewer *v, float dt)
         } else
             alive++;                                 /* (down: not cleared yet) */
     }
+    rumble_pu_step(v, dt);
     if (alive)
         return;
     if (v->rumble.wave >= RUMBLE_WAVES) {
         v->rumble.won = 1;
+        v->rumble.won_t = game_clock(v->game, NULL);
         game_set_won(v->game);
         printf("rumble: won at %.1f s\n", game_clock(v->game, NULL));
         return;
@@ -8920,11 +8932,164 @@ static void rumble_driver_step(Viewer *v, float dt)
         rumble_wave(v, v->rumble.wave + 1);
 }
 
+/* ---- its power-ups: one more every 15 .. 25 s (at most 4 out), a non-hazard kind of the city's by their frequencies,
+ * on the street or a standing building's roof near the players; a player's monster touching one eats it (as from a
+ * window: its stats, reaction, banner); gone after RUMBLE_PICKUP_LIFE untaken */
+static int rumble_pu_kind(Viewer *v)
+{
+    float sum = 0;
+    int n = edible_kinds(v->edibles);
+    for (int k = 0; k < n; k++) {
+        const EdibleKind *ek = edible_kind(v->edibles, k);
+        if (!ek->hazard && ek->freq > 0 && !strstr(ek->name, "Cryotube"))
+            sum += ek->freq;
+    }
+    if (sum <= 0)
+        return -1;
+    float r = (float)(rumble_rand(&v->rumble.seed) % 10000u) / 10000.0f * sum;
+    for (int k = 0; k < n; k++) {
+        const EdibleKind *ek = edible_kind(v->edibles, k);
+        if (ek->hazard || ek->freq <= 0 || strstr(ek->name, "Cryotube"))
+            continue;
+        if ((r -= ek->freq) < 0)
+            return k;
+    }
+    return -1;
+}
+
+static void rumble_pu_place(Viewer *v)
+{
+    int kind = rumble_pu_kind(v);
+    if (kind < 0 || v->rumble.npu >= 4)
+        return;
+    float mid = players_mid_x(v), pos[3];
+    int roof = rumble_rand(&v->rumble.seed) % 2, b = -1;
+    if (getenv("RAMPAGE_RUMBLE_PICKUP_HERE")) {      /* (testing: under player 1) */
+        pos[0] = v->mon[0].mx + 8; pos[1] = -16; pos[2] = 1.5f;   /* (8 to its right) */
+    } else {
+        for (uint32_t tries = 0; roof && b < 0 && tries < 12; tries++) {   /* a standing building near the players */
+            uint32_t i = rumble_rand(&v->rumble.seed) % (v->scene.nbuildings ? v->scene.nbuildings : 1);
+            const Building *bb = i < v->scene.nbuildings ? &v->scene.buildings[i].b : NULL;
+            float cx = bb ? (bb->min[0] + bb->max[0]) / 2 : 0;
+            int taken = 0;                           /* (not on one out already) */
+            for (int j = 0; bb && j < v->rumble.npu; j++) {
+                const Edible *o = edible_get(v->edibles, v->rumble.pu[j].id);
+                taken |= o && fabsf(o->pos[0] - cx) < 4 && o->pos[2] > 2;
+            }
+            if (bb && bb->state == BUILDING_STANDING && fabsf(cx - mid) < 18 && bb->min[1] < 10 && !taken)
+                b = (int)i;
+        }
+        if (b >= 0) {
+            const Building *bb = &v->scene.buildings[b].b;
+            pos[0] = (bb->min[0] + bb->max[0]) / 2;
+            pos[1] = bb->min[1] + 2.5f;
+            pos[2] = bb->max[2] + 1.5f;
+        } else {
+            pos[0] = mid - 14 + (float)(rumble_rand(&v->rumble.seed) % 2800u) / 100.0f;
+            pos[1] = -16;
+            pos[2] = 1.5f;
+        }
+    }
+    int id = edible_outdoor_add(v->edibles, kind, pos);
+    if (id < 0)
+        return;
+    v->rumble.pu[v->rumble.npu].id = id;
+    v->rumble.pu[v->rumble.npu].age = 0;
+    v->rumble.npu++;
+    printf("rumble: pickup %s at %.1f %.1f %.1f%s\n", edible_kind(v->edibles, kind)->name, pos[0], pos[1], pos[2],
+           b >= 0 ? " (a roof)" : "");
+    static int shots;                                /* (testing: RAMPAGE_RUMBLE_SHOTS, the first three) */
+    if (v->ap && getenv("RAMPAGE_RUMBLE_SHOTS") && shots < 3) {
+        ap_want_shot(v->ap, "pickup");
+        shots++;
+    }
+}
+
+static void rumble_pu_step(Viewer *v, float dt)
+{
+    if (!v->edibles)
+        return;
+    if (v->rumble.pu_next <= 0)
+        v->rumble.pu_next = getenv("RAMPAGE_RUMBLE_PICKUP_HERE") ? 2 : rumble_next_pickup(&v->rumble.seed);
+    v->rumble.pu_next -= dt;
+    if (v->rumble.pu_next <= 0)
+        rumble_pu_place(v);
+    for (int i = 0; i < v->rumble.npu; i++) {
+        int id = v->rumble.pu[i].id, gone = 0;
+        const Edible *d = edible_get(v->edibles, id);
+        v->rumble.pu[i].age += dt;
+        if (!d || d->phase == EP_GONE)
+            gone = 1;
+        for (int k = 0; !gone && k < v->rumble.players && k < v->nmon; k++) {   /* a player's monster on it */
+            const Mon *mo = &v->mon[k];
+            if (mo->hp <= 0 || mo->human || mo->defeated || !mon_in(mo) || mon_in(mo)->hidden)
+                continue;
+            float c[3];
+            mon_body_centre(mo, c);
+            float dx = c[0] - d->pos[0], dy = c[1] - d->pos[1];
+            if (dx * dx + dy * dy < 25 && fabsf(mo->mz - d->pos[2]) < 8) {
+                printf("rumble: %d took %s\n", k + 1, d->name);
+                edible_outdoor_take(v->edibles, id, k);
+                gone = 1;
+            }
+        }
+        if (!gone && v->rumble.pu[i].age >= RUMBLE_PICKUP_LIFE) {
+            edible_outdoor_remove(v->edibles, id);
+            gone = 1;
+        }
+        if (gone)
+            v->rumble.pu[i--] = v->rumble.pu[--v->rumble.npu];
+    }
+}
+
+/* the run's end, once: the time, the wave reached and the best time (rumble_best.txt beside the profile, by its name;
+ * written by a run that writes its profile): for the end screen's line (GE_RESULTS) */
+static void rumble_finish(Viewer *v, float *t_out, int *wave_out, float *best_out)
+{
+    static float t, best;
+    if (!v->rumble.ended) {
+        v->rumble.ended = 1;
+        t = v->rumble.won ? v->rumble.won_t : game_clock(v->game, NULL);
+        best = 0;
+        char path[512], dir[512] = ".";
+        const char *pp = v->prof_path, *slash = pp ? strrchr(pp, '\\') : NULL, *slash2 = pp ? strrchr(pp, '/') : NULL;
+        if (slash2 > slash)
+            slash = slash2;
+        if (slash)
+            snprintf(dir, sizeof dir, "%.*s", (int)(slash - pp), pp);
+        snprintf(path, sizeof path, "%s/rumble_best.txt", dir);
+        const char *test = getenv("RAMPAGE_RUMBLE_BEST");   /* (testing: --shot runs write no profile; this file) */
+        if (test && *test)
+            snprintf(path, sizeof path, "%s", test);
+        const char *who = v->prof.block.name[0] ? v->prof.block.name : "Player";
+        rumble_best_read(path, who, &best);
+        if (t > best)
+            best = t;
+        if (v->prof_write || (test && *test))
+            rumble_best_write(path, who, t);
+        char ts[16], bs[16];
+        rumble_time_text(t, ts);
+        rumble_time_text(best, bs);
+        printf("rumble: %s, time %s, wave %d, best %s\n", v->rumble.won ? "victory" : "defeated", ts, v->rumble.wave, bs);
+        if (v->rumble.won) {                         /* the victory's banner over the results */
+            static const float gold[4] = { 1.0f, 0.85f, 0.1f, 1.0f };
+            hud_banner_text2(v->hud, "#VICTORY!", NULL, gold, 1.0f, 4.0f, NULL);
+        }
+        if (v->ap && getenv("RAMPAGE_RUMBLE_SHOTS"))
+            v->rumble.end_shot = 90;                 /* (testing: the end's shot, 90 frames on: rumble_hud) */
+    }
+    *t_out = t;
+    *wave_out = v->rumble.wave;
+    *best_out = best;
+}
+
 /* player 1's HUD: a bar for each boss still standing (the guest's too: its bosses are the host's) */
 static void rumble_hud(Viewer *v)
 {
     if (play_type(v) != GP_BOSS_RUMBLE || !v->hud)
         return;
+    if (v->rumble.end_shot > 0 && --v->rumble.end_shot == 0)
+        ap_want_shot(v->ap, "end");
     const char *name[RUMBLE_MAX_BOSSES];
     float frac[RUMBLE_MAX_BOSSES];
     int n = 0;

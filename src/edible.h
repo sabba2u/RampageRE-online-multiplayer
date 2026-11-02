@@ -143,6 +143,12 @@ int edible_add_fixed(Edibles *e, int building, int storey, int column, const cha
  * cell that breaks once the building is being destroyed (+0x14C >= 4) does not let it out. Returns the slot, -1 */
 int edible_add_cryotube(Edibles *e, int building, int storey, int column);
 
+/* (port extra) Boss Rumble's power-ups out in the city: an edible of kind `kind` at pos, in no window (no slot): its
+ * id (edible_get's index), -1 none; taken by monster slot `monster` (by touch: eaten, as from a window, its stats,
+ * reaction and banner): 1, 0 when it is gone already; or gone untaken */
+int edible_outdoor_add(Edibles *e, int kind, const float pos[3]);
+int edible_outdoor_take(Edibles *e, int id, int monster);
+void edible_outdoor_remove(Edibles *e, int id);
 int edible_kinds(const Edibles *e);
 const EdibleKind *edible_kind(const Edibles *e, int k);
 int edible_slots(const Edibles *e);

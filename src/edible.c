@@ -591,6 +591,49 @@ static void edible_pickup(Edibles *e, Edible *d, int monster, int eat, const cha
     remove_edible(e, d);                             /* returns 16: 0x30C510 takes it out of its slot, 0x800 */
 }
 
+/* ---------------------------------------------------------------- (port extra) out in the city: Boss Rumble */
+
+int edible_outdoor_add(Edibles *e, int kind, const float pos[3])
+{
+    if (!e || kind < 0 || kind >= e->nkinds)
+        return -1;
+    const EdibleKind *k = &e->kind[kind];
+    Edible *d = new_edible(e);
+    if (!d)
+        return -1;
+    int me = (int)(d - e->ed);
+    d->name = k->name;
+    d->tmpl = k->tmpl;
+    d->slot = -1;
+    d->phase = EP_WINDOW;
+    memcpy(d->pos, pos, sizeof d->pos);
+    d->fx = -1;
+    d->pulse = -1;
+    d->script = EK_EDIBLE;
+    Group look = group_sub(k->tmpl, "ActorAnimShape|Default");
+    const char *shape = look.at ? group_str(look, "Shape|ShapeName") : NULL;
+    d->shape = shape && !same_text(shape, "InvisShape") ? shape : NULL;
+    d->life = -1;                                    /* (its time out there is the caller's) */
+    d->fx = effect(e, gstr(k->tmpl, "Effect"), d->pos, me);
+    d->rotate = 1;                                   /* (turning, to be seen) */
+    place_world(d);
+    return me;
+}
+
+int edible_outdoor_take(Edibles *e, int id, int monster)
+{
+    if (!e || id < 0 || id >= e->n || e->ed[id].phase != EP_WINDOW || e->ed[id].slot >= 0)
+        return 0;
+    edible_pickup(e, &e->ed[id], monster, 1, "Ground_Walk");
+    return 1;
+}
+
+void edible_outdoor_remove(Edibles *e, int id)
+{
+    if (e && id >= 0 && id < e->n && e->ed[id].slot < 0)
+        remove_edible(e, &e->ed[id]);
+}
+
 /* ---------------------------------------------------------------- the building's side */
 
 void edible_cell_broken(Edibles *e, int building, int storey, int column, int state, int building_state)

@@ -20,6 +20,7 @@
  * the objects it found by name and changes their position, scale, fade, colour, text and visibility; here each
  * interface is its own copy of its layout tree, changed the same way. */
 #include <ctype.h>
+#include "rumble.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -3263,6 +3264,47 @@ static void level_input(Hud *h, Screen *s, int ev, int button)
 }
 
 /* GameOver.scr [R] */
+/* (port extra) Boss Rumble's line on its end screen: a copy of the layout's first text, "TIME 4:12   WAVE 7   BEST 5:03",
+ * centred under the Game Over's box (under the title on the results) */
+static Node *first_text(Node *nd)
+{
+    for (; nd; nd = nd->next) {
+        if (nd->kind == N_TEXT)
+            return nd;
+        Node *t = first_text(nd->child);
+        if (t)
+            return t;
+    }
+    return NULL;
+}
+static void rumble_line(Hud *h, Screen *s)
+{
+    Node *src = s->kind == SCR_GAME_OVER ? NULL : layout_find(s->L->root, "goal1");   /* (the results: the title's
+                                                          * font, big) */
+    if (!src)
+        src = first_text(s->L->root);
+    Node *c = src ? node_copy(s->L, src, s->L->root) : NULL;
+    if (!c)
+        return;
+    char a[16], b[16], line[MAX_TEXT];
+    rumble_time_text(s->r.rumble_time, a);
+    rumble_time_text(s->r.rumble_best, b);
+    snprintf(line, sizeof line, "TIME %s   WAVE %d   BEST %s", a, s->r.rumble_wave, b);
+    node_text(c, line);
+    c->justify = 1;
+    c->p[0] = 320;
+    c->p[1] = s->kind == SCR_GAME_OVER ? 350 : 300;
+    c->p[2] = 0;
+    c->visible = 1;
+    c->fade = 1;
+    c->m = 1;
+    static const float yel[4] = { 1.0f, 0.85f, 0.1f, 1.0f };
+    memcpy(c->tcol, yel, sizeof yel);
+    c->has_tcol = 1;
+    if (s->kind == SCR_RESULTS && s->title1)         /* its news line: the run's, not the block's destruction */
+        res_marquee(h, s, s->r.rumble_wave >= RUMBLE_WAVES ? "BOSS RUMBLE - EVERY WAVE BEATEN" : "BOSS RUMBLE");
+}
+
 static void gameover_start(Hud *h, Screen *s)
 {
     s->choices = layout_find(s->L->root, "choices");
@@ -4823,6 +4865,8 @@ void hud_results(Hud *h, int screen, const HudResults *r)
         kw_start(h, s);
     else if (s->kind == SCR_TIMED)
         tr_start(h, s);
+    if (s->L && s->r.play_type == HUD_PLAY_RUMBLE)   /* (port extra) Boss Rumble: its time, wave and best */
+        rumble_line(h, s);
 }
 
 int hud_result(Hud *h)

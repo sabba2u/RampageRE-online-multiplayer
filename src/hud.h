@@ -198,6 +198,9 @@ typedef struct {
     /* TimedRunResults */
     float clock_time;        /* gWorld.getGameClockTime (game_clock): the seconds left, this block's added */
     float clock_limit;       /* gWorld.getGameClockLimit (game_clock_limit): the seconds this block added */
+    /* (port extra) Boss Rumble's end: the time survived, the wave reached, the best time (a line on the screen) */
+    float rumble_time, rumble_best;
+    int rumble_wave;
     /* Results' Save button */
     int allow_save;          /* gCommon.getAllowSave() as the screen opens */
     int loaded;              /* gCommon.hasLoadedProfile() */
