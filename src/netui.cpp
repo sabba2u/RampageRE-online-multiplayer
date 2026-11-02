@@ -540,7 +540,7 @@ static void hosting_badge(void)
     else
         snprintf(who, sizeof who, "waiting for a friend");
     if (net_is_steam())
-        snprintf(line, sizeof line, "HOSTING ON STEAM  \xC2\xB7  %s%s", who, friends ? "" : " (Shift+Tab to invite)");
+        snprintf(line, sizeof line, "HOSTING ON STEAM  \xC2\xB7  %s", who);
     else if (netlobby_my_code()[0])
         snprintf(line, sizeof line, "HOSTING  \xC2\xB7  Room %s  \xC2\xB7  %s", netlobby_my_code(), who);
     else
@@ -549,13 +549,19 @@ static void hosting_badge(void)
     ImFont *f = g_bold ? g_bold : ImGui::GetFont();
     float fs = g_bold ? g_bold->FontSize : ImGui::GetFontSize();
     ImVec2 ds = ImGui::GetIO().DisplaySize, sz = f->CalcTextSizeA(fs, 1e9f, 0, line);
-    ImVec2 p(ds.x * 0.5f - sz.x / 2, 10);
-    ImVec2 a(p.x - 24, p.y - 5), b(p.x + sz.x + 14, p.y + sz.y + 5);
+    /* on Steam, while the seat is free: how to invite, on a line of its own under the status */
+    const char *hint = net_is_steam() && !friends ? "Press Shift+Tab to invite friends through Steam" : NULL;
+    ImVec2 hs = hint ? f->CalcTextSizeA(fs, 1e9f, 0, hint) : ImVec2(0, 0);
+    float w = sz.x > hs.x ? sz.x : hs.x, h = sz.y + (hint ? hs.y + 4 : 0);
+    ImVec2 p(ds.x * 0.5f - w / 2, 10);
+    ImVec2 a(p.x - 24, p.y - 5), b(p.x + w + 14, p.y + h + 5);
     dl->AddRectFilled(a, b, IM_COL32(12, 24, 52, 200), 12);
     dl->AddRect(a, b, IM_COL32(70, 140, 255, 230), 12, 0, 2);
-    dl->AddCircleFilled(ImVec2(a.x + 12, (a.y + b.y) / 2), 4.0f,   /* a dot: green with a friend in, amber waiting */
+    dl->AddCircleFilled(ImVec2(a.x + 12, p.y + sz.y / 2), 4.0f,   /* a dot: green with a friend in, amber waiting */
                         friends ? IM_COL32(110, 230, 120, 255) : IM_COL32(255, 190, 60, 255));
-    dl->AddText(f, fs, p, IM_COL32(235, 242, 255, 255), line);
+    dl->AddText(f, fs, ImVec2(p.x + (w - sz.x) / 2, p.y), IM_COL32(235, 242, 255, 255), line);
+    if (hint)
+        dl->AddText(f, fs, ImVec2(p.x + (w - hs.x) / 2, p.y + sz.y + 4), IM_COL32(255, 214, 70, 255), hint);
 }
 
 static int g_notice_big, g_have_notice;
