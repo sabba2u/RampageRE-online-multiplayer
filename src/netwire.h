@@ -36,8 +36,9 @@ enum NetMsg {
 };
 
 /* 2: player slots. NM_HELLO carries the guest's rejoin token and the monster it would like; NM_WELCOME the slot it
- * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS */
-#define NET_PROTO 3
+ * plays and its token; NM_SNAP each slot's pad ack; NM_SLOTS. 4: 8 monster slots in every build (Boss Rumble's
+ * bosses after the players) */
+#define NET_PROTO 4
 #define NET_PORT 27960
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a

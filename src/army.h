@@ -406,7 +406,11 @@ int army_mon_weapon_step(ArmyMonWeapon *w, float dt, int weapons_on);   /* weapo
 #ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
 #define RAMPAGE_MAX_PLAYERS 4
 #endif
-#define ARMY_MONSTERS RAMPAGE_MAX_PLAYERS
+#ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
+                                                      * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
+#define RAMPAGE_MAX_MONSTERS 8
+#endif
+#define ARMY_MONSTERS RAMPAGE_MAX_MONSTERS
 /* per player (0x4D7CA8 + slot x 0x60): +0x04 points[7], +0x20 kills[7]: 0 destruction, 1 civilian, 2 vehicle,
  * 3 bonus, 4 time bonus, 5 challenge, 6 the total */
 typedef struct { float points[7]; int kills[7]; } ArmyStats;

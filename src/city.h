@@ -176,7 +176,11 @@ struct TailAnim;
 #ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
 #define RAMPAGE_MAX_PLAYERS 4
 #endif
-#define SCENE_MONSTERS RAMPAGE_MAX_PLAYERS
+#ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
+                                                      * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
+#define RAMPAGE_MAX_MONSTERS 8
+#endif
+#define SCENE_MONSTERS RAMPAGE_MAX_MONSTERS
 typedef struct {
     int inst;                                         /* its instance, -1 = none */
     const char *clip;                                 /* the name of the clip it plays */

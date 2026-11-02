@@ -102,7 +102,12 @@ enum { DRIVE_KEYS1 = 0, DRIVE_KEYS2 = 1, DRIVE_COMPUTER = 2, DRIVE_PAD = 3 };
 #ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
 #define RAMPAGE_MAX_PLAYERS 4
 #endif
-#define MONSTERS RAMPAGE_MAX_PLAYERS                 /* the game's players and bots together (Common 0x4D7E28) */
+#ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
+                                                      * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
+#define RAMPAGE_MAX_MONSTERS 8
+#endif
+#define MONSTERS RAMPAGE_MAX_MONSTERS                /* the game's players and bots together (Common 0x4D7E28), and
+                                                      * Boss Rumble's bosses */
 #define TIMESTEP (1.0f / 30.0f)                      /* gWorld.getTimeStep(): the world's step [R 0x2B7800]; the monster's
                                                       * update runs once a step, here once a drawn frame */
 
@@ -961,7 +966,8 @@ static int monster_index(const Viewer *v, const char *name);
 static void extra_add(Viewer *v, int k, int rm)
 {
     int mi = monster_index(v, v->roster.name[rm]);
-    if (k != v->nmon || k >= MONSTERS || mi < 0 || v->scene.nmon != k)
+    if (k != v->nmon || k >= RAMPAGE_MAX_PLAYERS || mi < 0 || v->scene.nmon != k)   /* (as Common's 4 slots: none
+                                                      * with 4 players) */
         return;
     Mon *mo = &v->mon[k];
     mo->v = v;
@@ -1105,7 +1111,7 @@ static void hud_open_player(Viewer *v, int k)
 static int mon_add_player(Viewer *v, int monster)
 {
     int k = v->nmon;
-    if (!v->have_scene || !v->city || k >= MONSTERS || monster < 0 || monster >= (int)v->nmonsters)
+    if (!v->have_scene || !v->city || k >= RAMPAGE_MAX_PLAYERS || monster < 0 || monster >= (int)v->nmonsters)
         return -1;
     if (v->extra >= 0) {
         int ex = v->extra;
@@ -7961,7 +7967,7 @@ static int monster_index(const Viewer *v, const char *name)
  * They stand in the street as BeginLevelNI puts them: x = -17 (n - 1) / 2 + 17 i, facing the camera */
 static void setup_players(Viewer *v, int n, int bots, const int *monster)
 {
-    v->nmon = n < 1 ? 1 : n > MONSTERS ? MONSTERS : n;
+    v->nmon = n < 1 ? 1 : n > RAMPAGE_MAX_PLAYERS ? RAMPAGE_MAX_PLAYERS : n;
     int soak = (v->prof.cheats & PCH_10000) != 0;    /* [R 0x2B7DC0] the world's start with the soak test's cheat:
                                                       * bots = players (0x2B7D18: none again at the world's end) */
     if (soak)
@@ -8802,7 +8808,7 @@ static int viewer_main(int argc, char **argv)
             v.unattended = plat_quiet = 1;
         }
         else if (strcmp(argv[i], "--monster") == 0 && i + 1 < argc) monster[0] = argv[++i];
-        else if (!strncmp(argv[i], "--monster", 9) && argv[i][9] >= '1' && argv[i][9] < '1' + MONSTERS && !argv[i][10] &&
+        else if (!strncmp(argv[i], "--monster", 9) && argv[i][9] >= '1' && argv[i][9] < '1' + RAMPAGE_MAX_PLAYERS && !argv[i][10] &&
                  i + 1 < argc)               /* --monster2 Lizzie: player 2's (--monster1 is --monster) */
         {
             int k = argv[i][9] - '1';
@@ -9135,7 +9141,7 @@ static int viewer_main(int argc, char **argv)
     {                                                /* --players N (1 .. 4, --bots B of them the computer's) */
         static const char *const OTHERS[] = { "George", "Lizzie", "Ralph", "Boosy" };   /* the ones not named */
         int pick[MONSTERS];
-        players = players < 1 ? 1 : players > MONSTERS ? MONSTERS : players;
+        players = players < 1 ? 1 : players > RAMPAGE_MAX_PLAYERS ? RAMPAGE_MAX_PLAYERS : players;
         for (int k = 0; k < players; k++) {
             pick[k] = monster_index(&v, monster[k]);
             for (int j = 0; (k || players > 1 || autoplay) && pick[k] < 0 && j < 4; j++) {   /* one of the classic
