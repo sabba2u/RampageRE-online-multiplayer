@@ -47,6 +47,12 @@ if /i "%~1"=="tools" (
     call :apkbundle || goto :fail
     exit /b 0
 )
+if /i "%~1"=="dev8" (
+    echo Building RampageRE-dev8.exe ^(developer build, up to 8 players: an experiment^)...
+    %ZIG% cc -std=c99 -O2 -Wall %CPU% %NETINC% -DRAMPAGE_MAX_PLAYERS=8 -o RampageRE-dev8.exe %SRC% res\rampagere.rc %NET% %LIBS% || goto :fail
+    echo Done: RampageRE-dev8.exe
+    exit /b 0
+)
 if /i "%~1"=="dev" (
     echo Building RampageRE-dev.exe ^(developer build^)...
     %ZIG% cc -std=c99 -O2 -Wall %CPU% %NETINC% -o RampageRE-dev.exe %SRC% res\rampagere.rc %NET% %LIBS% || goto :fail

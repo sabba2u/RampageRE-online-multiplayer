@@ -171,7 +171,10 @@ struct IkFeet;
 struct TailAnim;
 /* a monster in the scene: the game has up to four (the players and the bots), each with its own skeleton, clips,
  * head turn, arm IK and foot IK; Scene.mon[k] is monster slot k */
-#define SCENE_MONSTERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define SCENE_MONSTERS RAMPAGE_MAX_PLAYERS
 typedef struct {
     int inst;                                         /* its instance, -1 = none */
     const char *clip;                                 /* the name of the clip it plays */

@@ -16,7 +16,12 @@ Ideas the owner wants, not started. Newest at the bottom.
   `Plugin.cs`). Online: the host decides when the lightning strikes so everyone sees the same flash.
 - (done 2026-11-02: --random-blocks SEED / random_blocks=, launcher Shuffle the city's buildings; the blocks' own decorations stay where they were, so a banner can hang on another building) **Random city blocks** (offered, not decided): shuffle a city's real building templates into new block layouts from a
   seed (`--random-city <seed>`); online, the host sends the seed.
-- **More than 4 players** (offered, not decided): after four-player online; a prototype first.
+- (prototype 2026-11-02) **More than 4 players**: `build.bat dev8` makes RampageRE-dev8.exe with up to 8
+  (RAMPAGE_MAX_PLAYERS: the monsters, the scene's, the game's players, the seats; the controllers stay 4). Offline 8
+  monsters (--players 8 --monster5 .. --monster8) played three campaign blocks with no problem; online a host and 5
+  guests on one PC passed every net4_test check (-Exe RampageRE-dev8.exe). Not done: the HUD (4 panels: players 5-8
+  have none), the results screens (the first 4), the menus (Monster Select's 4 cards), the launcher; the host's
+  upload with 5 guests about 880 KB/s (7 Mbit/s).
 - (done 2026-11-02: docs/MODELS.md) **Model import** (asked about): glTF files in `mods/models/` replacing a model, like `mods/textures/` does for
   textures. Re-skinning a monster on its own skeleton keeps all its moves; a new skeleton needs new animations and a
   move graph. Export already works (`tools/anim.py`, `tools/city.py`, `tools/mesh.py`).

@@ -15,7 +15,10 @@ enum { NT_NONE, NT_CONNECT, NT_DISCONNECT, NT_DATA };
 /* the host takes up to NT_PEERS connections at once (each a guest's, or one being told the game is full); a guest has
  * the one, to the host, peer 0. Which player slot a peer plays is the session's (net.c), not the transport's. Over
  * Steam (netsteam.c) the host's guests are peers too, by their Steam ids (up to NT_PEERS) */
-#define NT_PEERS 6
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define NT_PEERS (RAMPAGE_MAX_PLAYERS + 2)
 
 typedef struct {
     int type;                                        /* NT_* */

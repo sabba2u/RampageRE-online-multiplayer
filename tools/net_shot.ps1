@@ -31,7 +31,7 @@ $imgs = foreach ($p in $procs) {
 }
 $imgs = @($imgs | Where-Object { $_ -is [System.Drawing.Bitmap] })
 # one row for two windows; a 2 x 2 grid for three or four (host top left, then the guests in the order they started)
-$cols = if ($imgs.Count -gt 2) { 2 } else { $imgs.Count }
+$cols = if ($imgs.Count -gt 4) { 3 } elseif ($imgs.Count -gt 2) { 2 } else { $imgs.Count }   # (a 3-wide grid past 4)
 $cw = 0; $ch = 0
 foreach ($b in $imgs) { if ($b.Width -gt $cw) { $cw = $b.Width }; if ($b.Height -gt $ch) { $ch = $b.Height } }
 $rows = [math]::Ceiling($imgs.Count / $cols)

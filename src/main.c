@@ -99,7 +99,10 @@ typedef struct {
  * computer (the bots, and players 3 and 4 without a pad), or players 3 and 4's own pads (pad.h slot 2, 3) */
 enum { DRIVE_KEYS1 = 0, DRIVE_KEYS2 = 1, DRIVE_COMPUTER = 2, DRIVE_PAD = 3 };
 
-#define MONSTERS 4                                   /* the game's players and bots together (Common 0x4D7E28) */
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define MONSTERS RAMPAGE_MAX_PLAYERS                 /* the game's players and bots together (Common 0x4D7E28) */
 #define TIMESTEP (1.0f / 30.0f)                      /* gWorld.getTimeStep(): the world's step [R 0x2B7800]; the monster's
                                                       * update runs once a step, here once a drawn frame */
 
@@ -4098,7 +4101,7 @@ static void game_step(Viewer *v, float dt)
                     HudResults r;
                     memset(&r, 0, sizeof r);
                     r.play_type = game_play_type(v->game);   /* GP_* and HUD_PLAY_* agree */
-                    r.num_players = v->nmon;
+                    r.num_players = v->nmon < 4 ? v->nmon : 4;   /* (HudResults holds 4: with more, dev8, the first 4) */
                     for (int p = 0; p < r.num_players; p++) {
                         for (int c = 0; c < 7; c++) {
                             r.points[p][c] = game_points(v->game, p, c);
@@ -8685,7 +8688,7 @@ static int viewer_main(int argc, char **argv)
             v.unattended = plat_quiet = 1;
         }
         else if (strcmp(argv[i], "--monster") == 0 && i + 1 < argc) monster[0] = argv[++i];
-        else if (!strncmp(argv[i], "--monster", 9) && argv[i][9] >= '1' && argv[i][9] <= '4' && !argv[i][10] &&
+        else if (!strncmp(argv[i], "--monster", 9) && argv[i][9] >= '1' && argv[i][9] < '1' + MONSTERS && !argv[i][10] &&
                  i + 1 < argc)               /* --monster2 Lizzie: player 2's (--monster1 is --monster) */
         {
             int k = argv[i][9] - '1';

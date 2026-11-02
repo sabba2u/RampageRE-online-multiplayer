@@ -19,14 +19,14 @@ build\nettest\host.out and guest<k>.out. Checks, one PASS / FAIL line each (exit
             again on the host, and every guest loaded the host's game once
 #>
 param([int]$Seconds = 40, [int]$Guests = 3, [int]$Shots = 2, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0,
-      [int]$Rejoin = 0, [switch]$HostMoves, [switch]$JoinLate, [int]$HostWait = 6, [string]$HostDo = "", [string]$GuestArgs = "--four-players",
+      [int]$Rejoin = 0, [switch]$HostMoves, [switch]$JoinLate, [int]$HostWait = 6, [string]$Exe = "RampageRE-dev.exe", [string]$HostDo = "", [string]$GuestArgs = "--four-players",
       [string]$GameArgs = "Chicago 1 --four-players --players 4 --monster Lizzie --monster2 Ralph --monster3 Icky --monster4 Kingston")
 $root = Split-Path $PSScriptRoot -Parent
-$exe = Join-Path $root "RampageRE-dev.exe"
+$exe = Join-Path $root $Exe                          # (-Exe RampageRE-dev8.exe: up to 8 players)
 if (-not (Test-Path $exe)) { throw "Build first: build.bat dev" }
 $out = Join-Path $root "build\nettest"
 New-Item -ItemType Directory -Force $out | Out-Null
-Get-Process RampageRE-dev -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+Get-Process ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
 Remove-Item "$out\host.out", "$out\guest*.out", "$out\rejoin*.cfg" -ErrorAction SilentlyContinue
 
 $env:RAMPAGE_NET_LAG = "$Lag"; $env:RAMPAGE_NET_LOSS = "$Loss"
@@ -62,7 +62,7 @@ while (((Get-Date) - $t0).TotalSeconds -lt $Seconds) {
     }
     if ($Shots -gt 0 -and $shot -lt $Shots -and $el -ge 10 + $shot * $every) {
         $shot++
-        & (Join-Path $PSScriptRoot "net_shot.ps1") -Name "net4_$shot" | Out-Null
+        & (Join-Path $PSScriptRoot "net_shot.ps1") -Name "net4_$shot" -Program ([IO.Path]::GetFileNameWithoutExtension($exe)) | Out-Null
     }
     Start-Sleep -Milliseconds 500
 }

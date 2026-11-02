@@ -41,7 +41,10 @@ enum NetMsg {
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
  * guest plays player 2); everything below is sized NET_SLOTS so 4 players later is no new wire format */
-#define NET_SLOTS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define NET_SLOTS RAMPAGE_MAX_PLAYERS
 #define NET_RESERVE_S 60.0                           /* a dropped guest's slot is kept this long for its token */
 enum {
     NSL_OPEN,        /* nobody plays it: waiting for a player (its monster idle, untouchable, grey) */

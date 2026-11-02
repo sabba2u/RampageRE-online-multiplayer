@@ -403,7 +403,10 @@ enum { AMW_START = 1, AMW_STOP = 2, AMW_BURST = 4 };
 int army_mon_weapon_step(ArmyMonWeapon *w, float dt, int weapons_on);   /* weapons_on: gp-0x772C (game.h) */
 
 /* ---- the score (gCommon.addStats, Player.addPoints) */
-#define ARMY_MONSTERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define ARMY_MONSTERS RAMPAGE_MAX_PLAYERS
 /* per player (0x4D7CA8 + slot x 0x60): +0x04 points[7], +0x20 kills[7]: 0 destruction, 1 civilian, 2 vehicle,
  * 3 bonus, 4 time bonus, 5 challenge, 6 the total */
 typedef struct { float points[7]; int kills[7]; } ArmyStats;

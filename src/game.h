@@ -33,7 +33,10 @@
 #include <stdint.h>
 #include "data.h"
 
-#define GAME_PLAYERS 4
+#ifndef RAMPAGE_MAX_PLAYERS                           /* port extra: build.bat dev8 makes an 8 (docs/TODO.md) */
+#define RAMPAGE_MAX_PLAYERS 4
+#endif
+#define GAME_PLAYERS RAMPAGE_MAX_PLAYERS
 
 /* gWorld.getState() [R 0x4D6A80; who sets it: 0x2B7D40 1 then 4, 0x2B8040 2, 0x2B7F50 3, restartShell 12,
  * 0x2B7EA0 13, 0x2B7FF0 14, 0x2B7CB0 15, the rest the update 0x324340] */
