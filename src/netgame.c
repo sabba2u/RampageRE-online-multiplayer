@@ -2232,11 +2232,50 @@ static int netgame_shielded(const Mon *mo)
 
 static void ng_dropin(Viewer *v, int k);
 
-static void ng_slots_pads(Viewer *v)
+/* the host's PC's other players: source s (1 the numpad and controller 1, 2 and 3 controllers 2 and 3) as a pad */
+static void ng_local_source(Viewer *v, const Window *w, int s, Pad *p)
+{
+    keys_pad(w, s == 1 ? DRIVE_KEYS2 : DRIVE_PAD, p);
+    if (v->pads_live && s < PAD_SLOTS && (v->pads_on >> s & 1))
+        pad_to_pad(&v->pads[s], &v->pads_prev[s], p);
+}
+
+/* each local source's seat (0: none yet): a source pressed takes the next free seat, as on a couch, and plays it */
+static int ng_src_seat[4];
+
+static void ng_slots_pads(Viewer *v, const Window *w)
 {
     static float rest[MONSTERS];                     /* a local stick's push since it was at rest */
     if (!v->play || !have_monster(v) || !v->game || v->shell)
         return;
+    Pad src[4];
+    for (int s = 1; s < 4; s++) {
+        int k = ng_src_seat[s];
+        if (k && (k >= v->nmon || net_slot_state(k, NULL) != NSL_LOCAL))
+            ng_src_seat[s] = k = 0;                  /* (its seat given back: Open for online, or gone) */
+        ng_local_source(v, w, s, &src[s]);
+        int press = 0;
+        for (int b = MV_UP; b <= MV_L3; b++)
+            press |= src[s].pressed[b];
+        float push = fmaxf(fabsf(src[s].lx), fabsf(src[s].ly));
+        if (push < 0.2f)
+            rest[s] = 1;                             /* (at rest: a push from here counts) */
+        if (k || !(press || (rest[s] && push > 0.6f)))
+            continue;
+        for (int j = 1; j < v->nmon && j < net_slots(); j++) {   /* the next free seat */
+            int st = net_slot_state(j, NULL);
+            int taken = 0;
+            for (int o = 1; o < 4; o++)
+                taken |= ng_src_seat[o] == j;
+            if (!v->mon[j].bot && !taken && (st == NSL_OPEN || st == NSL_RESERVED)) {
+                net_slot_local(j, 1);
+                ng_src_seat[s] = j;
+                if (v->mon[j].drive == DRIVE_COMPUTER)
+                    v->mon[j].drive = DRIVE_KEYS2;   /* (a person's from now on, not the computer's) */
+                break;
+            }
+        }
+    }
     for (int k = 1; k < net_slots() && k < MONSTERS; k++)   /* a guest in a slot the game has no player for: added */
         if (k == v->nmon && net_slot_state(k, NULL) == NSL_ONLINE)
             ng_dropin(v, k);
@@ -2260,22 +2299,15 @@ static void ng_slots_pads(Viewer *v)
                 memset(&mo->pad, 0, sizeof mo->pad);
             if (mo->drive == DRIVE_COMPUTER)
                 mo->drive = DRIVE_KEYS2;
-            rest[k] = 0;
             continue;
         }
-        if (st == NSL_LOCAL)
-            continue;                                /* (this PC's: as main.c set it) */
-        int press = 0;
-        for (int b = MV_UP; b <= MV_L3; b++)
-            press |= mo->pad.pressed[b];
-        float push = fmaxf(fabsf(mo->pad.lx), fabsf(mo->pad.ly));
-        if (push < 0.2f)
-            rest[k] = 1;                             /* (at rest: a push from here counts) */
-        if (mo->drive != DRIVE_COMPUTER && (press || (rest[k] && push > 0.6f))) {
-            net_slot_local(k, 1);
-            continue;                                /* (the press plays at once) */
+        if (st == NSL_LOCAL) {                       /* this PC's: the source that took it plays it */
+            for (int s = 1; s < 4; s++)
+                if (ng_src_seat[s] == k)
+                    mo->pad = src[s];
+            continue;
         }
-        memset(&mo->pad, 0, sizeof mo->pad);
+        memset(&mo->pad, 0, sizeof mo->pad);         /* (open or kept: a still pad) */
     }
 }
 
@@ -2381,7 +2413,7 @@ static void netgame_pads(Viewer *v, const Window *w)
             hostdo = play_script(v, hostdo, 0.75f);
     }
     if (net_role() == NET_HOST)
-        ng_slots_pads(v);                            /* the guests' pads, local players taking a slot, idle ones */
+        ng_slots_pads(v, w);                         /* the guests' pads, local players taking a slot, idle ones */
     if (!net_live() || v->nmon < 2)
         return;
     if (net_role() == NET_HOST) {
