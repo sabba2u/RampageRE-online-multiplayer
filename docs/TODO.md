@@ -3,7 +3,7 @@
 Ideas the owner wants, not started. Newest at the bottom.
 
 ## Now
-- **Four-player online** (in progress): docs/superpowers/specs/2026-11-01-four-player-online-design.md.
+- (done 2026-11-01) **Four-player online**: docs/superpowers/specs/2026-11-01-four-player-online-design.md.
 
 ## Later
 - **Time of day: day / night switch.** Let the player pick day or night for any city. The data is there: every city

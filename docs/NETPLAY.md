@@ -63,11 +63,12 @@ of those in a profile either), and the Wii's five-star unlocks.
 
 ## Player slots: dropping out, coming back, joining late
 
-The host's game has **player slots** (net.c, NET_PROTO 2): slot 0 is the host's player 1, slot k plays the game's
+The host's game has **player slots** (net.c, NET_PROTO 3): slot 0 is the host's player 1, slot k plays the game's
 monster k. The session is built for up to 4 (`NET_SLOTS`: a transport peer per slot, nettransport.c taking up to
 `NT_PEERS` connections; each slot its own pad, pad acks, digest runs; the slot in NM_WELCOME, every slot's pad ack and
-menu bit in NM_SNAP); a hosted game uses 2 today (`NET_GAME_SLOTS`), and only that is tested. Over Steam there is one
-peer: one guest at a time.
+menu bit in NM_SNAP); a hosted game has all 4 (`NET_GAME_SLOTS`, netwire.c `net_game_slots`), tested with three guests
+on one PC (tools
+et4_test.ps1). Over Steam there is one peer: one guest at a time, 2 seats.
 
 A slot is **open** (nobody plays it), **online** (a guest does), **kept** (its guest dropped out), **local** (a player
 on the host's PC took it) or the host's. The guests are told every slot's state (NM_SLOTS, on change and each second
@@ -115,8 +116,11 @@ controller", "waiting for a player").
 The lobby lists `players` (the host, guests and local players), `max` (the slots) and `reserved` (kept slots): "1 / 2
 (1 rejoining)"; a game whose slots are all played or kept is greyed as full.
 
-Not done: 3 and 4 player online (the game's GameNetSync has 2 players' scores and lives; the guests' menus, NM_MENU,
-are player 2's; the building state a guest asks for goes to every guest), a kept slot's monster not being targeted by
+Four players (2026-11-01, docs/superpowers/specs/2026-11-01-four-player-online-design.md): every player's score and
+lives in the snapshot, every monster in the digests, a guest's menu presses as its own seat's pad, replies to one
+guest's ask sent to it alone (`net_send_msg_to`), players on the host's PC taking the next free seat, and a player
+joining mid-block added on every copy with nothing started again (`mon_add_player`, `ng_join_midblock`: the world id
+leaves the players out). Not done: a kept slot's monster not being targeted by
 the army (it only takes no damage), and the label over a kept monster that is lying defeated or turned human (the
 label is shown only while its model is).
 
@@ -501,7 +505,13 @@ tools\net_slots_test.ps1 [-Lag 80 -Loss 3]   the guest killed mid-round and star
                                              slot and monster), then left out past the minute (WAITING FOR PLAYER),
                                              then a new guest takes the monster over; screenshots slots_*.png
 tools\net_slots_test.ps1 -OnePlayer -Quick   a 1 player game hosted, the guest drops in as player 2
-tools\net_local_test.ps1                     player 2 taken by the host's numpad, then a guest told "The game is full"
+tools\net4_test.ps1 [-Guests 3]              a host and up to three guests on this PC, each copy's monsters (state,
+                                             tail springs, points, lives), digests and the host's upload compared;
+                                             PASS / FAIL per check; screenshots net4_N.png (2 x 2)
+tools\net4_test.ps1 -JoinLate                the host alone, three guests joining 10 s apart: no block started again
+tools\net4_test.ps1 -Rejoin 3                the guest in seat 3 restarted after 3 s (its game crashed): its seat back
+tools\net_local_test.ps1 -Seat2Online        a guest in player 2's seat, the numpad takes player 3's
+tools\net_local_test.ps1                     player 2 taken by the host's numpad, then a guest joins as player 3
 RAMPAGE_NET_TESTGREY=1 RampageRE-dev.exe ... --shot grey.png   player 2 drawn grey, offline (the look of a slot nobody plays)
 tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
                                              the words 35 s (real time) after the guest came in. --do's waits run

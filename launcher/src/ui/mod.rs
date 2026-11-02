@@ -79,7 +79,7 @@ impl App {
 
     pub fn say(&mut self, text: &str, problem: bool) { self.note = Some((text.to_string(), problem)); }
 
-    /// The top button: 2 players host (online play is 2: the host and one friend), 1 or 3 and 4 play on this PC.
+    /// The top button: 2 players host (friends join it, up to 4 players in all), 1 or 3 and 4 play on this PC.
     fn play(&mut self) {
         let hosting = self.settings.local_players() == 2;
         // on this PC: the game's number of players screen with all of 1 to 4 (computer players fill the others)

@@ -21,11 +21,12 @@ fn build_id_fnv1a() {
 #[test]
 fn args_per_start() {
     let l = "http://127.0.0.1:19980".to_string();
-    let (s, n) = ("--shell", "--no-four-players");
-    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![s, n, "--host", "--lobby", "http://127.0.0.1:19980"]);
+    // online over the network: up to 4 players (3 and 4 Player in the menus); over Steam still 2
+    let (s, n, f) = ("--shell", "--no-four-players", "--four-players");
+    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![s, f, "--host", "--lobby", "http://127.0.0.1:19980"]);
     assert_eq!(args(&Start::SteamHost), vec![s, n, "--steam-host"]);
-    assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, n, "--lobby", l.as_str(), "--join", "K7PQ2"]);
-    assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![s, n, "--join", "203.0.113.5:27960"]);
+    assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, f, "--lobby", l.as_str(), "--join", "K7PQ2"]);
+    assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![s, f, "--join", "203.0.113.5:27960"]);
     // Join on Steam: the game signs in to Steam only when asked (--steam), so other starts never show "Spacewar"
     assert_eq!(args(&Start::SteamWait), vec![s, n, "--steam"]);
     assert_eq!(args(&Start::Offline { four_players: true }), vec![s, "--four-players"]);
@@ -132,5 +133,5 @@ fn unlock_all_on_by_default_and_passed() {
 
 #[test]
 fn host_local_hosts_without_a_server() {
-    assert_eq!(args(&Start::HostLan), vec!["--shell", "--no-four-players", "--host"]);
+    assert_eq!(args(&Start::HostLan), vec!["--shell", "--four-players", "--host"]);
 }

@@ -48,7 +48,7 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 
 | Button | The game host (in RampageRE.exe) | A room server | Friends join with |
 |---|---|---|---|
-| **Host Local (LAN)** (2 players) | yes, started hosting (`--host`) | no | your address in the game's Insert panel → **Join**: `127.0.0.1` on this PC, your LAN address on the same Wi-Fi, your public IP from the internet (when the router forwarded UDP 27960) |
+| **Host Local (LAN)** (up to 4 players) | yes, started hosting (`--host`) | no | your address in the game's Insert panel → **Join**: `127.0.0.1` on this PC, your LAN address on the same Wi-Fi, your public IP from the internet (when the router forwarded UDP 27960) |
 | **Run an Internet Multiplayer Server** | yes | yes, inside the launcher | the room code or the link the launcher shows |
 | **Host on Steam** | yes, over Steam | no | Steam: Shift+Tab → Invite, or right-click you → **Join Game** |
 | **Play Local** / **Play Alone Locally** (1, 3 or 4) | no: a game on this PC (the game's own players screen: 1 to 4, humans or computer players). You can still host later from the game's **Insert** panel | no | |
@@ -73,4 +73,4 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 | UDP 27960 | the game host (RampageRE.exe) | every hosted game not on Steam |
 | TCP 19980 | the room server (launcher or Node) | room codes and links from outside your home |
 
-Online play is 2 players today: the host and one friend. More: [NETPLAY.md](NETPLAY.md).
+Online play is up to 4 players: the host and three friends (Host on Steam: 2). More: [NETPLAY.md](NETPLAY.md).

@@ -48,15 +48,15 @@ pub fn args(s: &Start) -> Vec<String> {
     let v: Vec<&str> = match s {
         Start::Offline { four_players: true } => vec!["--four-players"],
         Start::Offline { four_players: false } => vec!["--no-four-players"],
-        // online: 2 players (the host and one guest) is what online play supports today; 3 and 4 Player off in the
-        // menus (a third or fourth monster isn't kept in step on the guest's screen)
+        // online over the network: up to 4 players (the host and three guests, or players on the host's PC), so 3 and
+        // 4 Player in the menus; over Steam 2 (one Steam peer)
         // --steam: sign in to Steam and wait for a friend's Join Game (the game touches Steam only when asked)
         Start::SteamWait => vec!["--no-four-players", "--steam"],
-        Start::Host { lobby } => vec!["--no-four-players", "--host", "--lobby", lobby],
-        Start::HostLan => vec!["--no-four-players", "--host"],
+        Start::Host { lobby } => vec!["--four-players", "--host", "--lobby", lobby],
+        Start::HostLan => vec!["--four-players", "--host"],
         Start::SteamHost => vec!["--no-four-players", "--steam-host"],
-        Start::Join { target, lobby: Some(l) } => vec!["--no-four-players", "--lobby", l, "--join", target],
-        Start::Join { target, lobby: None } => vec!["--no-four-players", "--join", target],
+        Start::Join { target, lobby: Some(l) } => vec!["--four-players", "--lobby", l, "--join", target],
+        Start::Join { target, lobby: None } => vec!["--four-players", "--join", target],
     };
     // --shell first, always: the player build opens its menus only when started with no flags at all; with any
     // (these) it opened a free camera over Chicago, no menu and no monster

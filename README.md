@@ -4,17 +4,17 @@
 > below this box is the original project's README. All credit for the port itself goes to jjmhalew; this fork only adds
 > the online play on top (branch `online-multiplayer`).
 
-## Online 2-player (work in progress)
+## Online, up to 4 players (work in progress)
 
-Two players on two PCs. The **host** is player 1 and runs the game; the **guest** is player 2 and sees the host's
-world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
+Up to four players, each on their own PC (or some on the host's PC with extra controllers). The **host** is player 1
+and runs the game; each **guest** is player 2, 3 or 4 (in the order they join) and sees the host's world: the monsters, buildings, people, army, traffic, bosses, score, clock, results and Game Over all come from the
 host. Each player needs their own copy of the game disc and the same build of this fork.
 
 ### The easy way: the launcher
 
 Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, nothing to set up.
 
-- **HOST A GAME (LAN)**: **Host Local (LAN)** starts the game already hosting (2 players); friends join your address.
+- **HOST A GAME (LAN)**: **Host Local (LAN)** starts the game already hosting; up to three friends join your address.
   With 1, 3 or 4 players it's the normal game on this PC (**Play Local**). **Join Local (LAN)** joins a game hosted on
   this PC (127.0.0.1).
 - **HOST AN INTERNET GAME**: **Run an Internet Multiplayer Server** shows a 5-letter room code and links to send your friends (the
@@ -36,13 +36,14 @@ Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-
 
 1. Both players start RampageRE.
 2. Press **Insert** at any time to open the online panel.
-3. **Host:** pick **2 Player** in the main menu as usual, then press **Insert** and click **Host a game**.
+3. **Host:** press **Insert** and click **Host a game**, then pick **2, 3 or 4 Player** in the main menu once your
+   friends are in (with the 3/4 player option on, the campaign has 3 and 4 Player too).
    The game uses UDP port **27960**: the game asks your router to forward it by itself (UPnP); the panel's
    **Port forward** line says whether it worked and the address friends join. If your router has no UPnP (or it is
    off), forward the port by hand, or use Steam, a LAN or a VPN like Tailscale or ZeroTier.
 4. **Guest:** press **Insert**, type the host's address and click **Join**. Your screen then shows the host's menus
-   (main menu, Monster Select with both cards, City Select, and in the game its Pause menu and results); your
-   controller or keyboard picks player 2's monster on the host's Monster Select, and you both end up in the same city.
+   (main menu, Monster Select with every player's card, City Select, and in the game its Pause menu and results); your
+   controller or keyboard picks your own card on the host's Monster Select, and you all end up in the same city.
    What you earn as the guest (monsters unlocked, your monster's upgrades, campaign blocks won) is kept in your own
    profile; the host's profile never overwrites yours.
 5. The panel shows who is host, the ping, the updates a second (20 / 30 / 60) and whether everything is in sync.
@@ -50,18 +51,18 @@ Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-
 6. **Chat:** press **Enter** in a game to type, **Enter** sends, **Esc** cancels (**P** pauses). Lines show bottom
    left and fade out; what you say also floats over your monster's head. `/help` lists the commands.
 7. While a player has a menu up (the Insert panel, the chat box or the Pause menu), **IN MENU** floats over their
-   monster on the other player's screen.
+   monster on the other players' screens. Any player's Start pauses the game for everyone ("Player 3 paused the game").
 
-8. **Dropping out and coming back:** if the guest's connection drops (or their game crashes), their monster stands
+8. **Dropping out and coming back:** if a guest's connection drops (or their game crashes), their monster stands
    still, takes no damage, turns grey, and a big red **DISCONNECTED / Rejoin 0:47** floats over it on every screen.
    The same player joining again within the minute (by code, address or link: their game remembers a rejoin token,
    also in `netrejoin.cfg`) gets the same monster back mid-round, score and health as they were. After the minute the
-   slot says **WAITING FOR PLAYER** (yellow) and anyone can join and take that monster over as it is. A hosted 2 Player
-   game shows WAITING FOR PLAYER over player 2 until someone joins, unless someone on the host's PC presses player 2's
-   keys (numpad) or controller: then **Local controller took over Player 2** and it is theirs (the panel's **Open for
-   online** gives it back; **Kick** removes an online player).
-9. **A 1 Player game can be joined:** the guest drops in as player 2 (the block is set up again for two, with the
-   buildings, score and player 1 as they were), with the monster they played last.
+   slot says **WAITING FOR PLAYER** (yellow) and anyone can join and take that monster over as it is. A hosted game
+   shows WAITING FOR PLAYER over a seat nobody has joined yet, unless someone on the host's PC presses a button on
+   another controller (or the numpad): it takes the next free seat (**Local controller took over Player 3**) and it is
+   theirs (the panel's **Open for online** gives it back; **Kick** removes an online player).
+9. **Joining a game already going:** a friend who joins mid-game walks straight in as the next player, beside player 1:
+   nothing starts over (the buildings, people, army, clock and everyone's score go on), up to four players.
 10. **Re-synchronize players** (host's panel, or `/resync`; a guest's panel asks the host): every guest takes the host's
    whole world again, without leaving. A safety net if something looks different on the two screens.
 
@@ -111,9 +112,9 @@ cars appear at the edges.
 
 This is early. Expect issues.
 
-- **Player slots are built for up to 4 players, but only 2 are used and tested** (one guest). Over Steam a host takes
-  one guest at a time.
-- **Tested only on one PC**, two copies talking over localhost, including with simulated lag and packet loss.
+- **Up to 4 players** (the host and three guests). Over Steam a host takes one guest at a time. With three guests the
+  host sends each about 200 KB/s (4.8 Mbit/s of upload in all on average, 6.6 at peak).
+- **Tested only on one PC**, up to four copies talking over localhost, including with simulated lag and packet loss.
   It has **not** been played between two real PCs over the internet yet.
 - **Steam has not been tested.** The code is there (Host on Steam, Invite a friend, Join Game from the friends list,
   using the Spacewar test app 480), but no one has joined a game through Steam yet.
