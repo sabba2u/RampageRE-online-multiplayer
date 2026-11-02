@@ -1527,6 +1527,15 @@ static int ng_predict_fix(Viewer *v, Mon *mo, int k, const NgSnap *nw)
     float e[3] = { h->pos[0] - ng_hist[at].pos[0], h->pos[1] - ng_hist[at].pos[1], h->pos[2] - ng_hist[at].pos[2] };
     float err = sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
     ng_pred_miss = h->state != ng_hist[at].state ? ng_pred_miss + 1 : 0;
+    {   /* (RAMPAGE_NET_PRED_LOG: the prediction's error, each 5 s) */
+        static double sum, at5; static float top; static int n, resets;
+        sum += err; n++; if (err > top) top = err; if (err > 12 || ng_pred_miss > 6) resets++;
+        if (net_now() - at5 >= 5) {
+            if (at5 && n && getenv("RAMPAGE_NET_PRED_LOG"))
+                net_log("prediction: error %.3f mean, %.3f most, %d samples, %d resets", sum / n, top, n, resets);
+            sum = 0; n = 0; top = 0; resets = 0; at5 = net_now();
+        }
+    }
     if (err > 12 || ng_pred_miss > 6) {              /* gone another way: the host's whole, and start again */
         ng_hist_n = 0;
         ng_pred_miss = 0;
