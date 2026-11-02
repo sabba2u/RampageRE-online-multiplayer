@@ -2073,15 +2073,15 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
     ngr_people_init();
     ngr_menu_init();
     nts_command_line(argc, argv);                    /* +connect_lobby <id>: started by a Steam invite */
-    FILE *appid = fopen("steam_appid.txt", "rb");    /* (Steam opted in: steam_appid.txt beside the game, or an
-                                                      * invite; else the panel's Use Steam) */
-    int lobby = 0;
+    /* Steam only when asked for (signing in shows the player "playing Spacewar" to their friends): --steam (the
+     * launcher's Join on Steam: wait for a friend's Join Game), --steam-host, an invite's +connect_lobby, or later
+     * the panel's Use Steam. A steam_appid.txt beside the game alone no longer signs in. */
+    int want_steam = 0;
     for (int i = 1; i < argc; i++)
-        lobby |= !strcmp(argv[i], "+connect_lobby");
-    if (appid || lobby)
+        want_steam |= !strcmp(argv[i], "+connect_lobby") || !strcmp(argv[i], "--steam") ||
+                      !strcmp(argv[i], "--steam-host");
+    if (want_steam)
         nts_start();
-    if (appid)
-        fclose(appid);
     building_net_gate = ng_building_gate;
     game_net_tap = ng_flow_tap;
     hud_net_tap = ng_results_tap;

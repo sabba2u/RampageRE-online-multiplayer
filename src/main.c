@@ -8655,7 +8655,7 @@ static int viewer_main(int argc, char **argv)
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') i++;
         } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
-        else if (strcmp(argv[i], "--steam-host") == 0) { }
+        else if (strcmp(argv[i], "--steam-host") == 0 || strcmp(argv[i], "--steam") == 0) { }
         else if (strcmp(argv[i], "--net-rate") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "--lobby") == 0 && i + 1 < argc) netlobby_set_url(argv[++i], 0);   /* NET: netlobby.h */
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */

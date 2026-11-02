@@ -50,7 +50,8 @@ pub fn args(s: &Start) -> Vec<String> {
         Start::Offline { four_players: false } => vec!["--no-four-players"],
         // online: 2 players (the host and one guest) is what online play supports today; 3 and 4 Player off in the
         // menus (a third or fourth monster isn't kept in step on the guest's screen)
-        Start::SteamWait => vec!["--no-four-players"],
+        // --steam: sign in to Steam and wait for a friend's Join Game (the game touches Steam only when asked)
+        Start::SteamWait => vec!["--no-four-players", "--steam"],
         Start::Host { lobby } => vec!["--no-four-players", "--host", "--lobby", lobby],
         Start::HostLan => vec!["--no-four-players", "--host"],
         Start::SteamHost => vec!["--no-four-players", "--steam-host"],

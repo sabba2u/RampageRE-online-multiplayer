@@ -26,7 +26,8 @@ fn args_per_start() {
     assert_eq!(args(&Start::SteamHost), vec![s, n, "--steam-host"]);
     assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, n, "--lobby", l.as_str(), "--join", "K7PQ2"]);
     assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![s, n, "--join", "203.0.113.5:27960"]);
-    assert_eq!(args(&Start::SteamWait), vec![s, n]);
+    // Join on Steam: the game signs in to Steam only when asked (--steam), so other starts never show "Spacewar"
+    assert_eq!(args(&Start::SteamWait), vec![s, n, "--steam"]);
     assert_eq!(args(&Start::Offline { four_players: true }), vec![s, "--four-players"]);
     assert_eq!(args(&Start::Offline { four_players: false }), vec![s, "--no-four-players"]);
 }
