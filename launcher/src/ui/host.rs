@@ -6,6 +6,7 @@ use crate::game::{self, Start};
 use crate::lobby::addr::is_loopback;
 use crate::lobby::games::Games;
 use crate::lobby::http::{LobbyServer, StartError};
+use crate::settings::Settings;
 use crate::upnp::{self, Reach};
 use eframe::egui::{self, Align2, RichText, Vec2};
 use std::process::Child;
@@ -21,6 +22,7 @@ pub const GAME_PORT: u16 = 27960;
 pub const PORT_IN_USE: &str = "Another RampageRE server is already running on this PC.";
 pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you on this network.";
 pub const ROUTER_TEXT: &str = "Friends on the same home network can still join your room.";
+pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded TCP 19980 and UDP 27960 to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
 pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";
@@ -82,11 +84,12 @@ impl Hosting {
     }
 
     /// Asks the router (again), on a thread; a stop meanwhile removes what it made.
-    fn open_router(&mut self) {
+    pub fn open_router(&mut self) {
         let (tx, rx) = channel();
         let cancelled = self.cancelled.clone();
+        let settings = Settings::load();
         std::thread::spawn(move || {
-            let o = upnp::open_lobby_port(LOBBY_PORT);
+            let o = by_hand(upnp::open_lobby_port(LOBBY_PORT), &settings, crate::ui::join::public_ip);
             if cancelled.load(Ordering::Relaxed) {
                 if o.forwarded {
                     upnp::close_lobby_port(LOBBY_PORT);
@@ -97,6 +100,20 @@ impl Hosting {
         });
         self.reach_rx = Some(rx);
         self.opened_at = Some(Instant::now());
+    }
+}
+
+/// The router's opening failed, but the host forwarded its ports by hand (Settings): friends outside can still come,
+/// to the name set (sabba2u.no-ip.org) or else the address the internet sees (`lookup`). Anything else: as it was.
+pub fn by_hand(o: upnp::Opened, s: &Settings, lookup: impl FnOnce() -> Result<String, String>) -> upnp::Opened {
+    if !s.forwarded_by_hand || matches!(o.reach, Reach::Internet { .. }) {
+        return o;
+    }
+    let name = s.public_name.trim();
+    let addr = if name.is_empty() { lookup().ok() } else { Some(name.to_string()) };
+    match addr {
+        Some(public_ip) => upnp::Opened { reach: Reach::Internet { public_ip }, forwarded: o.forwarded },
+        None => o,
     }
 }
 
@@ -266,6 +283,13 @@ impl App {
                         self.host.router_popup = false;
                     }
                 });
+                ui.add_space(6.0);
+                ui.label(RichText::new(BY_HAND_TEXT).small().color(look::DIM_TEXT));
+                if ui.button("I forwarded the ports myself").clicked() {
+                    self.settings = Settings::update(|s| s.forwarded_by_hand = true);
+                    self.host.router_popup = false;
+                    self.host.open_router();
+                }
             });
     }
 }

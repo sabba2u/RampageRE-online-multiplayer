@@ -182,6 +182,23 @@ impl App {
                 {
                     self.settings = Settings::update(|s| s.own_outline = outline);
                 }
+                let mut by_hand = self.settings.forwarded_by_hand;
+                if ui.checkbox(&mut by_hand, RichText::new("I forwarded my router's ports myself").strong())
+                    .on_hover_text("TCP 19980 and UDP 27960 to this PC, by hand: hosting won't say only your home network can join when the router doesn't open itself.").changed()
+                {
+                    self.settings = Settings::update(|s| s.forwarded_by_hand = by_hand);
+                }
+                if self.settings.forwarded_by_hand {
+                    let mut name = self.settings.public_name.clone();
+                    ui.horizontal(|ui| {
+                        ui.label("Address friends use:");
+                        let e = ui.add(egui::TextEdit::singleline(&mut name).hint_text("empty: your internet address")
+                            .desired_width(200.0));
+                        if e.changed() {
+                            self.settings = Settings::update(|s| s.public_name = name.trim().to_string());
+                        }
+                    }).response.on_hover_text("A name like yourname.no-ip.org keeps working when your home's address changes.");
+                }
                 let mut shuffle = self.settings.shuffle_buildings;
                 if ui.checkbox(&mut shuffle, RichText::new("Shuffle the city's buildings").strong())
                     .on_hover_text("Every game a new street: each lot gets another of the city's buildings of its size.").changed()

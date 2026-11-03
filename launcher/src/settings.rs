@@ -34,6 +34,12 @@ pub struct Settings {
     pub shuffle_buildings: bool,
     /// a thin outline in your player's colour around your own monster, on your screen only (--own-outline)
     pub own_outline: bool,
+    /// the host forwarded the router's ports by hand (TCP 19980, UDP 27960): the router's own opening (UPnP) failing
+    /// no longer means "only your home network"
+    pub forwarded_by_hand: bool,
+    /// what internet friends type to reach this PC (a name like sabba2u.no-ip.org that follows a changing address);
+    /// empty: the address the internet sees, looked up when hosting
+    pub public_name: String,
 }
 
 impl Default for Settings {
@@ -42,7 +48,8 @@ impl Default for Settings {
         Settings { servers: Vec::new(), first_run_done: false, firewall_note_shown: false, spacewar_card_shown: false,
                    banned: Vec::new(), local_players: 0, unlock_all: true, unlock_moves: true, time_of_day: "game".into(),
                    smoothing: "off".into(), weather: "clear".into(),
-                   look: "normal".into(), shuffle_buildings: false, own_outline: false }
+                   look: "normal".into(), shuffle_buildings: false, own_outline: false,
+                   forwarded_by_hand: false, public_name: String::new() }
     }
 }
 

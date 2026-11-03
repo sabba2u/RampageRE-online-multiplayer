@@ -69,3 +69,31 @@ fn close_gently_ends_it_even_without_a_window() {
     let out = std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]).output().unwrap();
     assert!(!String::from_utf8_lossy(&out.stdout).contains(&pid), "closed, by force after the wait");
 }
+
+#[test]
+fn ports_forwarded_by_hand() {
+    use crate::settings::Settings;
+    use crate::upnp::Opened;
+    let home = || Opened { reach: Reach::HomeOnly { reason: "no router answered (UPnP is off)".into() }, forwarded: false };
+    let mut s = Settings::default();
+    // (not said: as the router said)
+    assert_eq!(by_hand(home(), &s, || Ok("1.2.3.4".into())), home());
+    s.forwarded_by_hand = true;
+    assert_eq!(by_hand(home(), &s, || Ok("184.170.168.240".into())).reach,
+               Reach::Internet { public_ip: "184.170.168.240".into() });
+    s.public_name = "sabba2u.no-ip.org".into();
+    assert_eq!(by_hand(home(), &s, || panic!("no lookup with a name")).reach,
+               Reach::Internet { public_ip: "sabba2u.no-ip.org".into() });
+    // (the lookup failing: as the router said)
+    s.public_name.clear();
+    assert_eq!(by_hand(home(), &s, || Err("no".into())), home());
+    // (the router opened itself: its answer kept)
+    let net = Opened { reach: Reach::Internet { public_ip: "5.6.7.8".into() }, forwarded: true };
+    assert_eq!(by_hand(net.clone(), &s, || Ok("1.2.3.4".into())), net);
+}
+
+#[test]
+fn a_name_in_the_links() {
+    let net = Reach::Internet { public_ip: "sabba2u.no-ip.org".into() };
+    assert_eq!(invite_links("K7PQ2", &net, None)[0].1, "rampage://join/K7PQ2@sabba2u.no-ip.org");
+}
