@@ -55,9 +55,6 @@ pub struct App {
     pub join_box: join_box::JoinBox,
     /// this PC's address on its network, looked up once (Host Local's hint)
     lan_ip: Option<String>,
-    /// its address on the internet, looked up when asked (Host Local's "Show my internet address")
-    public_ip: Option<Result<String, String>>,
-    public_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Join Local (LAN): the host's address typed (empty: look for games on the network)
     lan_addr: String,
     /// the look for games under way
@@ -90,7 +87,6 @@ impl App {
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
-                            public_ip: None, public_rx: None,
                             lan_addr: String::new(), lan_rx: None, fw_status: None, fw_rx: None, fw_note: None };
         app.refresh_links();
         app
@@ -245,7 +241,7 @@ impl App {
         };
         ui.label(RichText::new(hint).strong().color(look::YELLOW));
         if self.settings.hosts() {
-            self.public_ip_row(ui);
+            self.firewall_row(ui);
         }
     }
 
@@ -264,7 +260,7 @@ impl App {
         }
     }
 
-    /// "Allow through firewall", beside "Show my internet address": only the host needs it.
+    /// "Allow through firewall": only the host needs it.
     fn firewall_button(&mut self, ui: &mut egui::Ui) {
         use crate::firewall::Status;
         if let Some((rx, fix)) = &self.fw_rx {
@@ -311,53 +307,12 @@ impl App {
         }
     }
 
-    /// "Show my internet address": looked up on a thread when clicked, then shown with a Copy button.
-    fn public_ip_row(&mut self, ui: &mut egui::Ui) {
-        if let Some(rx) = &self.public_rx {
-            if let Ok(r) = rx.try_recv() {
-                self.public_ip = Some(r);
-                self.public_rx = None;
-            }
-        }
-        ui.horizontal(|ui| {
-            match &self.public_ip {
-                Some(Ok(ip)) => {
-                    ui.label(RichText::new(format!("Your internet address: {ip}")).strong());
-                    if ui.button("Copy").clicked() {
-                        ui.ctx().copy_text(ip.clone());
-                    }
-                    ui.label(RichText::new(format!("(friends need port {}, TCP and UDP, forwarded to this PC)",
-                        self.settings.host_port())).small().color(look::DIM_TEXT));
-                }
-                Some(Err(e)) => {
-                    ui.label(RichText::new(e).small().color(look::RED));
-                }
-                None if self.public_rx.is_some() => {
-                    ui.label(RichText::new("Looking up your internet address...").small());
-                }
-                None => {
-                    if ui.button("Show my internet address").clicked() {
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        std::thread::spawn(move || {
-                            let _ = tx.send(join::public_ip());
-                        });
-                        self.public_rx = Some(rx);
-                    }
-                }
-            }
-            if !matches!(self.public_ip, Some(Ok(_))) {
-                self.firewall_button(ui);
-            }
-        });
-        if matches!(self.public_ip, Some(Ok(_))) {
-            ui.horizontal(|ui| self.firewall_button(ui));
-        }
+    /// The host's firewall button and what it last said.
+    fn firewall_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| self.firewall_button(ui));
         if let Some((text, problem)) = &self.fw_note {
             let color = if *problem { look::RED } else { look::GREEN };
             ui.label(RichText::new(text).small().color(color));
-        }
-        if self.public_rx.is_some() {
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
         }
     }
 
