@@ -232,6 +232,7 @@ static void ng_rumble_follow(Viewer *v, const NgWorld *w)
     if (w->rumble_wave == v->rumble.wave || v->nmon < v->rumble.players)
         return;
     int n = 0;
+    v->rumble.wave = w->rumble_wave;                 /* (before the bosses: their rest by it) */
     for (int i = 0; i < RUMBLE_MAX_BOSSES; i++)
         if (w->rumble_boss[i] >= 0 && w->rumble_boss[i] < (int)v->nmonsters &&
             mon_set_boss(v, v->rumble.players + i, w->rumble_boss[i], rumble_factor(w->rumble_wave), 0, -18, 180) >= 0)

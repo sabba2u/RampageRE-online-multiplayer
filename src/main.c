@@ -125,6 +125,7 @@ typedef struct Mon {
     int boss;                                        /* (port extra) Boss Rumble's boss: in a slot after the players, not
                                                       * a game player (no lives, no points), a hunter of the players */
     float boss_factor;                               /* its health and hits x this (rumble_factor) */
+    float boss_hp_mul;                               /* its health x this more: the run's players (rumble_hp_scale) */
     float boss_down;                                 /* seconds since its health ran out (beaten at RUMBLE_DOWN) */
     float boss_far;                                  /* seconds with no living player within RUMBLE_REACH (RUMBLE_STUCK) */
     int boss_beaten;                                 /* out for good: hidden till its slot's next boss */
@@ -637,7 +638,8 @@ static void face_step(Mon *mo, float dt)
 static float mon_hp_max(const Mon *mo)
 {
     float m = mo->have_graph && mo->graph.hp_max > 0 ? mo->graph.hp_max : 200;
-    return mo->boss ? m * mo->boss_factor : m;   /* (Boss Rumble: its wave's factor) */
+    return mo->boss ? m * mo->boss_factor * (mo->boss_hp_mul > 0 ? mo->boss_hp_mul : 1) : m;   /* (Boss Rumble: its wave's
+                                                   * factor, more with more players) */
 }
 
 static void mon_fx_event(Mon *mo, const MoveEvent *e);
@@ -8092,7 +8094,7 @@ static void setup_players(Viewer *v, int n, int bots, const int *monster)
         mo->monster = k < v->nmon ? monster[k] : -1;
         mo->bot = k < v->nmon && k >= v->nmon - v->num_bots;
         mo->boss = mo->boss_beaten = 0;              /* (a Boss Rumble run's bosses gone) */
-        mo->boss_factor = 1;
+        mo->boss_factor = mo->boss_hp_mul = 1;
         mo->boss_down = 0;
         mo->spared = mo->boss_hits_t = 0;
         mo->boss_hits = 0;
@@ -8915,6 +8917,7 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
     mo->scale_left = 0;
     mo->boss = 1;
     mo->boss_factor = f;
+    mo->boss_hp_mul = rumble_hp_scale(v->rumble.players);
     mo->boss_down = 0;
     mo->boss_far = 0;
     mo->boss_beaten = 0;
@@ -8937,7 +8940,7 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
     if (mo->have_graph) {
         dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)k);
         mo->ai.bot.hunter = 1;
-        mo->ai.bot.rest_len = RUMBLE_REST;           /* (a breath after each attack) */
+        mo->ai.bot.rest_len = rumble_rest(v->rumble.wave);   /* (a breath after each attack, shorter later) */
     }
     return k;
 }
@@ -8979,7 +8982,7 @@ static void rumble_unstick(Viewer *v, Mon *mo, int k, float dt)
         dir_ai_clear(&mo->ai);
         dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)k);
         mo->ai.bot.hunter = 1;
-        mo->ai.bot.rest_len = RUMBLE_REST;
+        mo->ai.bot.rest_len = rumble_rest(v->rumble.wave);
     }
     mo->boss_far = 0;
     printf("rumble: %s out of reach %.0f s: back beside the players\n", v->monsters[mo->monster], (double)stuck);
@@ -8996,7 +8999,7 @@ static void rumble_reset(Viewer *v)
         if (mon_in(mo))
             mon_in(mo)->hidden = 1;
         mo->boss = mo->boss_beaten = 0;
-        mo->boss_factor = 1;
+        mo->boss_factor = mo->boss_hp_mul = 1;
         mo->monster = -1;
     }
     v->nmon = v->rumble.players;
@@ -9013,6 +9016,7 @@ static void rumble_wave(Viewer *v, int w)
     float mid = players_mid_x(v);
     char names[160] = "";
     int made = 0;
+    v->rumble.wave = w;                              /* (before the bosses: their rest by it, rumble_rest) */
     for (int i = 0; i < n; i++) {
         int side = i % 2 ? 1 : -1;
         float x = mid + (float)side * (34.0f + 8.0f * (float)(i / 2));
@@ -9024,7 +9028,9 @@ static void rumble_wave(Viewer *v, int w)
     v->rumble.wave = w;
     v->rumble.nboss = made;
     v->rumble.pause = 0;
-    printf("rumble: wave %d:%s\n", w, names);
+    const Mon *b0 = made ? &v->mon[v->rumble.players] : NULL;
+    printf("rumble: wave %d:%s (health %.0f, rest %.1f s)\n", w, names, b0 ? (double)b0->hp : 0.0,
+           (double)rumble_rest(w));
 }
 
 static void rumble_pu_step(Viewer *v, float dt);

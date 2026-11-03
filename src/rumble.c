@@ -6,7 +6,15 @@
 
 int rumble_wave_size(int wave) { return wave >= 1 && wave <= RUMBLE_WAVES ? (wave - 1) / 3 + 1 : 0; }
 
-float rumble_factor(int wave) { return wave >= 1 && wave <= RUMBLE_WAVES ? 1.0f + 0.25f * (float)((wave - 1) / 3) : 1.0f; }
+float rumble_factor(int wave)
+{
+    static const float f[4] = { 1.0f, 1.5f, 2.0f, 2.75f };
+    return wave >= 1 && wave <= RUMBLE_WAVES ? f[(wave - 1) / 3] : 1.0f;
+}
+
+float rumble_hp_scale(int players) { return players > 1 ? 1.0f + 0.5f * (float)(players - 1) : 1.0f; }
+
+float rumble_rest(int wave) { return wave >= 1 && wave <= RUMBLE_WAVES ? RUMBLE_REST - 0.2f * (float)((wave - 1) / 3) : RUMBLE_REST; }
 
 unsigned rumble_rand(unsigned *seed)
 {

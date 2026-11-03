@@ -16,13 +16,30 @@ static void test_waves(void)
     CHECK(rumble_wave_size(0) == 0 && rumble_wave_size(13) == 0 && rumble_wave_size(-1) == 0);
 }
 
+static int near(float a, float b) { return a - b < 1e-4f && b - a < 1e-4f; }
+
 static void test_factor(void)
 {
     CHECK(rumble_factor(1) == 1.0f && rumble_factor(3) == 1.0f);
-    CHECK(rumble_factor(4) == 1.25f && rumble_factor(6) == 1.25f);
-    CHECK(rumble_factor(7) == 1.5f && rumble_factor(9) == 1.5f);
-    CHECK(rumble_factor(10) == 1.75f && rumble_factor(12) == 1.75f);
+    CHECK(rumble_factor(4) == 1.5f && rumble_factor(6) == 1.5f);
+    CHECK(rumble_factor(7) == 2.0f && rumble_factor(9) == 2.0f);
+    CHECK(rumble_factor(10) == 2.75f && rumble_factor(12) == 2.75f);
     CHECK(rumble_factor(0) == 1.0f && rumble_factor(13) == 1.0f);
+}
+
+static void test_hp_scale(void)                      /* a boss's health, half again for each player after the first */
+{
+    CHECK(near(rumble_hp_scale(1), 1.0f) && near(rumble_hp_scale(2), 1.5f));
+    CHECK(near(rumble_hp_scale(4), 2.5f) && near(rumble_hp_scale(8), 4.5f));
+    CHECK(near(rumble_hp_scale(0), 1.0f) && near(rumble_hp_scale(-3), 1.0f));
+}
+
+static void test_rest(void)                          /* the breath after an attack, shorter by group of three */
+{
+    CHECK(near(rumble_rest(1), 1.4f) && near(rumble_rest(3), 1.4f));
+    CHECK(near(rumble_rest(4), 1.2f) && near(rumble_rest(7), 1.0f));
+    CHECK(near(rumble_rest(10), 0.8f) && near(rumble_rest(12), 0.8f));
+    CHECK(near(rumble_rest(0), 1.4f) && near(rumble_rest(13), 1.4f));
 }
 
 static void test_pick(void)
@@ -97,6 +114,8 @@ int main(void)
 {
     test_waves();
     test_factor();
+    test_hp_scale();
+    test_rest();
     test_pick();
     test_pickup_time();
     test_best();

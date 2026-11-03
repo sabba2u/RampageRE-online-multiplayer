@@ -1,5 +1,5 @@
 /* rumble.h - port extra: Boss Rumble's rules, nothing of the world (docs/superpowers/specs/2026-11-02-boss-rumble-
- * design.md): 12 waves of bosses (1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4), each group of three tougher by a quarter, the
+ * design.md): 12 waves of bosses (1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4), each group of three tougher (x1, 1.5, 2, 2.75; more health with more players), the
  * bosses picked at random from the roster, a power-up out in the city every 15 .. 25 s, the best survival time kept
  * per profile in a small text file. main.c runs the mode with them (rumble_driver_step); tests/rumble_test.c. */
 #ifndef RAMPAGE_RUMBLE_H
@@ -20,7 +20,12 @@
 #define RUMBLE_STUCK 30.0f                           /* out of every player's reach this long: back beside them */
 
 int rumble_wave_size(int wave);                      /* wave 1 .. 12: the bosses at once; else 0 */
-float rumble_factor(int wave);                       /* their health and hits: 1, 1.25, 1.5, 1.75 by group of three */
+float rumble_factor(int wave);                       /* their health and hits: 1, 1.5, 2, 2.75 by group of three */
+/* a boss's health x this more with players in the run (not its hits): half again for each after the first, so a
+ * crowd faces sturdier bosses (the owner, 2026-11-03: "make sure it gets hard enough") */
+float rumble_hp_scale(int players);
+/* a boss's breath after each attack in wave w: RUMBLE_REST (1.4 s), 0.2 s less by group of three, 0.8 s at the end */
+float rumble_rest(int wave);
 /* count roster indices 0 .. nroster-1, all different when the roster has that many; *seed advances (the same seed, the
  * same picks): the count, 0 with no roster */
 int rumble_pick(unsigned *seed, int nroster, int count, int out[RUMBLE_MAX_BOSSES]);
