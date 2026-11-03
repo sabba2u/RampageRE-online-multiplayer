@@ -1,5 +1,5 @@
 use crate::firewall::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn the_look_is_read() {
@@ -10,20 +10,23 @@ fn the_look_is_read() {
 }
 
 #[test]
-fn base64_as_powershell_wants_it() {
-    // "ab" in UTF-16LE is 61 00 62 00
-    assert_eq!(encode("ab"), "YQBiAA==");
-    assert_eq!(encode("abc"), "YQBiAGMA");
-    assert_eq!(encode(""), "");
+fn the_fix_is_plain_netsh() {
+    let p = vec![PathBuf::from(r"C:\Games\Bob's Games\RampageRE.exe"), PathBuf::from(r"C:\Games\Bob's Games\RampageRE-dev.exe")];
+    let c = fix_command(&p, Path::new(r"C:\Temp\RampageRE-firewall.log"));
+    assert_eq!(c, "\"(netsh advfirewall firewall delete rule name=all dir=in program=\"C:\\Games\\Bob's Games\\RampageRE.exe\" \
+& netsh advfirewall firewall delete rule name=all dir=in program=\"C:\\Games\\Bob's Games\\RampageRE-dev.exe\" \
+& netsh advfirewall firewall add rule name=\"RampageRE (RampageRE.exe)\" dir=in action=allow protocol=UDP \
+program=\"C:\\Games\\Bob's Games\\RampageRE.exe\" profile=any \
+&& netsh advfirewall firewall add rule name=\"RampageRE (RampageRE-dev.exe)\" dir=in action=allow protocol=UDP \
+program=\"C:\\Games\\Bob's Games\\RampageRE-dev.exe\" profile=any) > \"C:\\Temp\\RampageRE-firewall.log\" 2>&1\"");
+    assert!(!c.contains("Encoded") && !c.contains("powershell"));
 }
 
 #[test]
-fn the_paths_are_quoted() {
+fn the_status_script_quotes_paths() {
     let p = vec![PathBuf::from(r"C:\Games\Bob's\RampageRE.exe")];
-    let s = fix_script(&p);
-    assert!(s.contains(r"'C:\Games\Bob''s\RampageRE.exe'"), "{s}");
-    assert!(s.contains("-Protocol UDP") && s.contains("-Profile Any") && s.contains("Remove-NetFirewallRule"));
     assert!(status_script(&p).contains(r"'C:\Games\Bob''s\RampageRE.exe'"));
+    assert_eq!(rule_name(&p[0]), "RampageRE (RampageRE.exe)");
 }
 
 #[test]
@@ -31,13 +34,4 @@ fn the_paths_are_quoted() {
 fn the_look_runs() {
     let s = status(&[PathBuf::from(r"C:\nowhere\RampageRE.exe")]);
     assert_eq!(s, Status::Missing);
-}
-
-#[test]
-#[ignore] // (by hand) the scripts written out, for PowerShell's parser: RAMPAGE_FW_OUT=dir
-fn write_scripts() {
-    let dir = std::env::var("RAMPAGE_FW_OUT").unwrap();
-    let p = vec![PathBuf::from(r"C:\Games\Bob's\RampageRE.exe"), PathBuf::from(r"C:\Games\Bob's\RampageRE-dev.exe")];
-    std::fs::write(format!("{dir}/fix.ps1"), fix_script(&p)).unwrap();
-    std::fs::write(format!("{dir}/status.ps1"), status_script(&p)).unwrap();
 }
