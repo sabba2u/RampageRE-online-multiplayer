@@ -405,7 +405,7 @@ impl App {
                     ui.horizontal(|ui| {
                         // the heading centered over the row, the "?" at its end
                         ui.add_space((ui.available_width() - 170.0).max(0.0) / 2.0);
-                        ui.label(RichText::new("HOST ON STEAM").size(15.0).strong().color(look::YELLOW));
+                        ui.label(RichText::new("Host on Steam").size(16.0).family(look::semibold()));
                         if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
                             self.card = Some(Card::Spacewar(None));
                         }
