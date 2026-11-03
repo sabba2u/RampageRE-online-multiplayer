@@ -137,3 +137,26 @@ fn a_name_in_the_links() {
     let net = Reach::Internet { public_ip: "sabba2u.no-ip.org".into() };
     assert_eq!(invite_links("K7PQ2", &net, None, 19980)[0].1, "rampage://join/K7PQ2@sabba2u.no-ip.org");
 }
+
+/// A room server already running on this PC (the Node.js one, or another launcher's) is seen, and a port with
+/// nothing on it, or something else on it, is not.
+#[test]
+fn a_room_server_seen_here() {
+    let s = crate::lobby::http::LobbyServer::start(0, None).unwrap();
+    assert!(lobby_running_here(s.port));
+    let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = other.local_addr().unwrap().port();
+    drop(other);
+    assert!(!lobby_running_here(port));
+}
+
+/// Hosting in a server already running: the game's room is the one new since the launch, on our port.
+#[test]
+fn my_code_in_a_running_server() {
+    use crate::ui::join::parse_rooms;
+    let rooms = parse_rooms(r#"{"games":[{"code":"AAAAA","join":"5.6.7.8:19980"},{"code":"BBBBB","join":"192.168.7.105:20500"},
+        {"code":"CCCCC","join":"192.168.7.105:19980"}]}"#).unwrap();
+    assert_eq!(new_code_on(&rooms, &["AAAAA".into()], 19980), Some("CCCCC".into()));
+    assert_eq!(new_code_on(&rooms, &["AAAAA".into(), "CCCCC".into()], 19980), None);
+    assert_eq!(new_code_on(&rooms, &[], 20500), Some("BBBBB".into()));
+}

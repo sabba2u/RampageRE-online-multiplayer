@@ -38,6 +38,10 @@ pub struct App {
     note_copy: Option<String>,
     /// with it, this connection's real public IP (looked up on a thread when Host Local starts; nothing shown if it fails)
     note_public: Option<String>,
+    /// the Internet tab: a room server already answering on this PC's hosting port (Node.js's, ...), looked at every 3 s
+    lobby_here: Option<(u16, bool)>,
+    lobby_here_rx: Option<Receiver<(u16, bool)>>,
+    lobby_here_at: Option<std::time::Instant>,
     public_rx: Option<Receiver<Result<String, String>>>,
     /// the Steam tab's look (Steam running, Spacewar in the library) and when: looked again every few seconds
     steam_seen: Option<(bool, bool, std::time::Instant)>,
@@ -88,7 +92,7 @@ impl App {
         let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
-        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, note_copy: None, note_public: None, public_rx: None, steam_seen: None,
+        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, note_copy: None, note_public: None, public_rx: None, lobby_here: None, lobby_here_rx: None, lobby_here_at: None, steam_seen: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
@@ -380,7 +384,29 @@ impl App {
             return self.guest_box(ui);
         }
         look::section(ui, "Host an internet game");
-        if look::big(ui, "Start Internet Server", ready)
+        let port = self.settings.host_port();
+        if let Some(rx) = &self.lobby_here_rx {
+            if let Ok(r) = rx.try_recv() {
+                self.lobby_here = Some(r);
+                self.lobby_here_rx = None;
+            }
+        }
+        if self.lobby_here_rx.is_none() && self.lobby_here_at.map_or(true, |t| t.elapsed().as_secs() >= 3) {
+            let (tx, rx) = channel();
+            std::thread::spawn(move || { let _ = tx.send((port, host::lobby_running_here(port))); });
+            self.lobby_here_rx = Some(rx);
+            self.lobby_here_at = Some(std::time::Instant::now());
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        if self.lobby_here == Some((port, true)) {
+            ui.label(RichText::new(format!("✔ A RampageRE server is already running on this PC (port {port})")).color(GREEN));
+            if look::big(ui, "Use the Running Server", ready)
+                .on_hover_text("Step 1: your game will host its room in that server (lobby\\start.bat's Node.js one, or another launcher's)")
+                .clicked()
+            {
+                self.use_running_server(port);
+            }
+        } else if look::big(ui, "Start Internet Server", ready)
             .on_hover_text("Step 1: your own room server (friends Connect to it). Then launch the game as host.")
             .clicked()
         {

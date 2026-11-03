@@ -96,6 +96,8 @@ pub struct Room {
     pub players: u32,
     pub max: u32,
     pub reserved: u32,
+    /// where a guest's game goes ("192.168.7.105:19980"): its port the host game's
+    pub join: String,
 }
 
 impl Room {
@@ -120,7 +122,7 @@ pub fn parse_rooms(body: &str) -> Result<Vec<Room>, String> {
     let n = |g: &serde_json::Value, k: &str| g[k].as_u64().unwrap_or(0).min(8) as u32;
     Ok(list.iter().filter(|g| g["code"].is_string()).map(|g| Room {
         code: s(g, "code"), name: s(g, "name"), monster: s(g, "monster"), city: s(g, "city"),
-        players: n(g, "players"), max: n(g, "max"), reserved: n(g, "reserved"),
+        players: n(g, "players"), max: n(g, "max"), reserved: n(g, "reserved"), join: s(g, "join"),
     }).take(50).collect())
 }
 

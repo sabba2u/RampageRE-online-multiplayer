@@ -55,6 +55,10 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 
 - **Host Local (LAN)** is the game alone: the launcher is only a shortcut and can be closed.
 - **Start Internet Server** is the launcher's room server; **Launch Game as Host** then starts the game in it. Keep the launcher open while you host.
+- **A room server already running on this PC** (`lobby\start.bat`'s Node.js one, or another launcher's) is seen by
+  the Internet tab (**✔ A RampageRE server is already running on this PC**): **Use the Running Server** hosts your
+  game's room in it instead. The room code comes from its room list; the Players list (Mute, Kick, Ban) only comes
+  with the launcher's own server. **Stop using it** leaves that server running; if it stops, the tab says so.
 - **Host on Steam** is the game alone, using Steam's network instead of your router.
 
 ## Joining, in these terms

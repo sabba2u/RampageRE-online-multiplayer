@@ -17,7 +17,9 @@ use std::time::Instant;
 use upnp::Opened;
 
 pub const LOBBY_PORT: u16 = 19980;
-pub const PORT_IN_USE: &str = "Another RampageRE server is already running on this PC.";
+pub const SERVER_GONE: &str = "The server on this PC stopped answering (was its window closed?). Start it again, or Start Internet Server.";
+pub const EXTERNAL_NOTE: &str = "The Players list (Mute, Kick, Ban) is only there with the launcher's own server.";
+pub const PORT_IN_USE: &str = "Another program is using this PC's hosting port: add another port in Settings -> Hosting (like :19990).";
 pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you on this network.";
 pub const ROUTER_TEXT: &str = "Friends on the same home network can still join your room.";
 pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded the port (19980 unless Settings says another, TCP and UDP) to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
@@ -46,6 +48,21 @@ pub fn with_port(host: &str, port: u16) -> String {
     if port == LOBBY_PORT { host.to_string() } else { format!("{host}:{port}") }
 }
 
+/// A RampageRE room server answering on this PC's `port` already (the Node.js one, lobby\start.bat, or another
+/// launcher's): its /health says so.
+pub fn lobby_running_here(port: u16) -> bool {
+    let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_millis(800)).build();
+    agent.get(&format!("http://127.0.0.1:{port}/health")).call().ok().and_then(|r| r.into_string().ok())
+        .map_or(false, |b| b.trim() == "rampage_lobby")
+}
+
+/// Hosting in a server already running: our game's room is one listed since the launch (not in `before`), on our
+/// port; None until it shows.
+pub fn new_code_on(rooms: &[crate::ui::join::Room], before: &[String], port: u16) -> Option<String> {
+    let tail = format!(":{port}");
+    rooms.iter().find(|r| !before.contains(&r.code) && r.join.ends_with(&tail)).map(|r| r.code.clone())
+}
+
 /// The code of this PC's own hosted game: registered from loopback with the game's port.
 pub fn find_my_code(games: &Games, game_port: u16) -> Option<String> {
     games.list().into_iter().find(|g| is_loopback(&g.source) && g.port == game_port).map(|g| g.code.clone())
@@ -69,6 +86,15 @@ pub struct Hosting {
     pub port: u16,
     pub router_popup: bool,
     pub confirm_close: bool,
+    /// hosting in a room server that was already running on this PC (Node.js's, or another launcher's): not ours to
+    /// stop; its rooms read over HTTP
+    pub external: bool,
+    /// its rooms when our game was launched (our room is the new one)
+    before: Vec<String>,
+    ext_rx: Option<Receiver<Result<Vec<crate::ui::join::Room>, String>>>,
+    ext_at: Option<Instant>,
+    /// its room list not answering, times running: 3 and it is gone
+    ext_fails: u8,
 }
 
 impl Hosting {
@@ -129,7 +155,7 @@ pub fn by_hand(o: upnp::Opened, s: &Settings, lookup: impl FnOnce() -> Result<St
 }
 
 impl App {
-    pub fn hosting(&self) -> bool { self.host.lobby.is_some() }
+    pub fn hosting(&self) -> bool { self.host.lobby.is_some() || self.host.external }
 
     /// "Start Internet Server" (step 1): the firewall note once, then the lobby and the router. The game is step 2
     /// (launch_host_game), once the server runs.
@@ -144,6 +170,7 @@ impl App {
         let port = self.settings.host_port();
         let lobby = match LobbyServer::start(port, None) {
             Ok(l) => l,
+            Err(StartError::PortInUse) if lobby_running_here(port) => return self.use_running_server(port),
             Err(StartError::PortInUse) => return self.say_on(1, PORT_IN_USE, true),
             Err(StartError::Other(e)) => return self.say_on(1, &format!("The server couldn't start: {e}"), true),
         };
@@ -153,10 +180,25 @@ impl App {
         self.say_on(1, "Your server is running: now launch the game as host.", false);
     }
 
+    /// Step 1 when a room server already runs on this PC (lobby\start.bat's Node.js one, or another launcher's): the
+    /// game will host in it; the router opened for it all the same.
+    pub fn use_running_server(&mut self, port: u16) {
+        if let Err(e) = &self.game {
+            return self.say_on(1, &e.clone(), true);
+        }
+        self.host = Hosting { external: true, lan: upnp::lan_ip(), port, ..Default::default() };
+        self.host.open_router();
+        self.say_on(1, "Using the server already running on this PC: now launch the game as host.", false);
+    }
+
     /// "Launch Game as Host" (step 2): the game, hosting in this PC's server, the room as big as Players says.
     pub fn launch_host_game(&mut self) {
         let Ok(game) = self.game.clone() else { return };
         let port = self.host.port;
+        if self.host.external {
+            self.host.before = crate::ui::join::fetch_rooms(&format!("http://127.0.0.1:{port}"))
+                .map(|r| r.into_iter().map(|r| r.code).collect()).unwrap_or_default();
+        }
         let start = Start::Host { lobby: format!("http://127.0.0.1:{port}"), port, players: self.settings.internet_players() };
         match game::start(&game, &start) {
             Ok(c) => {
@@ -229,6 +271,9 @@ impl App {
         if self.host.forwarded && self.host.reach_rx.is_none() && due {
             self.host.open_router();
         }
+        if self.host.external {
+            self.poll_running_server();
+        }
         if self.host.code.is_none() && self.host.game.is_some() {
             if let Some(l) = &self.host.lobby {
                 self.host.code = find_my_code(&l.games.lock().unwrap(), self.host.port);
@@ -239,9 +284,43 @@ impl App {
         }
     }
 
+    /// A server already running on this PC: its rooms every second (our room's code), and whether it is still there.
+    fn poll_running_server(&mut self) {
+        if let Some(rx) = &self.host.ext_rx {
+            match rx.try_recv() {
+                Ok(Ok(rooms)) => {
+                    self.host.ext_rx = None;
+                    self.host.ext_fails = 0;
+                    if self.host.code.is_none() && self.host.game.is_some() {
+                        self.host.code = new_code_on(&rooms, &self.host.before, self.host.port);
+                        if self.host.code.is_some() {
+                            self.note = None;
+                        }
+                    }
+                }
+                Ok(Err(_)) => {
+                    self.host.ext_rx = None;
+                    self.host.ext_fails += 1;
+                    if self.host.ext_fails >= 3 {
+                        self.stop_hosting();
+                        return self.say_on(1, SERVER_GONE, true);
+                    }
+                }
+                Err(_) => return,
+            }
+        }
+        if self.host.ext_at.map_or(true, |t| t.elapsed().as_millis() >= 1000) {
+            let url = format!("http://127.0.0.1:{}", self.host.port);
+            let (tx, rx) = channel();
+            std::thread::spawn(move || { let _ = tx.send(crate::ui::join::fetch_rooms(&url)); });
+            self.host.ext_rx = Some(rx);
+            self.host.ext_at = Some(Instant::now());
+        }
+    }
+
     /// The server without its game yet (or the game closed): where friends connect, Players, Launch Game as Host.
     fn server_box(&mut self, ui: &mut egui::Ui) {
-        look::section(ui, "Your server is running");
+        look::section(ui, if self.host.external { "Using the server already running on this PC" } else { "Your server is running" });
         match &self.host.reach {
             None => {
                 ui.horizontal(|ui| {
@@ -266,7 +345,13 @@ impl App {
         self.room_size_choice(ui, 1);
         self.note_line(ui, 1);
         ui.separator();
-        if ui.button("Stop server").clicked() {
+        if self.host.external {
+            ui.label(RichText::new(EXTERNAL_NOTE).small().color(look::DIM_TEXT));
+            if ui.button("Stop using it").on_hover_text("The server keeps running: close its own window to stop it").clicked() {
+                self.stop_hosting();
+                self.say_on(1, "Not using that server any more (it is still running).", false);
+            }
+        } else if ui.button("Stop server").clicked() {
             self.stop_hosting();
             self.say_on(1, "Server stopped.", false);
         }
@@ -316,6 +401,9 @@ impl App {
             }
         }
         ui.separator();
+        if self.host.external {
+            ui.label(RichText::new(EXTERNAL_NOTE).small().color(look::DIM_TEXT));
+        }
         self.players_box(ui);
         ui.separator();
         if ui.button("Stop hosting").on_hover_text("Closes your game too").clicked() {
