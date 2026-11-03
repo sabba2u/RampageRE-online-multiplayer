@@ -111,6 +111,10 @@ impl App {
         ui.horizontal(|ui| {
             let edit = ui.add(egui::TextEdit::singleline(&mut self.code).hint_text("Room code, like K7PQ2")
                 .font(egui::TextStyle::Heading).desired_width(230.0));
+            // (a code shows in capitals as typed, as the host's launcher shows it; a pasted link is left as it is)
+            if edit.changed() && !self.code.contains("://") {
+                self.code = self.code.to_uppercase();
+            }
             let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             let b = ui.add_enabled(!busy, egui::Button::new(RichText::new("Join").size(17.0).strong()));
             if b.clicked() || enter {
