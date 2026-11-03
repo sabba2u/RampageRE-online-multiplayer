@@ -4,6 +4,9 @@
 //!   rampage-launcher rampage://join/...    a clicked link: the game joins, no window
 //!   rampage-launcher --serve-lobby [port]  only the built-in lobby, no window (tests, a lobby on a spare PC)
 //!   rampage-launcher --steam-check <dir>   exit 0 when Steam starts this process as Spacewar (steam.rs's check)
+mod firewall;
+#[cfg(test)]
+mod firewall_tests;
 mod game;
 #[cfg(test)]
 mod game_tests;

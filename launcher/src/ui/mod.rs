@@ -58,6 +58,10 @@ pub struct App {
     lan_addr: String,
     /// the look for games under way
     lan_rx: Option<Receiver<Vec<crate::lan::Found>>>,
+    /// whether other PCs can reach this PC's game (firewall.rs): looked at once, again after the fix
+    fw_status: Option<crate::firewall::Status>,
+    /// a look or the fix under way (the fix: true)
+    fw_rx: Option<(Receiver<Result<crate::firewall::Status, String>>, bool)>,
 }
 
 #[derive(Clone)]
@@ -81,7 +85,7 @@ impl App {
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
                             public_ip: None, public_rx: None,
-                            lan_addr: String::new(), lan_rx: None };
+                            lan_addr: String::new(), lan_rx: None, fw_status: None, fw_rx: None };
         app.refresh_links();
         app
     }
@@ -149,8 +153,8 @@ impl App {
                 }
                 self.start_join_lan(&addr);
             }
-            (None, Some(f)) => self.say(&format!("Found a game at {}, but it runs RampageRE {} and you have {mine}:                                                   you both need the same version.", f.addr, f.version), true),
-            (None, None) => self.say("No game found on your network. Is the host hosting yet, and has their PC's                                       firewall allowed RampageRE (README: LAN play)? Or type the host's address                                       in the box.", true),
+            (None, Some(f)) => self.say(&format!("Found a game at {}, but it runs RampageRE {} and you have {mine}: you both need the same version.", f.addr, f.version), true),
+            (None, None) => self.say("No game found on your network. Is the host hosting yet, and has their PC's firewall allowed RampageRE (README: LAN play)? Or type the host's address in the box.", true),
         }
     }
 
@@ -233,6 +237,63 @@ impl App {
         }
     }
 
+    /// The firewall: looked at on a thread (the first time the row shows), or fixed (Windows' admin Yes/No).
+    fn firewall_job(&mut self, fix: bool) {
+        let Ok(g) = &self.game else { return };
+        let progs = crate::firewall::programs(g);
+        let (tx, rx) = channel();
+        std::thread::spawn(move || {
+            let r = if fix { crate::firewall::fix(&progs) } else { Ok(crate::firewall::status(&progs)) };
+            let _ = tx.send(r);
+        });
+        self.fw_rx = Some((rx, fix));
+    }
+
+    /// "Allow through firewall", beside "Show my internet address": only the host needs it.
+    fn firewall_button(&mut self, ui: &mut egui::Ui) {
+        use crate::firewall::Status;
+        if let Some((rx, fix)) = &self.fw_rx {
+            if let Ok(r) = rx.try_recv() {
+                let fix = *fix;
+                self.fw_rx = None;
+                match r {
+                    Ok(st) => {
+                        self.fw_status = Some(st);
+                        if fix && st == Status::Allowed {
+                            self.say("Done: friends can reach your game through Windows Firewall now.", false);
+                        } else if fix {
+                            self.say(crate::firewall::FAILED, true);
+                        }
+                    }
+                    Err(e) => self.say(&e, true),
+                }
+            }
+        }
+        if self.fw_status.is_none() && self.fw_rx.is_none() && self.game.is_ok() {
+            self.firewall_job(false);
+        }
+        let hover = "Only the PC that hosts needs this: friends joining connect out, which Windows always allows. Windows asks for permission (admin) once, like a Steam game's installer.";
+        match (&self.fw_rx, self.fw_status) {
+            (Some((_, true)), _) => { ui.label(RichText::new("Asking Windows...").small()); }
+            (_, Some(Status::Allowed)) => {
+                ui.label(RichText::new("Firewall: allowed").small().color(look::GREEN)).on_hover_text(hover);
+            }
+            (_, Some(Status::Blocked)) => {
+                if ui.button(RichText::new("Unblock in firewall").color(look::RED))
+                    .on_hover_text(format!("Windows is blocking RampageRE (its \"Allow access?\" box was cancelled once). {hover}"))
+                    .clicked() { self.firewall_job(true); }
+            }
+            _ => {
+                if ui.button("Allow through firewall").on_hover_text(hover).clicked() {
+                    self.firewall_job(true);
+                }
+            }
+        }
+        if self.fw_rx.is_some() {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
+        }
+    }
+
     /// "Show my internet address": looked up on a thread when clicked, then shown with a Copy button.
     fn public_ip_row(&mut self, ui: &mut egui::Ui) {
         if let Some(rx) = &self.public_rx {
@@ -266,7 +327,13 @@ impl App {
                     }
                 }
             }
+            if !matches!(self.public_ip, Some(Ok(_))) {
+                self.firewall_button(ui);
+            }
         });
+        if matches!(self.public_ip, Some(Ok(_))) {
+            ui.horizontal(|ui| self.firewall_button(ui));
+        }
         if self.public_rx.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
         }
@@ -302,7 +369,7 @@ impl App {
                     let searching = self.lan_rx.is_some();
                     let label = if searching { "Looking for games..." } else { "Join Local (LAN)" };
                     if look::big(ui, label, ready && !searching)
-                        .on_hover_text("Joins a game hosted on your network: the address typed below, or (left                                         empty) the game it finds")
+                        .on_hover_text("Joins a game hosted on your network: the address typed below, or (left empty) the game it finds")
                         .clicked()
                     {
                         self.join_lan();
