@@ -408,7 +408,7 @@ int army_mon_weapon_step(ArmyMonWeapon *w, float dt, int weapons_on);   /* weapo
 #endif
 #ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
                                                       * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
-#define RAMPAGE_MAX_MONSTERS 8
+#define RAMPAGE_MAX_MONSTERS 12
 #endif
 #define ARMY_MONSTERS RAMPAGE_MAX_MONSTERS
 /* per player (0x4D7CA8 + slot x 0x60): +0x04 points[7], +0x20 kills[7]: 0 destruction, 1 civilian, 2 vehicle,

@@ -182,7 +182,7 @@ struct TailAnim;
 #endif
 #ifndef RAMPAGE_MAX_MONSTERS                          /* port extra: the monsters at once, players and Boss Rumble's
                                                       * bosses together (the players stay RAMPAGE_MAX_PLAYERS) */
-#define RAMPAGE_MAX_MONSTERS 8
+#define RAMPAGE_MAX_MONSTERS 12
 #endif
 #define SCENE_MONSTERS RAMPAGE_MAX_MONSTERS
 typedef struct {
