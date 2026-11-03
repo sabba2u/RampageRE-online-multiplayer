@@ -33,7 +33,7 @@ pub enum Start {
     /// Play Local: the game's own menus; four_players adds 3 and 4 Player there (rampage.cfg four_players)
     Offline { four_players: bool },
     /// hosting, listed in this lobby
-    Host { lobby: String },
+    Host { lobby: String, port: u16 },
     /// Host Local (LAN): hosting with no server (friends join this PC's address: 127.0.0.1, its LAN one, or its
     /// public one when the router lets the game's port in)
     HostLan,
@@ -45,7 +45,9 @@ pub enum Start {
 }
 
 pub fn args(s: &Start) -> Vec<String> {
-    let v: Vec<&str> = match s {
+    // a port other than the usual one follows --host (the game's net_start_host)
+    let port = match s { Start::Host { port, .. } if *port != crate::settings::HOST_PORT => port.to_string(), _ => String::new() };
+    let mut v: Vec<&str> = match s {
         Start::Offline { four_players: true } => vec!["--four-players"],
         Start::Offline { four_players: false } => vec!["--no-four-players"],
         // online, over the network and over Steam: up to 8 players (the host and up to seven guests, some maybe on
@@ -54,12 +56,16 @@ pub fn args(s: &Start) -> Vec<String> {
         Start::SteamWait => vec!["--four-players", "--steam"],
         // hosting: up to 8 Player in the menus (--menu-players 8: the host and seven guests; the guests' menus are the
         // host's)
-        Start::Host { lobby } => vec!["--four-players", "--menu-players", "8", "--host", "--lobby", lobby],
+        Start::Host { lobby, .. } => vec!["--four-players", "--menu-players", "8", "--host", "--lobby", lobby],
         Start::HostLan => vec!["--four-players", "--menu-players", "8", "--host"],
         Start::SteamHost => vec!["--four-players", "--menu-players", "8", "--steam-host"],
         Start::Join { target, lobby: Some(l) } => vec!["--four-players", "--lobby", l, "--join", target],
         Start::Join { target, lobby: None } => vec!["--four-players", "--join", target],
     };
+    if !port.is_empty() {
+        let at = v.iter().position(|a| *a == "--host").map_or(v.len(), |i| i + 1);
+        v.insert(at, &port);
+    }
     // --shell first, always: the player build opens its menus only when started with no flags at all; with any
     // (these) it opened a free camera over Chicago, no menu and no monster
     std::iter::once("--shell").chain(v).map(String::from).collect()

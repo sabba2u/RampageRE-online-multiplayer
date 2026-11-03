@@ -1,10 +1,11 @@
 //! Join links and Settings. The first run (links not set up yet) asks once, in a pop-up of its own colour; after that
-//! links are set up, and everything else changed, from the Settings window: register / unregister join links, the
-//! group servers, the tips shown again, where the game is.
+//! links are set up, and everything else changed, from the Settings window: the launcher's own (register / unregister
+//! join links), hosting (the address and port friends use), the firewall, the group servers, the tips shown again,
+//! where the game is.
 use super::look::{self, DIM_TEXT, GREEN, RED, YELLOW};
 use super::App;
 use crate::links::{self, LinkStatus};
-use crate::settings::Settings;
+use crate::settings::{Settings, HOST_PORT};
 use eframe::egui::{self, Align2, Color32, RichText, Stroke, Vec2};
 
 pub const FIRST_RUN_TEXT: &str =
@@ -76,15 +77,46 @@ impl App {
 
     fn first_run_done(&mut self) { self.settings = Settings::update(|s| s.first_run_done = true); }
 
+    /// Hosting: the address friends use (a port added: hosting uses that one), and the ports forwarded by hand.
+    fn hosting_settings(&mut self, ui: &mut egui::Ui) {
+        look::section(ui, "Hosting");
+        let mut name = self.settings.public_name.clone();
+        ui.horizontal(|ui| {
+            ui.label("Address friends use:");
+            let e = ui.add(egui::TextEdit::singleline(&mut name).hint_text("empty: your internet address")
+                .desired_width(200.0));
+            if e.changed() {
+                self.settings = Settings::update(|s| s.public_name = name.trim().to_string());
+            }
+        }).response.on_hover_text("Like 192.168.7.105, sabba2u.no-ip.org (a name keeps working when your home's address changes), or with a port: sabba2u.no-ip.org:19990. No port: 19980.");
+        match self.settings.host_address() {
+            Some(_) => {
+                let port = self.settings.host_port();
+                let which = if port == HOST_PORT { "the usual port" } else { "your own port" };
+                ui.label(RichText::new(format!("Hosting uses port {port} ({which}), TCP and UDP. Add :port to use another."))
+                    .small().color(DIM_TEXT));
+            }
+            None => {
+                ui.label(RichText::new("That isn't an address: type it like sabba2u.no-ip.org or 192.168.7.105:19990 (hosting uses port 19980 meanwhile).").small().color(RED));
+            }
+        }
+        let mut by_hand = self.settings.forwarded_by_hand;
+        if ui.checkbox(&mut by_hand, RichText::new("I forwarded my router's ports myself").strong())
+            .on_hover_text(format!("Port {}, TCP and UDP (\"Both\"), to this PC, by hand: hosting won't say only your home network can join when the router doesn't open itself.", self.settings.host_port())).changed()
+        {
+            self.settings = Settings::update(|s| s.forwarded_by_hand = by_hand);
+        }
+    }
+
     pub fn settings_window(&mut self, ctx: &egui::Context) {
         if !self.settings_open {
             return;
         }
         let mut open = true;
-        egui::Window::new("Settings").open(&mut open).anchor(Align2::CENTER_CENTER, Vec2::ZERO).collapsible(false)
+        egui::Window::new("Settings").open(&mut open).anchor(Align2::CENTER_CENTER, Vec2::ZERO).collapsible(false).vscroll(true)
             .resizable(false).show(ctx, |ui| {
                 ui.set_width(420.0);
-                look::section(ui, "Join links");
+                look::section(ui, "Launcher");
                 ui.label(RichText::new("rampage:// links from friends open the game and join their room.").color(DIM_TEXT));
                 match self.links.clone() {
                     LinkStatus::Ok => {
@@ -110,6 +142,16 @@ impl App {
                             self.set_up_links();
                         }
                     }
+                }
+                ui.separator();
+                self.hosting_settings(ui);
+                ui.separator();
+                look::section(ui, "Firewall");
+                ui.label(RichText::new("Lets friends reach your game and server when you host (only the host needs it).")
+                    .color(DIM_TEXT));
+                ui.horizontal(|ui| self.firewall_button(ui));
+                if let Some((text, problem)) = &self.fw_note {
+                    ui.label(RichText::new(text).small().color(if *problem { RED } else { GREEN }));
                 }
                 ui.separator();
                 look::section(ui, "Servers");
@@ -181,23 +223,6 @@ impl App {
                     .on_hover_text("A thin outline in your player's colour around your own monster, on your screen only: easy to find among up to 8.").changed()
                 {
                     self.settings = Settings::update(|s| s.own_outline = outline);
-                }
-                let mut by_hand = self.settings.forwarded_by_hand;
-                if ui.checkbox(&mut by_hand, RichText::new("I forwarded my router's ports myself").strong())
-                    .on_hover_text("Port 19980, TCP and UDP (\"Both\"), to this PC, by hand: hosting won't say only your home network can join when the router doesn't open itself.").changed()
-                {
-                    self.settings = Settings::update(|s| s.forwarded_by_hand = by_hand);
-                }
-                if self.settings.forwarded_by_hand {
-                    let mut name = self.settings.public_name.clone();
-                    ui.horizontal(|ui| {
-                        ui.label("Address friends use:");
-                        let e = ui.add(egui::TextEdit::singleline(&mut name).hint_text("empty: your internet address")
-                            .desired_width(200.0));
-                        if e.changed() {
-                            self.settings = Settings::update(|s| s.public_name = name.trim().to_string());
-                        }
-                    }).response.on_hover_text("A name like yourname.no-ip.org keeps working when your home's address changes.");
                 }
                 let mut shuffle = self.settings.shuffle_buildings;
                 if ui.checkbox(&mut shuffle, RichText::new("Shuffle the city's buildings").strong())

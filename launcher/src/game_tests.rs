@@ -25,7 +25,10 @@ fn args_per_start() {
     let (s, f) = ("--shell", "--four-players");
     // hosting: the menus offer up to 8 Player (the guests' screens follow the host's)
     let m = ["--menu-players", "8"];
-    assert_eq!(args(&Start::Host { lobby: l.clone() }), vec![s, f, m[0], m[1], "--host", "--lobby", "http://127.0.0.1:19980"]);
+    assert_eq!(args(&Start::Host { lobby: l.clone(), port: 19980 }), vec![s, f, m[0], m[1], "--host", "--lobby", "http://127.0.0.1:19980"]);
+    // (another port, set in Settings: after --host, where the game reads it)
+    assert_eq!(args(&Start::Host { lobby: "http://127.0.0.1:20000".into(), port: 20000 }),
+               vec![s, f, m[0], m[1], "--host", "20000", "--lobby", "http://127.0.0.1:20000"]);
     assert_eq!(args(&Start::SteamHost), vec![s, f, m[0], m[1], "--steam-host"]);
     assert_eq!(args(&Start::HostLan), vec![s, f, m[0], m[1], "--host"]);
     assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, f, "--lobby", l.as_str(), "--join", "K7PQ2"]);

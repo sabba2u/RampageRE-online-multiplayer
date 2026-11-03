@@ -73,6 +73,13 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 | UDP 19980 | the game host (RampageRE.exe) | every hosted game not on Steam |
 | TCP 19980 | the room server (launcher or Node) | room codes and links from outside your home |
 
+**Another port:** in the launcher's Settings → Hosting, the **Address friends use** box takes a port too:
+`sabba2u.no-ip.org` or `192.168.7.105` host on 19980, while `sabba2u.no-ip.org:19990` (or just `:19990`) hosts on
+19990, TCP and UDP. The invite links then carry the port (`rampage://join/K7PQ2@sabba2u.no-ip.org:19990`), and a
+friend types `sabba2u.no-ip.org:19990` to Connect. Join Local's search looks on 19980 only: type the host's
+address with its port there. Settings → Firewall has the same Allow through firewall button as the main screen
+(its rules are per program, so they cover any port).
+
 Online play is up to 4 players: the host and three friends (Host on Steam too). More: [NETPLAY.md](NETPLAY.md).
 
 ## An always-on room server (a VPS)

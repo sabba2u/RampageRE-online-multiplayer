@@ -17,12 +17,10 @@ use std::time::Instant;
 use upnp::Opened;
 
 pub const LOBBY_PORT: u16 = 19980;
-/// the game's own port when hosting (src/net.h NET_PORT)
-pub const GAME_PORT: u16 = 19980;                    // (UDP: the lobby's TCP port's number too)
 pub const PORT_IN_USE: &str = "Another RampageRE server is already running on this PC.";
 pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you on this network.";
 pub const ROUTER_TEXT: &str = "Friends on the same home network can still join your room.";
-pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded port 19980 (TCP and UDP) to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
+pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded the port (19980 unless Settings says another, TCP and UDP) to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
 pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";
@@ -30,15 +28,22 @@ pub const GAME_CLOSED: &str = "The game closed: hosting stopped.";
 
 /// What to send friends: the internet one when the router let us in, and the home network's always (a friend in the
 /// same house often can't reach the house's own public address).
-pub fn invite_links(code: &str, reach: &Reach, lan_ip: Option<&str>) -> Vec<(String, String)> {
+/// `port`: hosting's (the lobby's), added to the home network's address when it isn't the usual one; the internet
+/// address carries its own (by_hand).
+pub fn invite_links(code: &str, reach: &Reach, lan_ip: Option<&str>, port: u16) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if let Reach::Internet { public_ip } = reach {
         out.push(("Friends anywhere".to_string(), format!("rampage://join/{code}@{public_ip}")));
     }
     if let Some(lan) = lan_ip {
-        out.push(("Same Wi-Fi".to_string(), format!("rampage://join/{code}@{lan}")));
+        out.push(("Same Wi-Fi".to_string(), format!("rampage://join/{code}@{}", with_port(lan, port))));
     }
     out
+}
+
+/// "host", or "host:port" when the port isn't the usual one.
+pub fn with_port(host: &str, port: u16) -> String {
+    if port == LOBBY_PORT { host.to_string() } else { format!("{host}:{port}") }
 }
 
 /// The code of this PC's own hosted game: registered from loopback with the game's port.
@@ -60,6 +65,8 @@ pub struct Hosting {
     cancelled: Arc<AtomicBool>,
     pub code: Option<String>,
     pub lan: Option<String>,
+    /// the port hosting uses: the lobby's TCP and the game's UDP (Settings' address; 19980 unless one is added)
+    pub port: u16,
     pub router_popup: bool,
     pub confirm_close: bool,
 }
@@ -88,11 +95,12 @@ impl Hosting {
         let (tx, rx) = channel();
         let cancelled = self.cancelled.clone();
         let settings = Settings::load();
+        let port = self.port;
         std::thread::spawn(move || {
-            let o = by_hand(upnp::open_lobby_port(LOBBY_PORT), &settings, crate::ui::join::public_ip);
+            let o = by_hand(upnp::open_lobby_port(port), &settings, crate::ui::join::public_ip);
             if cancelled.load(Ordering::Relaxed) {
                 if o.forwarded {
-                    upnp::close_lobby_port(LOBBY_PORT);
+                    upnp::close_lobby_port(port);
                 }
                 return;
             }
@@ -103,16 +111,19 @@ impl Hosting {
     }
 }
 
-/// The router's opening failed, but the host forwarded its ports by hand (Settings): friends outside can still come,
-/// to the name set (sabba2u.no-ip.org) or else the address the internet sees (`lookup`). Anything else: as it was.
+/// Settings' address applied to the router's answer: friends anywhere get the name set (sabba2u.no-ip.org) in place
+/// of the router's address, with the port when it isn't the usual one. The router's opening failed but the host
+/// forwarded the port by hand (Settings): friends outside can still come, to that name or else the address the
+/// internet sees (`lookup`). Anything else: as the router said.
 pub fn by_hand(o: upnp::Opened, s: &Settings, lookup: impl FnOnce() -> Result<String, String>) -> upnp::Opened {
-    if !s.forwarded_by_hand || matches!(o.reach, Reach::Internet { .. }) {
-        return o;
-    }
-    let name = s.public_name.trim();
-    let addr = if name.is_empty() { lookup().ok() } else { Some(name.to_string()) };
+    let (name, port) = s.host_address().unwrap_or((String::new(), LOBBY_PORT));
+    let addr = match &o.reach {
+        Reach::Internet { public_ip } => Some(if name.is_empty() { public_ip.clone() } else { name }),
+        _ if s.forwarded_by_hand => if name.is_empty() { lookup().ok() } else { Some(name) },
+        _ => None,
+    };
     match addr {
-        Some(public_ip) => upnp::Opened { reach: Reach::Internet { public_ip }, forwarded: o.forwarded },
+        Some(a) => upnp::Opened { reach: Reach::Internet { public_ip: with_port(&a, port) }, forwarded: o.forwarded },
         None => o,
     }
 }
@@ -130,17 +141,18 @@ impl App {
             self.card = Some(Card::Firewall);
             return;
         }
-        let lobby = match LobbyServer::start(LOBBY_PORT, None) {
+        let port = self.settings.host_port();
+        let lobby = match LobbyServer::start(port, None) {
             Ok(l) => l,
             Err(StartError::PortInUse) => return self.say(PORT_IN_USE, true),
             Err(StartError::Other(e)) => return self.say(&format!("The server couldn't start: {e}"), true),
         };
-        let child = match game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{LOBBY_PORT}") }) {
+        let child = match game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{port}"), port }) {
             Ok(c) => c,
             Err(e) => return self.say(&format!("Couldn't start RampageRE: {e}"), true),
         };
         lobby.games.lock().unwrap().set_banned(self.settings.banned_ips());
-        self.host = Hosting { lobby: Some(lobby), game: Some(child), lan: upnp::lan_ip(), ..Default::default() };
+        self.host = Hosting { lobby: Some(lobby), game: Some(child), lan: upnp::lan_ip(), port, ..Default::default() };
         self.host.open_router();
         self.say("Starting your game and server...", false);
     }
@@ -163,18 +175,19 @@ impl App {
             l.stop();
         }
         if self.host.forwarded {
-            std::thread::spawn(|| upnp::close_lobby_port(LOBBY_PORT));
+            let port = self.host.port;
+            std::thread::spawn(move || upnp::close_lobby_port(port));
         }
         self.host = Hosting::default();
     }
 
     /// Like stop_hosting, but waits for the router (the launcher is closing: a thread would die with it).
     pub fn stop_hosting_now(&mut self) {
-        let forwarded = self.host.forwarded;
+        let (forwarded, port) = (self.host.forwarded, self.host.port);
         self.host.forwarded = false;
         self.stop_hosting();
         if forwarded {
-            upnp::close_lobby_port(LOBBY_PORT);
+            upnp::close_lobby_port(port);
         }
     }
 
@@ -206,7 +219,7 @@ impl App {
         }
         if self.host.code.is_none() {
             if let Some(l) = &self.host.lobby {
-                self.host.code = find_my_code(&l.games.lock().unwrap(), GAME_PORT);
+                self.host.code = find_my_code(&l.games.lock().unwrap(), self.host.port);
                 if self.host.code.is_some() {
                     self.note = None;
                 }
@@ -240,7 +253,7 @@ impl App {
             }
             Some(reach) => {
                 ui.label(RichText::new("Send your friends a link:").color(look::DIM_TEXT));
-                for (label, link) in invite_links(&code, reach, self.host.lan.as_deref()) {
+                for (label, link) in invite_links(&code, reach, self.host.lan.as_deref(), self.host.port) {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{label}:")).strong());
                         ui.label(RichText::new(&link).monospace().small());

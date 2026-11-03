@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 const SERVERS_KEPT: usize = 8;
+/// hosting's usual port (the lobby's TCP and the game's UDP: src/netwire.h NET_PORT)
+pub const HOST_PORT: u16 = 19980;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -37,8 +39,8 @@ pub struct Settings {
     /// the host forwarded the router's ports by hand (19980, TCP and UDP): the router's own opening (UPnP) failing
     /// no longer means "only your home network"
     pub forwarded_by_hand: bool,
-    /// what internet friends type to reach this PC (a name like sabba2u.no-ip.org that follows a changing address);
-    /// empty: the address the internet sees, looked up when hosting
+    /// what internet friends type to reach this PC (a name like sabba2u.no-ip.org that follows a changing address),
+    /// maybe with the port hosting uses (":19990"; 19980 when left out); empty: the address the internet sees
     pub public_name: String,
 }
 
@@ -104,6 +106,20 @@ impl Settings {
             None => self.banned.push(Banned { ip: ip.to_string(), name: name.to_string() }),
         }
     }
+    /// "Address friends use", read: the name ("" for the address the internet sees) and the port hosting uses, 19980
+    /// unless one is added ("sabba2u.no-ip.org:19990", or just ":19990"). None: not an address (hosting: 19980).
+    pub fn host_address(&self) -> Option<(String, u16)> {
+        let s = self.public_name.trim();
+        if s.is_empty() {
+            return Some((String::new(), HOST_PORT));
+        }
+        if let Some(p) = s.strip_prefix(':') {
+            return p.parse::<u16>().ok().filter(|n| *n > 0).map(|n| (String::new(), n));
+        }
+        crate::lobby::addr::split_host_port(s).map(|(h, p)| (h, p.unwrap_or(HOST_PORT)))
+    }
+    /// The port hosting uses: the lobby's TCP and the game's UDP (one router entry, "Both").
+    pub fn host_port(&self) -> u16 { self.host_address().map_or(HOST_PORT, |a| a.1) }
     pub fn unban(&mut self, ip: &str) { self.banned.retain(|b| b.ip != ip); }
     pub fn banned_ips(&self) -> Vec<String> { self.banned.iter().map(|b| b.ip.clone()).collect() }
 

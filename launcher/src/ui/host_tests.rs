@@ -6,14 +6,14 @@ use serde_json::json;
 #[test]
 fn links_for_internet_and_same_wifi() {
     let net = Reach::Internet { public_ip: "203.0.113.5".into() };
-    assert_eq!(invite_links("K7PQ2", &net, Some("192.168.1.20")), vec![
+    assert_eq!(invite_links("K7PQ2", &net, Some("192.168.1.20"), 19980), vec![
         ("Friends anywhere".to_string(), "rampage://join/K7PQ2@203.0.113.5".to_string()),
         ("Same Wi-Fi".to_string(), "rampage://join/K7PQ2@192.168.1.20".to_string()),
     ]);
     let home = Reach::HomeOnly { reason: "x".into() };
-    assert_eq!(invite_links("K7PQ2", &home, Some("192.168.1.20")),
+    assert_eq!(invite_links("K7PQ2", &home, Some("192.168.1.20"), 19980),
                vec![("Same Wi-Fi".to_string(), "rampage://join/K7PQ2@192.168.1.20".to_string())]);
-    assert!(invite_links("K7PQ2", &home, None).is_empty());
+    assert!(invite_links("K7PQ2", &home, None, 19980).is_empty());
 }
 
 #[test]
@@ -90,10 +90,50 @@ fn ports_forwarded_by_hand() {
     // (the router opened itself: its answer kept)
     let net = Opened { reach: Reach::Internet { public_ip: "5.6.7.8".into() }, forwarded: true };
     assert_eq!(by_hand(net.clone(), &s, || Ok("1.2.3.4".into())), net);
+    // (the router opened itself and a name is set: the name, which follows a changing address)
+    s.public_name = "sabba2u.no-ip.org".into();
+    assert_eq!(by_hand(net.clone(), &s, || panic!()).reach, Reach::Internet { public_ip: "sabba2u.no-ip.org".into() });
+}
+
+#[test]
+fn a_port_of_my_own() {
+    use crate::settings::Settings;
+    use crate::upnp::Opened;
+    let mut s = Settings::default();
+    let port = |s: &Settings| s.host_address();
+    assert_eq!(port(&s), Some((String::new(), 19980)));
+    for (typed, want) in [("192.168.7.105", ("192.168.7.105", 19980)), ("192.168.7.105:19980", ("192.168.7.105", 19980)),
+                          ("sabba2u.no-ip.org", ("sabba2u.no-ip.org", 19980)),
+                          ("sabba2u.no-ip.org:20000", ("sabba2u.no-ip.org", 20000)), (" :20001 ", ("", 20001))] {
+        s.public_name = typed.into();
+        assert_eq!(port(&s), Some((want.0.to_string(), want.1)), "{typed}");
+    }
+    for bad in ["sabba2u.no-ip.org:", "x:99999", ":0", "a b", "http://x"] {
+        s.public_name = bad.into();
+        assert_eq!(port(&s), None, "{bad}");
+        assert_eq!(s.host_port(), 19980);
+    }
+    // the links carry the port: the internet one (by_hand) and the home network's
+    s.public_name = "sabba2u.no-ip.org:20000".into();
+    s.forwarded_by_hand = true;
+    let home = Opened { reach: Reach::HomeOnly { reason: "x".into() }, forwarded: false };
+    let o = by_hand(home, &s, || panic!());
+    assert_eq!(o.reach, Reach::Internet { public_ip: "sabba2u.no-ip.org:20000".into() });
+    assert_eq!(invite_links("K7PQ2", &o.reach, Some("192.168.7.105"), 20000), vec![
+        ("Friends anywhere".to_string(), "rampage://join/K7PQ2@sabba2u.no-ip.org:20000".to_string()),
+        ("Same Wi-Fi".to_string(), "rampage://join/K7PQ2@192.168.7.105:20000".to_string()),
+    ]);
+    // (and a link with a port reaches that port's server)
+    assert!(matches!(crate::links::parse_link("rampage://join/K7PQ2@sabba2u.no-ip.org:20000"),
+                     Ok(crate::links::Link::CodeAt { server, .. }) if server == "http://sabba2u.no-ip.org:20000"));
+    // the router's own address with a port of my own
+    s.public_name = ":20000".into();
+    let net = Opened { reach: Reach::Internet { public_ip: "5.6.7.8".into() }, forwarded: true };
+    assert_eq!(by_hand(net, &s, || panic!()).reach, Reach::Internet { public_ip: "5.6.7.8:20000".into() });
 }
 
 #[test]
 fn a_name_in_the_links() {
     let net = Reach::Internet { public_ip: "sabba2u.no-ip.org".into() };
-    assert_eq!(invite_links("K7PQ2", &net, None)[0].1, "rampage://join/K7PQ2@sabba2u.no-ip.org");
+    assert_eq!(invite_links("K7PQ2", &net, None, 19980)[0].1, "rampage://join/K7PQ2@sabba2u.no-ip.org");
 }
