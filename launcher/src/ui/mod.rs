@@ -62,6 +62,8 @@ pub struct App {
     fw_status: Option<crate::firewall::Status>,
     /// a look or the fix under way (the fix: true)
     fw_rx: Option<(Receiver<Result<crate::firewall::Status, String>>, bool)>,
+    /// the fix's outcome, shown under the button (not in the Join a Room note): the text, whether a problem
+    fw_note: Option<(String, bool)>,
 }
 
 #[derive(Clone)]
@@ -85,7 +87,7 @@ impl App {
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
                             public_ip: None, public_rx: None,
-                            lan_addr: String::new(), lan_rx: None, fw_status: None, fw_rx: None };
+                            lan_addr: String::new(), lan_rx: None, fw_status: None, fw_rx: None, fw_note: None };
         app.refresh_links();
         app
     }
@@ -247,6 +249,9 @@ impl App {
             let _ = tx.send(r);
         });
         self.fw_rx = Some((rx, fix));
+        if fix {
+            self.fw_note = None;
+        }
     }
 
     /// "Allow through firewall", beside "Show my internet address": only the host needs it.
@@ -260,12 +265,10 @@ impl App {
                     Ok(st) => {
                         self.fw_status = Some(st);
                         if fix && st == Status::Allowed {
-                            self.say("Done: friends can reach your game through Windows Firewall now.", false);
-                        } else if fix {
-                            self.say(crate::firewall::FAILED, true);
+                            self.fw_note = Some(("Done: friends can reach your game through Windows Firewall now.".into(), false));
                         }
                     }
-                    Err(e) => self.say(&e, true),
+                    Err(e) => self.fw_note = Some((e, true)),
                 }
             }
         }
@@ -337,6 +340,10 @@ impl App {
         });
         if matches!(self.public_ip, Some(Ok(_))) {
             ui.horizontal(|ui| self.firewall_button(ui));
+        }
+        if let Some((text, problem)) = &self.fw_note {
+            let color = if *problem { look::RED } else { look::GREEN };
+            ui.label(RichText::new(text).small().color(color));
         }
         if self.public_rx.is_some() {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));

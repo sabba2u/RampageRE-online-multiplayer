@@ -47,7 +47,7 @@ pub fn fix_script(progs: &[PathBuf]) -> String {
     format!("try {{ $p = {}; Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Where-Object {{ $p -contains $_.Program }} | \
 Get-NetFirewallRule | Where-Object {{ $_.Action -eq 'Block' -or $_.DisplayName -like 'RampageRE (*' }} | Remove-NetFirewallRule; \
 foreach ($x in $p) {{ New-NetFirewallRule -DisplayName ('RampageRE (' + (Split-Path $x -Leaf) + ')') -Direction Inbound \
--Action Allow -Protocol UDP -Program $x -Profile Any -ErrorAction Stop | Out-Null }}; exit 0 }} catch {{ exit 2 }}",
+-Action Allow -Protocol UDP -Program $x -Profile Any -ErrorAction Stop | Out-Null }}; exit 0 }} catch {{ [IO.File]::WriteAllText((Join-Path $env:TEMP 'RampageRE-firewall.log'), [string]$_); exit 2 }}",
             ps_list(progs))
 }
 
@@ -100,15 +100,32 @@ pub fn status(progs: &[PathBuf]) -> Status {
 pub const CANCELLED: &str = "Windows didn't get permission (No was clicked), so nothing changed.";
 pub const FAILED: &str = "Windows couldn't add the rule (a work PC may not allow it): ask whoever runs this PC.";
 
+/// Where the fix says what went wrong (its own catch), for the message.
+pub fn log_path() -> PathBuf { std::env::temp_dir().join("RampageRE-firewall.log") }
+
+fn failed(code: Option<i32>) -> String {
+    let why = std::fs::read_to_string(log_path()).unwrap_or_default();
+    let why = why.trim();
+    if why.is_empty() {
+        format!("{FAILED} (code {})", code.map_or("none".to_string(), |c| c.to_string()))
+    } else {
+        format!("{FAILED} Windows said: {why}")
+    }
+}
+
 /// The fix, as admin (Windows' Yes/No box), then the look again.
 pub fn fix(progs: &[PathBuf]) -> Result<Status, String> {
     let outer = format!("try {{ $r = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden \
 -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}'; exit $r.ExitCode }} catch {{ exit 1223 }}",
                         encode(&fix_script(progs)));
+    let _ = std::fs::remove_file(log_path());
     let code = powershell().args(["-EncodedCommand", &encode(&outer)]).status().map_err(|e| e.to_string())?.code();
     match code {
-        Some(0) => Ok(status(progs)),
+        Some(0) => match status(progs) {
+            Status::Allowed => Ok(Status::Allowed),
+            _ => Err(failed(Some(0))),
+        },
         Some(1223) => Err(CANCELLED.into()),
-        _ => Err(FAILED.into()),
+        c => Err(failed(c)),
     }
 }
