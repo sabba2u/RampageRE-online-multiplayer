@@ -7113,6 +7113,7 @@ static void game_next_block(Viewer *v)
  * play that player's monster (the others' keys idle meanwhile, the computer's monsters go on). Once the game goes back
  * to the shell the words stop: the ones left are returned (NULL none), for the shell */
 static void attract_press(Viewer *v);
+static int lightning_zap(Viewer *v, int k, unsigned seed, int own);   /* (the weather's, below) */
 static const char *play_script(Viewer *v, const char *script, float aspect)
 {
     Mon *mo = &v->mon[0];                            /* the monster the words play */
@@ -7212,6 +7213,11 @@ static const char *play_script(Viewer *v, const char *script, float aspect)
                                                       * by the amount */
             float knock[3] = { 0, 0, 0 }, from[3] = { mo->mx, mo->my - 5, mo->mz };
             monster_hit(mo, "hurt", seconds, take_damage_level(mo, seconds), knock, from);
+            continue;
+        }
+        if (_stricmp(word, "zap") == 0) {            /* zap: the weather's lightning onto this monster (as a storm's
+                                                      * strike: lightning_zap) */
+            lightning_zap(v, (int)(mo - v->mon), 12345u, 1);
             continue;
         }
         if (_stricmp(word, "react") == 0) {          /* react name: the monster forced into that state (React_Front_Zap:
@@ -8791,7 +8797,7 @@ static int zap_target(const Viewer *v, int k)
 
 /* lightning onto monster k: the bolt down onto it (weather_strike_to, the thunder at once), the sparks
  * (Electrical_Shock_1), the blue flicker for 1.2 s (Instance.xray, render_gl.c draw_xray: no bones); and where the game is run
- * (offline, the host: own) the zap itself, as an electric sign gives it: React_Front_Zap (React_Side_L_Zap on a wall)
+ * (offline, the host: own) the zap itself: on a wall React_Front_Zap (React_Side_L_Zap on a side), elsewhere a hit
  * and 15 HP. A guest only draws it: its monster's move and HP are the host's (the snapshots). 0: k cannot be struck */
 static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
 {
@@ -8807,12 +8813,17 @@ static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
     float at[3] = { mo->mx, mo->my, mo->mz + 5 * (mo->scale > 0 ? mo->scale : 1) };
     if (v->fxw)
         fx_spawn(v->fxw, getenv("RAMPAGE_ZAP_FX") ? getenv("RAMPAGE_ZAP_FX") : "Electrical_Shock_1", at, NULL, 1);
-    if (own && monster_hittable(mo)) {
+    if (own && monster_hittable(mo) && mo->mode == MODE_BUILDING) {   /* on a wall: zapped there, as the blimp's
+                                                      * barrier does (NewYork.bsf: both Zap states are a wall's) */
         const char *move = mo->have_graph ? mo->graph.states[mo->run.state].name : "";
         float d[2] = { 0, 0 };
         monster_take(mo, "lightning", 15, 1, -1, d, 0);
         if (mo->hp > 0)
             force_state(mo, strstr(move, "Side") ? "React_Side_L_Zap" : "React_Front_Zap");
+    } else if (own && monster_hittable(mo)) {        /* on the ground or in the air: a hit (its own reaction there);
+                                                      * a wall's Zap here held it on a wall that isn't there */
+        float knock[3] = { 0, 0, 0 }, from[3] = { mo->mx, mo->my - 5, mo->mz };
+        monster_hit(mo, "lightning", 15, 1, knock, from);
     }
     if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_NET_TRACE"))
         printf("  lightning strikes monster %d (%.2f, %.2f of the screen), HP %.0f\n", k, sx, sy, mo->hp);
