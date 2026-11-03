@@ -184,7 +184,7 @@ impl App {
                 }
                 let mut by_hand = self.settings.forwarded_by_hand;
                 if ui.checkbox(&mut by_hand, RichText::new("I forwarded my router's ports myself").strong())
-                    .on_hover_text("TCP 19980 and UDP 27960 to this PC, by hand: hosting won't say only your home network can join when the router doesn't open itself.").changed()
+                    .on_hover_text("Port 19980, TCP and UDP (\"Both\"), to this PC, by hand: hosting won't say only your home network can join when the router doesn't open itself.").changed()
                 {
                     self.settings = Settings::update(|s| s.forwarded_by_hand = by_hand);
                 }

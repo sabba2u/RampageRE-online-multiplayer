@@ -46,7 +46,9 @@ enum NetMsg {
  * (seq, base) against the guest's acknowledged copy (NM_PACK). 7: the delta as copies out of the base (records cut,
  * put in or moved cost a few bytes) */
 #define NET_PROTO 7
-#define NET_PORT 27960
+#define NET_PORT 19980                                /* the game's UDP port: the same number as the launcher's
+                                                      * lobby (TCP 19980), so one router entry (19980, both) lets
+                                                      * friends in (until 1.3.0's tests: 27960) */
 
 /* ---- player slots (net.c): slot 0 is the host's player 1, slot k the monster mon[k]. Today a hosted game has 2 (a
  * guest plays player 2); everything below is sized NET_SLOTS so 4 players later is no new wire format */

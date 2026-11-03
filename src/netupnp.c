@@ -1,6 +1,6 @@
 /* netupnp.c - online play's automatic port forwarding (netupnp.h): UPnP IGD through miniupnpc 2.2.8
  * (src/net/third_party/miniupnpc, built into build\net\upnp.a by build.bat). One forward at a time: the host's UDP port
- * (27960, or --host's) to the same port on this PC's LAN address, "RampageRE" its description, no lease time (the
+ * (19980, or --host's) to the same port on this PC's LAN address, "RampageRE" its description, no lease time (the
  * router keeps it until it is taken away; a router that wants one gets a day). The search (SSDP, 2 s), the router's
  * description, the external address and the AddPortMapping run on a thread of their own, so the game never waits for
  * the router; the removal at the stop runs where net_stop is called (one request to a router that was there a moment

@@ -24,7 +24,7 @@ int net_role(void);
 int net_state(void);                                 /* NETS_* */
 int net_live(void);                                  /* connected, and both in the same world */
 const char *net_state_text(void);
-const char *net_peer_text(void);                     /* "127.0.0.1:27960" */
+const char *net_peer_text(void);                     /* "127.0.0.1:19980" */
 
 void net_start_host(int port);
 void net_start_join(const char *addr);               /* "ip" or "ip:port"; a lobby's join code or rampage://join/

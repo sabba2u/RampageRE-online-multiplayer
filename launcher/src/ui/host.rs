@@ -18,11 +18,11 @@ use upnp::Opened;
 
 pub const LOBBY_PORT: u16 = 19980;
 /// the game's own port when hosting (src/net.h NET_PORT)
-pub const GAME_PORT: u16 = 27960;
+pub const GAME_PORT: u16 = 19980;                    // (UDP: the lobby's TCP port's number too)
 pub const PORT_IN_USE: &str = "Another RampageRE server is already running on this PC.";
 pub const ROUTER_TITLE: &str = "Friends outside your home can't connect to you on this network.";
 pub const ROUTER_TEXT: &str = "Friends on the same home network can still join your room.";
-pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded TCP 19980 and UDP 27960 to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
+pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded port 19980 (TCP and UDP) to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
 pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";

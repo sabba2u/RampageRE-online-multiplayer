@@ -80,7 +80,7 @@ Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-
 3. **Host:** press **Insert** and click **Host a game**, then pick **2 to 8 Player** in the main menu (from the launcher,
    or with `menu_players=8` in `rampage.cfg` / `--menu-players 8`, the menu has 5 to 8 Player too), and **0** computer
    players for a game of friends only.
-   The game uses UDP port **27960**: the game asks your router to forward it by itself (UPnP); the panel's
+   The game uses UDP port **19980** (the same number as the launcher's lobby, TCP 19980: forward **19980, TCP and UDP** ("Both") and everything gets in): the game asks your router to forward it by itself (UPnP); the panel's
    **Port forward** line says whether it worked and the address friends join. If your router has no UPnP (or it is
    off), forward the port by hand, or use Steam, a LAN or a VPN like Tailscale or ZeroTier.
 4. **Guest:** press **Insert**, type the host's address and click **Join**. Your screen then shows the host's menus
@@ -120,7 +120,7 @@ the game itself still goes straight from guest to host ([docs/HOSTING.md](docs/H
 
 - **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `lobby\start.bat`.
   The host's game lists itself with `http://localhost:19980` by default. Guests set the panel's **Lobby** field to
-  `http://<host's address>:19980` (TCP 19980 must be reachable too, next to UDP 27960).
+  `http://<host's address>:19980` (port 19980 must be reachable, TCP and UDP).
 - **On a VPS** (always on, for everyone): `lobby/start.sh` there (or as a service), open TCP 19980, and every player
   sets **Lobby** to `http://<vps>:19980` (or starts the game with `--lobby http://<vps>:19980`, or sets `RAMPAGE_LOBBY`).
 - **Host:** host as usual. With **List my game in the lobby** ticked (the default) the panel shows a short **join code**

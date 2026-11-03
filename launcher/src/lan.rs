@@ -4,11 +4,11 @@
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::{Duration, Instant};
 
-pub const PORT: u16 = 27960;
+pub const PORT: u16 = 19980;                         // (the game's UDP port: NET_PORT)
 pub const ASK: &[u8] = b"RampageRE?LAN";
 const SAY: &str = "RampageRE!LAN ";
 
-/// A game found on the network: where to join it ("192.168.7.105:27960") and its version ("1.3.0").
+/// A game found on the network: where to join it ("192.168.7.105:19980") and its version ("1.3.0").
 #[derive(Debug, Clone, PartialEq)]
 pub struct Found {
     pub addr: String,
@@ -76,7 +76,7 @@ pub fn find(lan: Option<&str>, wait: Duration) -> Vec<Found> {
     out
 }
 
-/// A typed host address: "192.168.7.105" or "192.168.7.105:27960" or a name ("gamepc", "gamepc:27961"). None: empty.
+/// A typed host address: "192.168.7.105" or "192.168.7.105:19980" or a name ("gamepc", "gamepc:27961"). None: empty.
 pub fn typed_addr(s: &str) -> Option<Result<String, String>> {
     let s = s.trim();
     if s.is_empty() {

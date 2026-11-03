@@ -8,7 +8,7 @@ import { httpHandler } from "./http";
 export type LobbyOptions = { publicAddress?: string; trustProxy?: boolean; now?: () => number };
 
 /** The lobby: the HTTP list RampageRE uses, and Colyseus rooms ("lobby" lists every "game" live) for the page, on
- *  one port. It carries no game traffic: guests join hosts directly over ENet (UDP 27960). */
+ *  one port. It carries no game traffic: guests join hosts directly over ENet (UDP 19980: the same number, the other protocol). */
 export function makeServer(opts: LobbyOptions = {}) {
   const games = new Games({ publicAddress: opts.publicAddress, now: opts.now });
   const rooms = bridge(games);

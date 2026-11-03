@@ -17,7 +17,7 @@ enum { NUP_OFF, NUP_WORKING, NUP_MAPPED, NUP_FAILED };
 void net_upnp_open(int port);                        /* ask for UDP port -> this PC (in the background) */
 void net_upnp_close(void);                           /* the forward taken away (waits for the search to end) */
 void net_upnp_poll(void);                            /* once a frame: the thread's news into the log */
-/* NUP_*; text: "203.0.113.7:27960 forwarded to 192.168.1.20" / "No UPnP router found" / "Asking the router ..." */
+/* NUP_*; text: "203.0.113.7:19980 forwarded to 192.168.1.20" / "No UPnP router found" / "Asking the router ..." */
 int net_upnp_state(const char **text);
 
 #ifdef __cplusplus

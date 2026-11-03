@@ -316,7 +316,7 @@ impl App {
                     if ui.button("Copy").clicked() {
                         ui.ctx().copy_text(ip.clone());
                     }
-                    ui.label(RichText::new("(friends need UDP 27960 forwarded to this PC)").small().color(look::DIM_TEXT));
+                    ui.label(RichText::new("(friends need port 19980, TCP and UDP, forwarded to this PC)").small().color(look::DIM_TEXT));
                 }
                 Some(Err(e)) => {
                     ui.label(RichText::new(e).small().color(look::RED));

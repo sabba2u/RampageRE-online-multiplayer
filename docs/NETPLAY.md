@@ -10,7 +10,7 @@ plan and status: [superpowers/plans/2026-10-27-online-multiplayer-phase1.md](sup
 Both players need the same build of RampageRE and their own disc image.
 
 - Host: start a 2-player game, e.g. `RampageRE-dev.exe Chicago 1 --players 2 --monster George --monster2 Lizzie --host`
-  (or press **Insert** in a game and click **Host a game**). UDP port 27960 must be reachable: the host asks its
+  (or press **Insert** in a game and click **Host a game**). UDP port 19980 must be reachable (the lobby's TCP port's number: one router entry, 19980 for both; 27960 until 2026-11-03): the host asks its
   router to forward it by itself (UPnP, below "Hosting over the internet"); without a router that does UPnP, forward
   it by hand, or use Steam, a LAN or a VPN such as Tailscale or ZeroTier.
 - Guest: `RampageRE-dev.exe --join <host's address>` (or Insert, type the address, **Join**). The guest loads the host's
@@ -197,7 +197,7 @@ it came in and asks for a resync at `resync secs`.
 A host on UDP (not Steam) asks its router to forward the game's port to its PC (UPnP IGD, miniupnpc 2.2.8 vendored in
 `src/net/third_party/miniupnpc`, src/netupnp.c): as hosting starts, on a thread of its own so the game never waits
 (the router's search takes up to 2 s); the forward is taken away again when hosting stops (Leave, Join, or the game
-closing). The panel shows **Port forward (UPnP)**: "203.0.113.7:27960 forwarded to 192.168.1.20; friends join
+closing). The panel shows **Port forward (UPnP)**: "203.0.113.7:19980 forwarded to 192.168.1.20; friends join
 203.0.113.7", or why not: no router answered (none, or UPnP is off on it), the router said no, it forwards that port to
 another PC already, or its own address is a private one (a second router or the provider's CGNAT in front: the forward
 then does not reach the internet). The log says the same, and the lobby is told the external address
@@ -415,7 +415,7 @@ the hosting player's own PC.
  host's PC                                 lobby (the host's PC, or a VPS)            guest's PC
  rampage --host ── POST /games ──────────▶ lobby/  TCP 19980  ◀── GET /games.txt ─── Insert: Games online
           (every 10 s: PUT /games/<code>)  code K7PQ2 → address                       or --join K7PQ2
-          ◀════════════════════ ENet, UDP 27960, straight from the guest ══════════════════
+          ◀════════════════════ ENet, UDP 19980, straight from the guest ══════════════════
 ```
 
 ### Running it
@@ -423,7 +423,7 @@ the hosting player's own PC.
 - **On the host's PC**: install Node.js 20 or newer, then `lobby\start.bat` (the first start runs `npm install` and makes
   `config.json`). It prints this PC's addresses. The game's default lobby is `http://localhost:19980`, so the host's own
   game finds it with nothing set. Guests on the same network use `http://<the host's LAN address>:19980`; guests on the
-  internet need TCP 19980 forwarded to the host's PC, besides UDP 27960 for the game itself.
+  internet need TCP 19980 forwarded to the host's PC, besides UDP 19980 for the game itself (one router entry: 19980, TCP and UDP).
 - **On a VPS**: clone the repo there (only `lobby/` is needed), `sh lobby/start.sh`, and open TCP 19980 in its firewall
   (`ufw allow 19980/tcp`, or the provider's panel). To keep it running, either pm2 (`npm i -g pm2`, then
   `cd lobby && pm2 start npm --name rampage-lobby -- start && pm2 save && pm2 startup`) or a systemd unit:
@@ -664,7 +664,7 @@ a building or game function) shows up as a compile error in `netgame.c`, never a
 
 ## Finding a game on the LAN (the launcher's Join Local)
 
-The launcher sends `RampageRE?LAN` (UDP) to port 27960 at 255.255.255.255, 127.0.0.1 and its network's x.y.z.255
+The launcher sends `RampageRE?LAN` (UDP) to port 19980 at 255.255.255.255, 127.0.0.1 and its network's x.y.z.255
 (Windows sends the 255.255.255.255 broadcast out of one network card only, which with WSL, VMware or a VPN may be the
 wrong one), and waits 1.5 s. A hosting game answers from its ENet socket (`nettransport.c` `nte_intercept`, hosts
 only) `RampageRE!LAN <version> <port>`; the launcher (`launcher/src/lan.rs`) joins the first game of its own version
