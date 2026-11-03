@@ -42,6 +42,10 @@ int nt_peer_silent_ms(int peer);   /* since anything came from it, ENet's pings 
 int nt_peer_addr(int peer, char *out, int cap);       /* the host: peer's "ip:port" (Steam: "Steam"); 0 ok, -1 none */
 unsigned nt_bytes_out(void);                         /* sent so far (counters for the panel) */
 unsigned nt_bytes_in(void);
+/* finding games on the network (the launcher's Join Local): a UDP message NT_LAN_ASK to the game's port (broadcast);
+ * a host answers "NT_LAN_SAY <version> <port>" from its ENet socket (nettransport.c nte_intercept) */
+#define NT_LAN_ASK "RampageRE?LAN"
+#define NT_LAN_SAY "RampageRE!LAN"
 /* the test network (RAMPAGE_NETSIM, nettransport.c): unreliable messages it dropped, reliable ones it made late */
 void nt_netsim_stats(unsigned *dropped, unsigned *resent);
 /* ENet's own socket, around ENet (netstun.c: STUN and the punches); ip in host byte order. -1 no socket (Steam) */

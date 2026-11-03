@@ -54,6 +54,10 @@ pub struct App {
     /// its address on the internet, looked up when asked (Host Local's "Show my internet address")
     public_ip: Option<Result<String, String>>,
     public_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Join Local (LAN): the host's address typed (empty: look for games on the network)
+    lan_addr: String,
+    /// the look for games under way
+    lan_rx: Option<Receiver<Vec<crate::lan::Found>>>,
 }
 
 #[derive(Clone)]
@@ -76,7 +80,8 @@ impl App {
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
-                            public_ip: None, public_rx: None };
+                            public_ip: None, public_rx: None,
+                            lan_addr: String::new(), lan_rx: None };
         app.refresh_links();
         app
     }
@@ -98,15 +103,54 @@ impl App {
         }
     }
 
-    /// Play Local (LAN): the game joining a game hosted on this PC, as the Insert panel's Join on 127.0.0.1.
-    fn join_this_pc(&mut self) {
-        let start = Start::Join { target: "127.0.0.1".into(), lobby: None };
+    /// Join Local (LAN): the address typed, or else the games on the network looked for (lan.rs) and the one found
+    /// joined (poll_lan).
+    fn join_lan(&mut self) {
+        match crate::lan::typed_addr(&self.lan_addr) {
+            Some(Ok(addr)) => self.start_join_lan(&addr),
+            Some(Err(e)) => self.say(&e, true),
+            None => {
+                let (tx, rx) = channel();
+                let lan = self.lan_ip.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(crate::lan::find(lan.as_deref(), std::time::Duration::from_millis(1500)));
+                });
+                self.lan_rx = Some(rx);
+                self.say("Looking for games on your network...", false);
+            }
+        }
+    }
+
+    fn start_join_lan(&mut self, addr: &str) {
+        let start = Start::Join { target: addr.to_string(), lobby: None };
         match &self.game {
             Ok(g) => match game::start(g, &start) {
-                Ok(_) => self.say("Starting RampageRE: joining the game on this PC...", false),
+                Ok(_) => self.say(&format!("Starting RampageRE: joining the game at {addr}..."), false),
                 Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
             },
             Err(e) => self.say(&e.clone(), true),
+        }
+    }
+
+    fn poll_lan(&mut self) {
+        let Some(rx) = &self.lan_rx else { return };
+        let Ok(found) = rx.try_recv() else { return };
+        self.lan_rx = None;
+        let mine = env!("CARGO_PKG_VERSION");
+        let same: Vec<_> = found.iter().filter(|f| f.version == mine).collect();
+        match (same.first(), found.first()) {
+            (Some(f), _) => {
+                let addr = f.addr.clone();
+                if same.len() > 1 {
+                    let all: Vec<_> = same.iter().map(|f| f.addr.as_str()).collect();
+                    self.lan_addr = addr.clone();
+                    self.say(&format!("Games found: {}. Joining {addr} (type another in the box to pick it).",
+                                      all.join(", ")), false);
+                }
+                self.start_join_lan(&addr);
+            }
+            (None, Some(f)) => self.say(&format!("Found a game at {}, but it runs RampageRE {} and you have {mine}:                                                   you both need the same version.", f.addr, f.version), true),
+            (None, None) => self.say("No game found on your network. Is the host hosting yet, and has their PC's                                       firewall allowed RampageRE (README: LAN play)? Or type the host's address                                       in the box.", true),
         }
     }
 
@@ -255,12 +299,22 @@ impl App {
                         self.play();
                     }
                     self.players_choice(ui);
-                    if look::big(ui, "Join Local (LAN)", ready)
-                        .on_hover_text("Joins a game hosted on this PC (127.0.0.1), as the game's Insert panel's Join does")
+                    let searching = self.lan_rx.is_some();
+                    let label = if searching { "Looking for games..." } else { "Join Local (LAN)" };
+                    if look::big(ui, label, ready && !searching)
+                        .on_hover_text("Joins a game hosted on your network: the address typed below, or (left                                         empty) the game it finds")
                         .clicked()
                     {
-                        self.join_this_pc();
+                        self.join_lan();
                     }
+                    ui.horizontal(|ui| {
+                        ui.label("Host's address:");
+                        let edit = ui.add(egui::TextEdit::singleline(&mut self.lan_addr)
+                            .hint_text("empty: find it, or like 192.168.7.105").desired_width(240.0));
+                        if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && ready && !searching {
+                            self.join_lan();
+                        }
+                    });
                     ui.separator();
                     look::section(ui, "Host an internet game");
                     if look::big(ui, "Run an Internet Multiplayer Server", ready).clicked() {
@@ -303,7 +357,8 @@ impl eframe::App for App {
         self.poll_steam();
         self.poll_guest();
         self.poll_connect();
-        if self.connecting() || self.busy.is_some() || self.hosting() || self.steam_check.is_some() || self.guest.is_some() {
+        self.poll_lan();
+        if self.lan_rx.is_some() || self.connecting() || self.busy.is_some() || self.hosting() || self.steam_check.is_some() || self.guest.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
         // closing while hosting: asked first (the lobby lives in this window)

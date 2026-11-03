@@ -3,6 +3,7 @@
  * (net.c) says which player slot each one plays */
 #include "nettransport.h"
 #include "netstun.h"
+#include "version.h"
 #include <enet/enet.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +12,7 @@
 static ENetHost *g_host;
 static ENetPeer *g_peers[NT_PEERS];                  /* the other sides (a guest: the host, 0) */
 static ENetPacket *g_last;                           /* the packet the last NT_DATA points into */
-static int g_inited, g_lag_ms, g_jit_ms, g_loss;
+static int g_inited, g_lag_ms, g_jit_ms, g_loss, g_hosting;
 static unsigned g_out, g_in;
 
 /* the bad network, for testing (RAMPAGE_NETSIM=latency,jitter,loss: ms, ms, %; or RAMPAGE_NET_LAG, _JITTER, _LOSS):
@@ -74,6 +75,16 @@ static void nte_close(void);
 static int ENET_CALLBACK nte_intercept(ENetHost *h, ENetEvent *e)
 {
     (void)e;
+    if (g_hosting && h->receivedDataLength == sizeof NT_LAN_ASK - 1 &&
+        memcmp(h->receivedData, NT_LAN_ASK, sizeof NT_LAN_ASK - 1) == 0) {
+        char say[64];                                /* (a launcher looking for games on the network: this one) */
+        int n = snprintf(say, sizeof say, "%s %s %d", NT_LAN_SAY, RAMPAGE_VERSION, (int)h->address.port);
+        ENetBuffer b;
+        b.data = say;
+        b.dataLength = (size_t)n;
+        enet_socket_send(h->socket, &h->receivedAddress, &b, 1);
+        return 1;
+    }
     if (netstun_is_punch(h->receivedData, (int)h->receivedDataLength))
         return 1;
     if (!netstun_is_stun(h->receivedData, (int)h->receivedDataLength))
@@ -95,6 +106,7 @@ static int nte_host(int port)
                                                       * the first packet, and so not be told it is another version;
                                                       * the deltas, NET_PROTO 7, did nearly all of it) */
         g_host->intercept = nte_intercept;
+    g_hosting = g_host != NULL;
     return g_host ? 0 : -1;
 }
 
@@ -120,6 +132,7 @@ static int nte_join(const char *ip, int port)
 
 static void nte_close(void)
 {
+    g_hosting = 0;
     if (g_last) {
         enet_packet_destroy(g_last);
         g_last = NULL;

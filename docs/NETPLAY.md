@@ -661,3 +661,14 @@ a building or game function) shows up as a compile error in `netgame.c`, never a
   monster the host's AI drives is not predicted. Checked in Dallas 2 at 80 ms / 3 % with each of the Wii's ten on
   either side (Boris/Ruby, Plucky/Squirmy, Flea/Sarah, Brian/Vern, Cyril/Fifi and swapped) and George/Lizzie: the
   guest's transitions as many as the host's (60-115 a run, from thousands), both screens the same.
+
+## Finding a game on the LAN (the launcher's Join Local)
+
+The launcher sends `RampageRE?LAN` (UDP) to port 27960 at 255.255.255.255, 127.0.0.1 and its network's x.y.z.255
+(Windows sends the 255.255.255.255 broadcast out of one network card only, which with WSL, VMware or a VPN may be the
+wrong one), and waits 1.5 s. A hosting game answers from its ENet socket (`nettransport.c` `nte_intercept`, hosts
+only) `RampageRE!LAN <version> <port>`; the launcher (`launcher/src/lan.rs`) joins the first game of its own version
+(this PC's own last), says so when it finds only another version, and with nothing found points at the host's
+firewall. **Host's address** under the button joins a typed address instead (`192.168.7.105`, `host:27961`). The
+host's Windows Firewall must allow RampageRE's inbound UDP (README: LAN play); tests on one PC never see it, as the
+firewall lets this PC's own traffic through.

@@ -7,6 +7,9 @@
 mod game;
 #[cfg(test)]
 mod game_tests;
+mod lan;
+#[cfg(test)]
+mod lan_tests;
 mod links;
 #[cfg(test)]
 mod links_tests;
