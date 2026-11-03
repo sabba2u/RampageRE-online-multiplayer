@@ -481,6 +481,10 @@ static void panel(void)
         changed |= ImGui::IsItemDeactivatedAfterEdit();
         ImGui::SliderFloat("Tilt camera down", &fx->pitch, 0, 35, "%.0f degrees");
         changed |= ImGui::IsItemDeactivatedAfterEdit();
+        if (ImGui::SmallButton("Reset to default")) {   /* the camera alone as the game's: no zoom, no tilt */
+            fx->zoom = 0; fx->pitch = 0;
+            changed = 1;
+        }
         ImGui::SliderFloat("1950s film", &fx->film, 0, 1, "%.2f");   /* black and white, grain, scratches */
         changed |= ImGui::IsItemDeactivatedAfterEdit();
         bool outline = fx->own_outline > 0;          /* your own monster, outlined in your colour (here alone) */
