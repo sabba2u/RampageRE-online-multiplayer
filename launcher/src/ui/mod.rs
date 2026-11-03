@@ -275,8 +275,12 @@ impl App {
         let hover = "Only the PC that hosts needs this: friends joining connect out, which Windows always allows. Windows asks for permission (admin) once, like a Steam game's installer.";
         match (&self.fw_rx, self.fw_status) {
             (Some((_, true)), _) => { ui.label(RichText::new("Asking Windows...").small()); }
+            (Some((_, false)), None) => { ui.label(RichText::new("Checking the firewall...").small()); }
             (_, Some(Status::Allowed)) => {
-                ui.label(RichText::new("Firewall: allowed").small().color(look::GREEN)).on_hover_text(hover);
+                // (the button kept, ticked: the rule is there; clicking looks again)
+                if ui.button(RichText::new("✔ Allowed through firewall").color(look::GREEN))
+                    .on_hover_text(format!("The firewall rule is there. {hover} Click to look again."))
+                    .clicked() { self.firewall_job(false); }
             }
             (_, Some(Status::Blocked)) => {
                 if ui.button(RichText::new("Unblock in firewall").color(look::RED))

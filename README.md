@@ -37,8 +37,8 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
   your network and joins it (or type the host's address, like `192.168.7.105`, in **Host's address** under it).
   **The host's PC must let RampageRE through Windows Firewall** (LAN and internet alike; guests need nothing: they
   connect out). Windows asks the first time it hosts (click Allow); if it never asked or guests time out, click
-  **Allow through firewall** beside **Show my internet address** (Windows asks for admin once; it says **Firewall:
-  allowed** when done, **Unblock in firewall** when Windows is blocking it). By hand, in PowerShell as administrator:
+  **Allow through firewall** beside **Show my internet address** (Windows asks for admin once; it turns into **✔ Allowed
+  through firewall** when the rule is there, **Unblock in firewall** when Windows is blocking it). By hand, in PowerShell as administrator:
   `New-NetFirewallRule -DisplayName "RampageRE" -Direction Inbound -Action Allow -Protocol UDP -Program "C:\Games\RampageRE\RampageRE.exe" -Profile Private,Domain`
 - **HOST AN INTERNET GAME**: **Run an Internet Multiplayer Server** shows a 5-letter room code and links to send your friends (the
   launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
