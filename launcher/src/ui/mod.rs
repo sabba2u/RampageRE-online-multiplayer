@@ -242,7 +242,7 @@ impl App {
     /// The firewall: looked at on a thread (the first time the row shows), or fixed (Windows' admin Yes/No).
     fn firewall_job(&mut self, fix: bool) {
         let Ok(g) = &self.game else { return };
-        let progs = crate::firewall::programs(g);
+        let progs = crate::firewall::programs(g, std::env::current_exe().ok());
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let r = if fix { crate::firewall::fix(&progs) } else { Ok(crate::firewall::status(&progs)) };

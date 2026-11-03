@@ -1,59 +1,73 @@
-//! "Allow through firewall" (Host Local's row): a rule letting other PCs reach this PC's RampageRE (UDP in), as a Steam
-//! game's installer adds one. Only the host needs it: guests connect out, which Windows always lets through.
+//! "Allow through firewall" (Host Local's row): rules letting other PCs reach this PC's RampageRE, as a Steam game's
+//! installer adds one: the games by UDP, and the launcher itself by TCP (its lobby server, port 19980: internet games
+//! and a friend's Connect). Only the host needs them: guests connect out, which Windows always lets through.
 //! The look runs PowerShell without admin, hidden (it only reads the rules). The fix is Windows' own netsh, run through
-//! the usual admin Yes/No box as plain readable commands (its "Show more details" shows them): any inbound rule for the
-//! game dropped (one Windows made blocking it when its "Allow access?" box was cancelled), ours added, for every network
-//! (as Steam's games are). Its output goes to %TEMP%\RampageRE-firewall.log, for the message when it fails.
+//! the usual admin Yes/No box as plain readable commands (its "Show more details" shows them): each program's inbound
+//! rules dropped (one Windows made blocking it when its "Allow access?" box was cancelled), ours added, for every
+//! network (as Steam's games are). Its output goes to %TEMP%\RampageRE-firewall.log, for the message when it fails.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Status {
-    /// a rule lets it in, none blocks it
+    /// a rule lets each in, none blocks one
     Allowed,
-    /// a rule blocks it (Windows' box cancelled once)
+    /// a rule blocks one (Windows' box cancelled once)
     Blocked,
-    /// no rule: Windows' own box may ask, or (a managed PC) the game is silently blocked
+    /// one has no rule: Windows' own box may ask, or (a managed PC) it is silently blocked
     Missing,
     /// the look failed
     Unknown,
 }
 
-/// The games beside the launcher that other PCs connect to: RampageRE.exe, and RampageRE-dev.exe when there.
-pub fn programs(game: &Path) -> Vec<PathBuf> {
-    let mut v = vec![game.to_path_buf()];
+/// A program other PCs connect to, and how: the games by UDP, the launcher's lobby by TCP.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prog {
+    pub path: PathBuf,
+    pub tcp: bool,
+}
+
+/// The games beside the launcher (RampageRE.exe, and RampageRE-dev.exe when there), and the launcher itself.
+pub fn programs(game: &Path, launcher: Option<PathBuf>) -> Vec<Prog> {
+    let mut v = vec![Prog { path: game.to_path_buf(), tcp: false }];
     if let Some(dir) = game.parent() {
         let dev = dir.join("RampageRE-dev.exe");
         if dev.is_file() && dev != game {
-            v.push(dev);
+            v.push(Prog { path: dev, tcp: false });
         }
+    }
+    if let Some(l) = launcher {
+        v.push(Prog { path: l, tcp: true });
     }
     v
 }
 
 /// PowerShell's @('a','b') of the paths (a ' doubled).
-fn ps_list(progs: &[PathBuf]) -> String {
-    let items: Vec<String> = progs.iter().map(|p| format!("'{}'", p.display().to_string().replace('\'', "''"))).collect();
+fn ps_list(progs: &[Prog]) -> String {
+    let items: Vec<String> = progs.iter().map(|p| format!("'{}'", p.path.display().to_string().replace('\'', "''"))).collect();
     format!("@({})", items.join(","))
 }
 
-/// The look: one line per enabled inbound rule for these programs, its action ("Allow" / "Block").
-pub fn status_script(progs: &[PathBuf]) -> String {
+/// The look: one line per enabled inbound rule for these programs, "<program>|<action>" (Allow / Block).
+pub fn status_script(progs: &[Prog]) -> String {
     format!("$p = {}; Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Where-Object {{ $p -contains $_.Program }} | \
-Get-NetFirewallRule | Where-Object {{ $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' }} | ForEach-Object {{ [string]$_.Action }}",
+ForEach-Object {{ $f = $_; $f | Get-NetFirewallRule | Where-Object {{ $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' }} | \
+ForEach-Object {{ $f.Program + '|' + [string]$_.Action }} }}",
             ps_list(progs))
 }
 
-/// The look's lines read: a Block wins, then an Allow.
-pub fn parse_status(out: &str) -> Status {
-    let lines: Vec<&str> = out.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
-    if lines.iter().any(|l| l.eq_ignore_ascii_case("Block")) {
-        Status::Blocked
-    } else if lines.iter().any(|l| l.eq_ignore_ascii_case("Allow")) {
-        Status::Allowed
-    } else {
-        Status::Missing
+/// The look's lines read: a rule blocking any of them: Blocked; one allowing each of them: Allowed; else Missing.
+pub fn parse_status(out: &str, progs: &[Prog]) -> Status {
+    let lines: Vec<(String, String)> = out.lines().filter_map(|l| l.trim().rsplit_once('|'))
+        .map(|(p, a)| (p.trim().to_lowercase(), a.trim().to_lowercase())).collect();
+    if lines.iter().any(|(_, a)| a == "block") {
+        return Status::Blocked;
     }
+    let allowed = |p: &Prog| {
+        let want = p.path.display().to_string().to_lowercase();
+        lines.iter().any(|(q, a)| *q == want && a == "allow")
+    };
+    if progs.iter().all(allowed) { Status::Allowed } else { Status::Missing }
 }
 
 /// Our rule's name for a program: "RampageRE (RampageRE.exe)".
@@ -63,15 +77,13 @@ pub fn rule_name(prog: &Path) -> String {
 
 /// The fix, as cmd.exe's /s /c argument: for each program, its inbound rules deleted (none there is no failure),
 /// then ours added; everything said into `log`. cmd's exit code is the last add's.
-pub fn fix_command(progs: &[PathBuf], log: &Path) -> String {
-    let mut steps: Vec<String> = Vec::new();
-    for p in progs {
-        steps.push(format!("netsh advfirewall firewall delete rule name=all dir=in program=\"{}\"", p.display()));
-    }
+pub fn fix_command(progs: &[Prog], log: &Path) -> String {
+    let dels: Vec<String> = progs.iter().map(|p| format!(
+        "netsh advfirewall firewall delete rule name=all dir=in program=\"{}\"", p.path.display())).collect();
     let adds: Vec<String> = progs.iter().map(|p| format!(
-        "netsh advfirewall firewall add rule name=\"{}\" dir=in action=allow protocol=UDP program=\"{}\" profile=any",
-        rule_name(p), p.display())).collect();
-    format!("\"({} & {}) > \"{}\" 2>&1\"", steps.join(" & "), adds.join(" && "), log.display())
+        "netsh advfirewall firewall add rule name=\"{}\" dir=in action=allow protocol={} program=\"{}\" profile=any",
+        rule_name(&p.path), if p.tcp { "TCP" } else { "UDP" }, p.path.display())).collect();
+    format!("\"({} & {}) > \"{}\" 2>&1\"", dels.join(" & "), adds.join(" && "), log.display())
 }
 
 fn hidden(mut c: Command) -> Command {
@@ -84,11 +96,11 @@ fn hidden(mut c: Command) -> Command {
 }
 
 /// Whether other PCs can reach these programs (a few seconds: Windows lists every rule).
-pub fn status(progs: &[PathBuf]) -> Status {
+pub fn status(progs: &[Prog]) -> Status {
     let mut c = hidden(Command::new("powershell.exe"));
     c.args(["-NoProfile", "-NonInteractive", "-Command", &status_script(progs)]);
     match c.output() {
-        Ok(o) if o.status.success() => parse_status(&String::from_utf8_lossy(&o.stdout)),
+        Ok(o) if o.status.success() => parse_status(&String::from_utf8_lossy(&o.stdout), progs),
         _ => Status::Unknown,
     }
 }
@@ -145,7 +157,7 @@ fn run_as_admin(args: &str) -> Result<u32, u32> {
 fn run_as_admin(_args: &str) -> Result<u32, u32> { Err(0) }
 
 /// The fix, as admin, then the look again: Allowed, or why not.
-pub fn fix(progs: &[PathBuf]) -> Result<Status, String> {
+pub fn fix(progs: &[Prog]) -> Result<Status, String> {
     let _ = std::fs::remove_file(log_path());
     match run_as_admin(&fix_command(progs, &log_path())) {
         Ok(0) => match status(progs) {
