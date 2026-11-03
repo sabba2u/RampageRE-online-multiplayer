@@ -56,6 +56,7 @@ changes):
 | **Weather** | Clear / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes as an x-ray) |
 | **Look** | Normal / 1950s monster movie (black and white, scratches, grain) |
 | **Smooth edges** | Game's setting / Medium / High (anti-aliasing) |
+| **Outline my monster** | a thin outline in your player's colour around your own monster, on your screen only (also in the game's Insert panel, Camera and look) |
 
 **Play Local**'s **Players** choice (1 to 4) sets how many the game's menus offer.
 

@@ -69,6 +69,7 @@ void lookfx_load(void)
         else if (!strcmp(k, "zoom")) g_fx.zoom = v;
         else if (!strcmp(k, "pitch")) g_fx.pitch = v;
         else if (!strcmp(k, "film")) g_fx.film = v;
+        else if (!strcmp(k, "own_outline")) g_fx.own_outline = v;
     }
     fclose(f);
 }
@@ -79,8 +80,8 @@ void lookfx_save(void)
     if (!f)
         return;
     fprintf(f, "dof=%g\ndof_range=%g\ntilt=%g\ntilt_center=%g\ntilt_band=%g\ntilt_color=%g\nzoom=%g\npitch=%g\n"
-               "film=%g\n", g_fx.dof, g_fx.dof_range, g_fx.tilt, g_fx.tilt_center, g_fx.tilt_band, g_fx.tilt_color,
-            g_fx.zoom, g_fx.pitch, g_fx.film);
+               "film=%g\nown_outline=%g\n", g_fx.dof, g_fx.dof_range, g_fx.tilt, g_fx.tilt_center, g_fx.tilt_band,
+            g_fx.tilt_color, g_fx.zoom, g_fx.pitch, g_fx.film, g_fx.own_outline);
     fclose(f);
 }
 

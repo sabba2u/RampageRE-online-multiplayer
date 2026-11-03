@@ -483,6 +483,11 @@ static void panel(void)
         changed |= ImGui::IsItemDeactivatedAfterEdit();
         ImGui::SliderFloat("1950s film", &fx->film, 0, 1, "%.2f");   /* black and white, grain, scratches */
         changed |= ImGui::IsItemDeactivatedAfterEdit();
+        bool outline = fx->own_outline > 0;          /* your own monster, outlined in your colour (here alone) */
+        if (ImGui::Checkbox("Outline my monster", &outline)) {
+            fx->own_outline = outline ? 1.0f : 0.0f;
+            changed = 1;
+        }
         if (ImGui::Button("1950s monster movie")) {   /* the old film, the camera as the game's */
             fx->film = 1; fx->dof = 0; fx->tilt = 0;
             changed = 1;

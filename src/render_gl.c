@@ -262,6 +262,7 @@ struct Renderer {
     int hold;                                        /* draw_mesh holds the blended parts back (gtao_active) */
     int grey;                                        /* NET: the instance drawn now is greyed (Instance.net_grey) */
     int boss;                                        /* Boss Rumble: the instance drawn now is a boss (Instance.boss) */
+    int outline;                                     /* port extra: its player (1 .. 8) when your own outlined (Instance.outline) */
     int xray;                                        /* port extra: the instance drawn now is x-rayed (Instance.xray) */
     double hud_t; int has_hud_t;                     /* the GUI's clock (rnd_hud_time), else the frame's */
     int in_hud;                                      /* draw_hud: textures made now get no mips nor anisotropy */
@@ -1012,6 +1013,38 @@ static void draw_boss(const MeshPart *p, const void *idx)
     glPopAttrib();
 }
 
+/* (port extra) your own monster's outline (LookFx.own_outline): the boss's back-face lines, thin and steady, no glow,
+ * in its player's colour (Monster Select's cards': P1 green, P2 orange, P3 blue, P4 pink; 5 .. 8 the same again), so
+ * it is not taken for a boss (red, glowing) or an empty seat (grey) */
+static void draw_own(const MeshPart *p, const void *idx, int player)
+{
+    static const float COL[4][3] = { { 0.01f, 0.78f, 0.11f }, { 0.84f, 0.37f, 0.17f }, { 0.0f, 0.59f, 1.0f },
+                                     { 1.0f, 0.27f, 0.64f } };
+    const float *c = COL[(player - 1) & 3];
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
+                 GL_POLYGON_BIT | GL_LINE_BIT);
+    glPushClientAttrib(GL_CLIENT_VERTEX_ARRAY_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_ALPHA_TEST);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+    glPolygonMode(GL_BACK, GL_LINE);
+    glLineWidth(3.0f);
+    glColor4f(c[0], c[1], c[2], 1.0f);
+    glDrawElements(GL_TRIANGLES, (GLsizei)(3 * p->ntris), GL_UNSIGNED_INT, idx);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glLineWidth(1.0f);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glPopClientAttrib();
+    glPopAttrib();
+}
+
 static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, int teal)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT |
@@ -1309,8 +1342,10 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     r->drawn += p->ntris;
     if (r->grey && !blend && !see_through)           /* NET: greyed over */
         draw_grey(p, id, idx, t, r->grey == 2);
-    if (r->boss && !blend && !see_through)           /* Boss Rumble: its red outline */
+    if (r->boss && !see_through)                     /* Boss Rumble: its red outline (a blended part too: fur) */
         draw_boss(p, idx);
+    else if (r->outline && !r->grey && !see_through)   /* your own monster's (LookFx.own_outline; blended too) */
+        draw_own(p, idx, r->outline);
     if (r->xray)                                     /* struck by lightning: the x-ray's flash (every part: George's
                                                       * fur is blended) */
         draw_xray(p, id, idx);
@@ -1861,6 +1896,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             glMultMatrixf(it->world.m);
             r->grey = in->net_grey;                  /* NET: an online player's monster nobody plays (netgame.c) */
             r->boss = in->boss;
+            r->outline = in->outline;
             /* struck by lightning: on and off about 9 times a second */
             r->xray = in->xray > 0 && fmodf(in->xray * 9.0f, 1.0f) < 0.6f;
             if (r->xray) {
@@ -1873,6 +1909,7 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             draw_mesh(r, &s->meshes[it->mesh], it->skin, t);
             r->grey = 0;
             r->boss = 0;
+            r->outline = 0;
             r->xray = 0;
             glPopMatrix();
             if (own)

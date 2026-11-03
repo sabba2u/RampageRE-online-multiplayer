@@ -68,6 +68,8 @@ typedef struct {
     Group shadow;                                     /* its template's ShadowData (shadow.c), at NULL: casts none */
     int own_ambient; float ambient[3];                /* drawn with this ambient, not the scene's (an adornment's: the
                                                        * building light's ramp at its height, 0x2CD060) */
+    int outline;                                      /* port extra: your own monster's outline, its player's colour
+                                                      * (1 .. 8: player 1 .. 8; 0 none; render_gl.c draw_own) */
     int boss;                                         /* port extra: Boss Rumble's boss, a red glowing outline
                                                        * (render_gl.c draw_boss) */
     int net_grey;                                     /* NET: drawn greyed over (an online player's slot nobody

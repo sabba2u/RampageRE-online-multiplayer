@@ -5257,6 +5257,7 @@ static void street_step(Viewer *v, float dt)
 /* what the modules see of the monsters this frame (army.h's ArmyMonster, index = the monster's slot): their places,
  * moves and collision spheres, which the frame's world follows too */
 static int netgame_idle(const Mon *mo);              /* NET: netgame.c */
+static int netgame_mine(const Viewer *v, int k);     /* NET: netgame.c (this PC's player) */
 static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker);   /* NET: netgame.c */
 static int army_monsters(Viewer *v, ArmyMonster *m)
 {
@@ -6558,6 +6559,11 @@ static void play_step(Viewer *v, float dt, float aspect)
     }
     for (int k = 0; k < mon_world(v); k++)
         mon_step(&v->mon[k], dt);
+    for (int k = 0; k < v->nmon; k++) {              /* (port extra) your own monster's outline (LookFx.own_outline) */
+        Instance *oi = mon_in(&v->mon[k]);
+        if (oi)
+            oi->outline = lookfx()->own_outline > 0 && !v->attract && netgame_mine(v, k) ? k + 1 : 0;
+    }
     if (v->extra >= 0)                               /* (it arrived: hidden) */
         reveal_events(v);
     if (v->scene.folk) {                             /* the people, the ones in their hands, what they make happen */
@@ -9340,6 +9346,7 @@ static int viewer_main(int argc, char **argv)
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
         else if (strcmp(argv[i], "--steam-host") == 0 || strcmp(argv[i], "--steam") == 0) { }
         else if (strcmp(argv[i], "--film") == 0) { }  /* (lookfx: read after lookfx_load below) */
+        else if (strcmp(argv[i], "--own-outline") == 0) { }   /* (the same) */
         else if (strcmp(argv[i], "--net-rate") == 0 && i + 1 < argc) i++;
         else if (strcmp(argv[i], "--lobby") == 0 && i + 1 < argc) netlobby_set_url(argv[++i], 0);   /* NET: netlobby.h */
         else if (strcmp(argv[i], "--autoplay") == 0) autoplay = 1;   /* the playthrough test (docs/NATIVE.md) */
@@ -9478,6 +9485,8 @@ static int viewer_main(int argc, char **argv)
     for (int i = 1; i < argc; i++)                   /* --film: the 1950s monster movie (the launcher's Look) */
         if (!strcmp(argv[i], "--film"))
             lookfx()->film = 1;
+        else if (!strcmp(argv[i], "--own-outline"))   /* your own monster outlined (the launcher's) */
+            lookfx()->own_outline = 1;
     v.gfx = &gfx;
     v.win = &w;
     v.gfx_write = !shot;

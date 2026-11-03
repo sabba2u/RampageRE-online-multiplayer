@@ -62,6 +62,22 @@ static int ng_me(void)
     return k > 0 && k < MONSTERS ? k : net_role() == NET_GUEST ? 1 : 0;
 }
 
+/* monster k is played on this PC (its own outline, main.c mon_outlines): offline every player the computer does not
+ * drive; online the guest's own seat, the host's player 1 and the seats its extra controllers took */
+static int netgame_mine(const Viewer *v, int k)
+{
+    if (k < 0 || k >= v->nmon)
+        return 0;
+    const Mon *mo = &v->mon[k];
+    if (mo->boss || mo->bot)
+        return 0;
+    if (net_role() == NET_GUEST && net_live())
+        return k == ng_me();
+    if (net_role() == NET_HOST && net_live())
+        return k == 0 || net_slot_state(k, NULL) == NSL_LOCAL;
+    return mo->drive != DRIVE_COMPUTER;
+}
+
 /* ---- pads: Pad (main.c) <-> NetPad, the buttons MV_UP .. MV_L3 as bits 0 .. 17 */
 static void ng_pad_out(const Pad *p, NetPad *o)
 {

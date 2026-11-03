@@ -176,6 +176,12 @@ impl App {
                 {
                     self.settings = Settings::update(|s| s.unlock_moves = moves);
                 }
+                let mut outline = self.settings.own_outline;
+                if ui.checkbox(&mut outline, RichText::new("Outline my monster").strong())
+                    .on_hover_text("A thin outline in your player's colour around your own monster, on your screen only: easy to find among up to 8.").changed()
+                {
+                    self.settings = Settings::update(|s| s.own_outline = outline);
+                }
                 let mut shuffle = self.settings.shuffle_buildings;
                 if ui.checkbox(&mut shuffle, RichText::new("Shuffle the city's buildings").strong())
                     .on_hover_text("Every game a new street: each lot gets another of the city's buildings of its size.").changed()

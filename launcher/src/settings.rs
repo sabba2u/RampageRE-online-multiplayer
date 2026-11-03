@@ -32,6 +32,8 @@ pub struct Settings {
     pub look: String,
     /// each city's buildings shuffled (the same width, as tall or taller), a new seed every game (--random-blocks)
     pub shuffle_buildings: bool,
+    /// a thin outline in your player's colour around your own monster, on your screen only (--own-outline)
+    pub own_outline: bool,
 }
 
 impl Default for Settings {
@@ -40,7 +42,7 @@ impl Default for Settings {
         Settings { servers: Vec::new(), first_run_done: false, firewall_note_shown: false, spacewar_card_shown: false,
                    banned: Vec::new(), local_players: 0, unlock_all: true, unlock_moves: true, time_of_day: "game".into(),
                    smoothing: "off".into(), weather: "clear".into(),
-                   look: "normal".into(), shuffle_buildings: false }
+                   look: "normal".into(), shuffle_buildings: false, own_outline: false }
     }
 }
 

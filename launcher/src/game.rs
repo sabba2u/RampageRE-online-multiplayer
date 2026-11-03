@@ -108,6 +108,9 @@ pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
     if s.look == "film" {
         a.push("--film");
     }
+    if s.own_outline {                               // your own monster outlined (the game's Insert panel has it too)
+        a.push("--own-outline");
+    }
     let mut out: Vec<String> = Vec::new();
     if s.shuffle_buildings {                         // a new street every game (the host's: its guests take it)
         let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(1);

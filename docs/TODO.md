@@ -59,7 +59,7 @@ et8_menu_test.ps1; docs/NETPLAY.md "Eight players". Not yet: eight real PCs) **M
   Over or the block again), where its bars go with the players' HUD (the challenge's boss bar, ChallengeBoss2.ifc,
   is one already: a second for the Wii's Dallas), online (the host runs the bosses like bots, their HP in the
   snapshot), and whether it is its own mode in the menus / launcher or a block option.
-- **Your own outline** (asked 2026-11-02, not started): a setting (launcher and in-game options) that draws an outline
+- (done 2026-11-02: the launcher's Outline my monster, --own-outline, the Insert panel's Camera and look, lookfx.cfg own_outline; render_gl.c draw_own; blended parts too, so George's fur and the boss Jill have theirs) **Your own outline** (asked 2026-11-02): a setting (launcher and in-game options) that draws an outline
   around your own monster, only on your screen, so you find yourself among up to 7 others. The outline in your
   player's colour (the HUD panel's), thin and steady, no glow, so it is not taken for a boss (red, glowing) or an
   empty seat (grey). Offline split play on one screen: each local player's in their own colour; online: only yours.

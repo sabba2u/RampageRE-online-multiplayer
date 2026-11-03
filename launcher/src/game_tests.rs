@@ -183,6 +183,10 @@ fn game_options_passed() {
     assert_eq!(f.look, "normal");
     f.look = "film".into();
     assert_eq!(game_options(&f), vec!["--film"]);
+    let mut o = Settings::default();
+    assert!(!o.own_outline, "off by default (the game's own Insert panel keeps it too)");
+    o.own_outline = true;
+    assert_eq!(game_options(&o), vec!["--own-outline"]);
     let mut r = Settings::default();
     assert!(!r.shuffle_buildings);
     r.shuffle_buildings = true;

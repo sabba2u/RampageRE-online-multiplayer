@@ -20,6 +20,9 @@ typedef struct {
     float film;                                      /* a 1950s monster movie: black and white, grain, scratches,
                                                       * dust, flicker, colour fringes at the edges, a dark vignette:
                                                       * 0 off .. 1 strong (--film) */
+    float own_outline;                               /* (port extra) a thin outline in your player's colour around
+                                                      * your own monster, on your screen only: 0 off, 1 on
+                                                      * (--own-outline; main.c mon_outlines) */
 } LookFx;
 
 LookFx *lookfx(void);                                /* the settings, changed in place by the panel */
