@@ -583,7 +583,15 @@ tools\net_test.ps1 -HostDo "after 35, hitcell 4 3 0 10, bosshit 3"
 
 `RAMPAGE_NET_TAILS=1` prints each monster's tail springs (links, weight, target) and move state once a second, on both
 copies: a tail or tentacle hanging stiff on one screen shows as weight 0 there.
-`RAMPAGE_NET_LAG` (ms) and `RAMPAGE_NET_LOSS` (%) work on any run; `RAMPAGE_NET_TRACE=1` logs every digest's contents
+**A bad network on one PC:** `RAMPAGE_NETSIM=latency,jitter,loss` (ms, ms, %, each way; `80,30,5` is a poor
+internet line) works on any run, host and guests alike (`tools
+et4_test.ps1 -NetSim 80,30,5`). What ENet sends a peer
+in one frame is one UDP packet, so the delay (latency +- jitter) and the loss are drawn per peer per frame: a lost
+frame's unreliable messages are gone, its reliable ones come a resend later (twice the latency, 50 ms at least), an
+unreliable one overtaken by a newer frame's is dropped (as ENet's channel drops it), reliable ones keep their order.
+The panel's ping counts the simulated delay too (both ends run with it). Every 10 s the log says `netsim: N unreliable
+dropped, N reliable late`. (2026-11-03: 4 players at `80,30,0` and `80,30,5` pass every net4 check.)
+`RAMPAGE_NET_LAG` (ms), `RAMPAGE_NET_JITTER` (ms) and `RAMPAGE_NET_LOSS` (%) are the same, one at a time; `RAMPAGE_NET_TRACE=1` logs every digest's contents
 (`=2`, `-Trace -TraceLevel 2`: every building's, not only the damaged ones).
 Both copies log the game's flow (`net: flow: ...`: states, defeats, respawns, lives, results screens and their answers,
 the host's events sent and taken). Test hooks, read by the host only: `RAMPAGE_NET_TESTDIE=period[,lives]` fells both

@@ -42,6 +42,8 @@ int nt_peer_silent_ms(int peer);   /* since anything came from it, ENet's pings 
 int nt_peer_addr(int peer, char *out, int cap);       /* the host: peer's "ip:port" (Steam: "Steam"); 0 ok, -1 none */
 unsigned nt_bytes_out(void);                         /* sent so far (counters for the panel) */
 unsigned nt_bytes_in(void);
+/* the test network (RAMPAGE_NETSIM, nettransport.c): unreliable messages it dropped, reliable ones it made late */
+void nt_netsim_stats(unsigned *dropped, unsigned *resent);
 /* ENet's own socket, around ENet (netstun.c: STUN and the punches); ip in host byte order. -1 no socket (Steam) */
 int nt_raw_send(uint32_t ip, int port, const void *data, int len);
 int nt_local_port(void);                             /* the port ENet's socket is bound to, 0 none */

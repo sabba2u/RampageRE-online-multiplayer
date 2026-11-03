@@ -63,3 +63,13 @@ et8_menu_test.ps1; docs/NETPLAY.md "Eight players". Not yet: eight real PCs) **M
   around your own monster, only on your screen, so you find yourself among up to 7 others. The outline in your
   player's colour (the HUD panel's), thin and steady, no glow, so it is not taken for a boss (red, glowing) or an
   empty seat (grey). Offline split play on one screen: each local player's in their own colour; online: only yours.
+- **Relay fallback for players who cannot connect directly** (asked 2026-11-03). Today a direct connection (port
+  open, UPnP, or STUN's hole punching) or Steam is the only way in: a player behind a mobile network's shared address
+  (CGNAT), a symmetric NAT or a network that blocks UDP cannot join a non-Steam game at all. When the direct path
+  fails, carry the game's packets through a relay instead: a TURN server (as the TMNT/Simpsons HTML5 remakes do:
+  Cloudflare Realtime TURN or Metered credentials minted by a small server, the free Open Relay as a last resort,
+  TCP/TLS on 443 for strict networks), or our own UDP relay beside the lobby server. The lobby knows both ends
+  already; the game would try direct first and fall back after a few seconds, the panel saying "relayed".
+- (done 2026-11-03) **A bad network on one PC, for tests**: `RAMPAGE_NETSIM=latency,jitter,loss` (ms, ms, %; each
+  way), `tools
+et4_test.ps1 -NetSim 80,30,5` (docs/NETPLAY.md).

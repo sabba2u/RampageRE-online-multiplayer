@@ -11,21 +11,50 @@
 static ENetHost *g_host;
 static ENetPeer *g_peers[NT_PEERS];                  /* the other sides (a guest: the host, 0) */
 static ENetPacket *g_last;                           /* the packet the last NT_DATA points into */
-static int g_inited, g_lag_ms, g_loss;
+static int g_inited, g_lag_ms, g_jit_ms, g_loss;
 static unsigned g_out, g_in;
 
-/* RAMPAGE_NET_LAG: messages held back before they go */
-typedef struct Held { double due; int peer, reliable, len; struct Held *next; unsigned char data[]; } Held;   /* (peer
+/* the bad network, for testing (RAMPAGE_NETSIM=latency,jitter,loss: ms, ms, %; or RAMPAGE_NET_LAG, _JITTER, _LOSS):
+ * messages held back latency +- jitter ms before they go, in the order due (SimPacket: drawn per peer per frame); an
+ * unreliable one overtaken by a newer one is dropped (as ENet's channel drops it), reliable ones keep their order, and
+ * in a 'lost' frame the unreliable ones are gone and the reliable ones come a resend later (twice the latency, 50 ms
+ * at least), as ENet's resending would make them. The latency is one way: a round trip is twice it */
+typedef struct Held { double due; unsigned seq; int peer, reliable, len; struct Held *next; unsigned char data[]; } Held;   /* (peer
                                                       * -1: every connected one) */
 static Held *g_held, **g_held_tail = &g_held;
 static double g_now;
+/* each peer's packet of this moment: what ENet sends to a peer in one go is one UDP packet, which is late, or lost, as
+ * a whole; so the delay and the loss are drawn once per peer per frame (g_now), and a frame's messages stay together */
+typedef struct SimPacket { double at; double ms; int lost; double rel_due; } SimPacket;
+static SimPacket g_sim_pk[NT_PEERS];
+static unsigned g_sim_dropped, g_sim_resent;
+static unsigned g_sim_seq[NT_PEERS], g_sim_last[NT_PEERS];   /* (each peer's unreliable messages: the order sent, the
+                                                      * newest let go; one older than that is dropped, as ENet's
+                                                      * unreliable channel drops one overtaken on the way) */
 
 static void env_init(void)
 {
     const char *s = getenv("RAMPAGE_NET_LAG");
     g_lag_ms = s ? atoi(s) : 0;
+    s = getenv("RAMPAGE_NET_JITTER");
+    g_jit_ms = s ? atoi(s) : 0;
     s = getenv("RAMPAGE_NET_LOSS");
     g_loss = s ? atoi(s) : 0;
+    s = getenv("RAMPAGE_NETSIM");
+    if (s && *s) {
+        int lat = 0, jit = 0, loss = 0;
+        sscanf(s, "%d%*[ ,;]%d%*[ ,;]%d", &lat, &jit, &loss);   /* (80,30,5; PowerShell's 80 30 5) */
+        g_lag_ms = lat;
+        g_jit_ms = jit;
+        g_loss = loss;
+    }
+    if (g_lag_ms < 0) g_lag_ms = 0;
+    if (g_jit_ms < 0) g_jit_ms = 0;
+    if (g_jit_ms > g_lag_ms) g_jit_ms = g_lag_ms;     /* (no message due before it was sent) */
+    if (g_loss < 0) g_loss = 0;
+    if (g_loss > 100) g_loss = 100;
+    if (g_lag_ms || g_jit_ms || g_loss)
+        printf("net: netsim: %d ms latency +- %d ms jitter, %d%% loss (each way)\n", g_lag_ms, g_jit_ms, g_loss);
 }
 
 static int lib_init(void)
@@ -116,8 +145,6 @@ static int send_one(ENetPeer *to, int reliable, const void *data, int len)
 {
     if (!to || to->state != ENET_PEER_STATE_CONNECTED)
         return -1;
-    if (!reliable && g_loss > 0 && rand() % 100 < g_loss)
-        return 0;
     ENetPacket *p = enet_packet_create(data, (size_t)len, reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
     if (!p)
         return -1;
@@ -142,20 +169,61 @@ static int send_now(int peer, int reliable, const void *data, int len)
 
 static int nte_send(int peer, int reliable, const void *data, int len)
 {
-    if (g_lag_ms <= 0)
+    if (peer < 0 && (g_lag_ms > 0 || g_loss > 0)) {  /* (to each its own: a loss, a jitter is that peer's) */
+        int r = -1;
+        for (int i = 0; i < NT_PEERS; i++)
+            if (g_peers[i] && g_peers[i]->state == ENET_PEER_STATE_CONNECTED && nte_send(i, reliable, data, len) == 0)
+                r = 0;
+        return r;
+    }
+    if (peer < 0 || peer >= NT_PEERS)
         return send_now(peer, reliable, data, len);
+    SimPacket *pk = &g_sim_pk[peer];
+    if (pk->at != g_now) {                           /* (this frame's packet to that peer: its fate) */
+        pk->at = g_now;
+        pk->lost = g_loss > 0 && rand() % 100 < g_loss;
+        pk->ms = g_lag_ms + (g_jit_ms > 0 ? (rand() % (2 * g_jit_ms + 1)) - g_jit_ms : 0);
+    }
+    if (pk->lost && !reliable) {
+        g_sim_dropped++;
+        return 0;
+    }
+    if (g_lag_ms <= 0 && !pk->lost)
+        return send_now(peer, reliable, data, len);
+    double ms = pk->ms;
+    if (pk->lost) {                                  /* (a reliable one: ENet would send it again) */
+        ms += g_lag_ms * 2 > 50 ? g_lag_ms * 2 : 50;
+        g_sim_resent++;
+    }
+    double due = g_now + ms / 1000.0;
+    if (reliable) {                                  /* (in order: never before the last) */
+        if (due < pk->rel_due)
+            due = pk->rel_due;
+        pk->rel_due = due;
+    }
     Held *h = malloc(sizeof *h + (size_t)len);
     if (!h)
         return -1;
-    h->due = g_now + g_lag_ms / 1000.0;
+    h->due = due;
     h->peer = peer;
     h->reliable = reliable;
     h->len = len;
-    h->next = NULL;
+    h->seq = !reliable && peer >= 0 && peer < NT_PEERS ? ++g_sim_seq[peer] : 0;
+    Held **at = &g_held;                             /* (in the order due; equal ones in the order sent) */
+    while (*at && (*at)->due <= due)
+        at = &(*at)->next;
+    h->next = *at;
+    *at = h;
+    if (!h->next)
+        g_held_tail = &h->next;
     memcpy(h->data, data, (size_t)len);
-    *g_held_tail = h;
-    g_held_tail = &h->next;
     return 0;
+}
+
+void nt_netsim_stats(unsigned *dropped, unsigned *resent)
+{
+    if (dropped) *dropped = g_sim_dropped;
+    if (resent) *resent = g_sim_resent;
 }
 
 static int nte_poll(NtEvent *ev, double now)
@@ -176,7 +244,13 @@ static int nte_poll(NtEvent *ev, double now)
         g_held = h->next;
         if (!g_held)
             g_held_tail = &g_held;
-        send_now(h->peer, h->reliable, h->data, h->len);
+        if (h->seq && h->seq < g_sim_last[h->peer])
+            g_sim_dropped++;                         /* (overtaken: ENet would drop it on arrival) */
+        else {
+            if (h->seq)
+                g_sim_last[h->peer] = h->seq;
+            send_now(h->peer, h->reliable, h->data, h->len);
+        }
         free(h);
     }
     ENetEvent e;
@@ -194,6 +268,8 @@ static int nte_poll(NtEvent *ev, double now)
                     continue;
                 }
                 g_peers[i] = e.peer;
+                g_sim_seq[i] = g_sim_last[i] = 0;
+                memset(&g_sim_pk[i], 0, sizeof g_sim_pk[i]);
             }
             enet_peer_timeout(e.peer, 0, 5000, 10000);
             ev->type = NT_CONNECT;
@@ -233,9 +309,12 @@ static int nte_connected(void)
             return 1;
     return 0;
 }
+/* the test network's part of a round trip: ENet's own pings are not held back, so its time is added (both ends run
+ * with it, as the test scripts do: there and back) */
+static int sim_rtt(void) { return 2 * g_lag_ms; }
 static int nte_peer_rtt_ms(int peer)
 {
-    return peer >= 0 && peer < NT_PEERS && g_peers[peer] ? (int)g_peers[peer]->roundTripTime : 0;
+    return peer >= 0 && peer < NT_PEERS && g_peers[peer] ? (int)g_peers[peer]->roundTripTime + sim_rtt() : 0;
 }
 static int nte_peer_silent_ms(int peer)
 {
@@ -247,7 +326,7 @@ static int nte_rtt_ms(void)
 {
     for (int i = 0; i < NT_PEERS; i++)
         if (g_peers[i] && g_peers[i]->state == ENET_PEER_STATE_CONNECTED)
-            return (int)g_peers[i]->roundTripTime;
+            return (int)g_peers[i]->roundTripTime + sim_rtt();
     return 0;
 }
 /* a refused guest: ENet sends what is queued for it (the NM_REJECT) and then says goodbye; its NT_DISCONNECT is not

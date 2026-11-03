@@ -1037,6 +1037,12 @@ void net_update(double now)
         if (g.role == NET_GUEST && (g.snap_drops || g.snap_got_n) && getenv("RAMPAGE_NET_DELTA_LOG"))
             net_log("snapshots: %d taken, %d dropped (base missing), %d full", g.snap_got_n, g.snap_drops, g.snap_full_n);
         g.snap_drops = g.snap_got_n = g.snap_full_n = 0;
+        if (getenv("RAMPAGE_NETSIM") && ((int)now % 10) == 0) {   /* (the test network's toll, every 10 s) */
+            unsigned dropped, resent;
+            nt_netsim_stats(&dropped, &resent);
+            net_log("netsim: %u unreliable dropped, %u reliable late so far; ping %d ms", dropped, resent,
+                    g.stats.ping_ms);
+        }
         g.out_at = out;
         g.in_at = in;
         g.snaps_since = 0;

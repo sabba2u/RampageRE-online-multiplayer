@@ -18,7 +18,7 @@ build\nettest\host.out and guest<k>.out. Checks, one PASS / FAIL line each (exit
   joinlate  (-JoinLate: the host plays alone, the guests come 10 s apart) each joined mid-block: no block started
             again on the host, and every guest loaded the host's game once
 #>
-param([int]$Seconds = 40, [int]$Guests = 3, [int]$Shots = 2, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0,
+param([int]$Seconds = 40, [int]$Guests = 3, [int]$Shots = 2, [int]$Port = 27960, [int]$Lag = 0, [int]$Loss = 0, [string]$NetSim = "",
       [int]$Rejoin = 0, [switch]$HostMoves, [switch]$JoinLate, [int]$HostWait = 6, [string]$Exe = "RampageRE-dev.exe", [string]$HostDo = "", [string]$GuestArgs = "--four-players",
       [string]$GameArgs = "Chicago 1 --four-players --players 4 --monster Lizzie --monster2 Ralph --monster3 Icky --monster4 Kingston")
 $root = Split-Path $PSScriptRoot -Parent
@@ -30,6 +30,7 @@ Get-Process ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction Silently
 Remove-Item "$out\host.out", "$out\guest*.out", "$out\rejoin*.cfg" -ErrorAction SilentlyContinue
 
 $env:RAMPAGE_NET_LAG = "$Lag"; $env:RAMPAGE_NET_LOSS = "$Loss"
+$env:RAMPAGE_NETSIM = if ($NetSim) { $NetSim } else { $null }   # (-NetSim 80,20,3: latency ms, jitter ms, loss %, each way)
 $env:RAMPAGE_NET_UPNP = "0"; $env:RAMPAGE_STUN = "0"; $env:RAMPAGE_NET_TAILS = "1"
 $env:RAMPAGE_NET_HOSTDO = if ($HostDo) { $HostDo } else { $null }
 $env:RAMPAGE_NET_HOSTMOVES = if ($HostMoves) { "1" } else { $null }
