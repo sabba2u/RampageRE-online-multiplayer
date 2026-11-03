@@ -34,6 +34,8 @@ pub struct App {
     note: Option<(String, bool)>,
     /// the tab the note belongs to
     note_tab: u8,
+    /// an address the message offers to copy (Host Local's LAN address, to send to a friend)
+    note_copy: Option<String>,
     /// the Steam tab's look (Steam running, Spacewar in the library) and when: looked again every few seconds
     steam_seen: Option<(bool, bool, std::time::Instant)>,
     /// a join under way: its outcome (the server to remember once it went through)
@@ -83,7 +85,7 @@ impl App {
         let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
-        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, steam_seen: None,
+        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, note_copy: None, steam_seen: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
@@ -98,6 +100,7 @@ impl App {
     pub fn say_on(&mut self, tab: u8, text: &str, problem: bool) {
         self.note = Some((text.to_string(), problem));
         self.note_tab = tab;
+        self.note_copy = None;
     }
 
     /// The top button: 2 or 5 to 8 players host (friends join it, up to 8 players in all), 1, 3 and 4 play on this PC.
@@ -107,7 +110,13 @@ impl App {
         let start = if hosting { Start::HostLan { players: self.settings.local_players().max(2) } } else { Start::Offline { four_players: true } };
         match &self.game {
             Ok(g) => match game::start(g, &start) {
-                Ok(_) if hosting => self.say("Starting RampageRE, hosting: friends join this PC's address.", false),
+                Ok(_) if hosting => match self.lan_ip.clone() {
+                    Some(ip) => {
+                        self.say(&format!("Starting RampageRE, hosting: friends join this PC's address: {ip}"), false);
+                        self.note_copy = Some(ip);
+                    }
+                    None => self.say("Starting RampageRE, hosting: friends join this PC's address.", false),
+                },
                 Ok(_) => self.say("Starting RampageRE...", false),
                 Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
             },
@@ -309,7 +318,7 @@ impl App {
 
     /// The host's firewall button and what it last said.
     fn firewall_row(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| self.firewall_button(ui));
+        self.firewall_button(ui);
         if let Some((text, problem)) = &self.fw_note {
             let color = if *problem { look::RED } else { look::GREEN };
             ui.label(RichText::new(text).small().color(color));
@@ -441,6 +450,11 @@ impl App {
     pub fn note_line(&self, ui: &mut egui::Ui, tab: u8) {
         if let Some((t, problem)) = self.note.as_ref().filter(|_| self.note_tab == tab) {
             ui.label(RichText::new(t).size(15.0).color(if *problem { look::RED } else { look::GREEN }));
+            if let Some(addr) = &self.note_copy {
+                if ui.button(format!("Copy {addr}")).on_hover_text("Paste it to your friend (email, chat...): they type it in Join Local's Host's address.").clicked() {
+                    ui.ctx().copy_text(addr.clone());
+                }
+            }
         }
     }
 
