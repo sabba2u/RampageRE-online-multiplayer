@@ -37,8 +37,8 @@ et8_menu_test.ps1; docs/NETPLAY.md "Eight players". Not yet: eight real PCs) **M
 - (done 2026-11-02 for lightning: main.c lightning_zap, render_gl.c draw_xray) **X-ray zap** (asked): in a storm 2
   strikes in 5 land on a monster in play on the screen (the host picks; NM_WEATHER names it to the guests): the bolt
   onto it, the thunder at once, React_Front_Zap (React_Side_L_Zap on a wall) and 15 HP, and for 1.2 s it flickers
-  between its look and an electric-blue x-ray with its skeleton's bones white. Not yet: the same on the game's own
-  shocks (an electric sign, Hazard_Shock, the blimp's barriers: Instance.xray set as their React_*_Zap starts).
+  between its look and an electric-blue x-ray with its skeleton's bones white. The game's own shocks too (done 2026-11-02: main.c play_state, any state
+  named *_Zap: an electric sign, Hazard_Shock, the blimp's barriers; the --do word `react NAME` forces a state).
 - (done 2026-11-02: **Boss Rumble**, the fifth game type: docs/superpowers/specs/2026-11-02-boss-rumble-design.md, main.c
   rumble_*, rumble.c) 12 waves (1,1,1 .. 4,4,4) of any monster as bosses, hunting the players, a red glowing outline, bars
   with heads and names under the clock, the clock counting up, power-ups on the streets and roofs, the end line (time,

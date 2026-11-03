@@ -515,6 +515,14 @@ static float root_yaw(Mon *mo, double t)
 }
 
 /* the monster plays the clip of the runner's state, from the runner's time */
+static int has_zap(const char *s)                  /* "_Zap" in a state's or clip's name, any case */
+{
+    for (; s && *s; s++)
+        if (s[0] == '_' && (s[1] | 32) == 'z' && (s[2] | 32) == 'a' && (s[3] | 32) == 'p')
+            return 1;
+    return 0;
+}
+
 static void play_state(Mon *mo)
 {
     Viewer *v = mo->v;
@@ -533,6 +541,14 @@ static void play_state(Mon *mo)
     mo->ev15 = mo->ev15x = mo->ev15r = 0;
     mo->mode = MODE_GROUND;                           /* (its events set the mode it is in) */
     climb_clip_started(&mo->mount, st->name);
+    if (mon_in(mo) && (has_zap(st->name) || has_zap(st->clip))) {   /* (port extra) a shock's reaction
+                                                      * (React_Front_Zap, React_Side_L_Zap: an electric sign,
+                                                      * Hazard_Shock, the blimp's barriers, the lightning): its x-ray
+                                                      * flicker, as the lightning's */
+        mon_in(mo)->xray = 1.2f;
+        if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_ZAP_TEST"))
+            printf("  %s: a shock's x-ray\n", st->name);
+    }
     tail_blend(&mo->tail, st->tail, st->blend);      /* 0x2E6884: to node +0x10 over the request's +0x4, which is
                                                         always the node's blend (0x2ECC08), cut or not */
     mo->mirror = mo->mirror_queued;                    /* 0x2E67E8: a clip starts in the queued mirror state */
@@ -7196,6 +7212,17 @@ static const char *play_script(Viewer *v, const char *script, float aspect)
                                                       * by the amount */
             float knock[3] = { 0, 0, 0 }, from[3] = { mo->mx, mo->my - 5, mo->mz };
             monster_hit(mo, "hurt", seconds, take_damage_level(mo, seconds), knock, from);
+            continue;
+        }
+        if (_stricmp(word, "react") == 0) {          /* react name: the monster forced into that state (React_Front_Zap:
+                                                      * a shock's, its x-ray too) */
+            char name[64];
+            int k = 0;
+            while (*p == ' ') p++;
+            while (*p && *p != ' ' && *p != ',' && k < 63) name[k++] = *p++;
+            name[k] = 0;
+            if (mo->have_graph)
+                force_state(mo, name);
             continue;
         }
         if (_stricmp(word, "monfn") == 0) {          /* monfn name: callMonsterFunction (doFart, doBarf) */
