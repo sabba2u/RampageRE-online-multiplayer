@@ -280,8 +280,18 @@ static void slot_set(int k, int state)
     host_state();
 }
 
-static int g_seat_limit;
+static int g_seat_limit, g_seat_cap;
 void net_set_seat_limit(int n) { g_seat_limit = n > 0 ? n : 0; }
+/* the host's own cap (the launcher's Players: --seats N, the host's seat counted): 0 none */
+void net_set_seat_cap(int n) { g_seat_cap = n > 0 ? n : 0; }
+/* the seats a guest may take now: the game's (8), less when Boss Rumble's bosses hold the rest or the host capped it */
+int net_seats_open(void)
+{
+    int n = NET_GAME_SLOTS;
+    if (g_seat_limit && g_seat_limit < n) n = g_seat_limit;
+    if (g_seat_cap && g_seat_cap < n) n = g_seat_cap;
+    return n;
+}
 int net_slots(void) { return g.role == NET_GUEST ? (g.told.n ? g.told.n : NET_GAME_SLOTS) : NET_GAME_SLOTS; }
 int net_my_slot(void) { return g.role == NET_GUEST ? g.my_slot : 0; }
 int net_msg_slot(void) { return g.msg_slot; }
@@ -699,8 +709,7 @@ static void on_hello(int peer, NetBuf *b)
             pk[i].until = g.slot[i].until;
         }
         double wait = 0;
-        k = net_slot_pick(pk, g_seat_limit && g_seat_limit < NET_GAME_SLOTS ? g_seat_limit : NET_GAME_SLOTS, h.token,
-                          g.now, &wait);
+        k = net_slot_pick(pk, net_seats_open(), h.token, g.now, &wait);
         if (k == NET_PICK_RESERVED)
             snprintf(why, sizeof why, "A player who dropped out has their place kept for %d:%02d more; try again then",
                      (int)(wait + 0.99) / 60, (int)(wait + 0.99) % 60);

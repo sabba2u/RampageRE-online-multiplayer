@@ -33,7 +33,7 @@ impl App {
         let Some(g) = &mut self.guest else { return };
         if !matches!(g.game.try_wait(), Ok(None)) {
             self.guest = None;
-            return self.say(GAME_CLOSED, false);
+            return self.say_on(1, GAME_CLOSED, false);
         }
         if let Some(rx) = &g.asking {
             if let Ok(r) = rx.try_recv() {
@@ -76,7 +76,7 @@ impl App {
             let _ = g.game.kill();
             let _ = g.game.wait();
             self.guest = None;
-            self.say("You left the room.", false);
+            self.say_on(1, "You left the room.", false);
         }
     }
 }

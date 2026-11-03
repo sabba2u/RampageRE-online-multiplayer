@@ -513,7 +513,7 @@ metadata is the listing.
 `RampageRE-Launcher.exe` (in the Windows release zip, next to `RampageRE.exe`) is the foolproof way in: big buttons,
 nothing to type but a code. Design: docs/superpowers/specs/2026-10-31-launcher-design.md.
 
-- **Play** starts the game offline. **Host a game, Run an Internet Multiplayer Server** starts the lobby built into the launcher (TCP
+- **Play** starts the game offline. **Internet tab: Start Internet Server** starts the lobby built into the launcher (TCP
   19980), asks the router to forward it (UPnP, searched from the PC's own LAN address: a PC with Hyper-V or VPN adapters
   otherwise asks where no router answers), starts the game as `--host --lobby http://127.0.0.1:19980`, and shows the
   code big with two links to send: **Friends anywhere** `rampage://join/<code>@<public address>` and **Same Wi-Fi**

@@ -23,8 +23,8 @@ pub const ROUTER_TEXT: &str = "Friends on the same home network can still join y
 pub const BY_HAND_TEXT: &str = "Your router didn't open itself. If you forwarded the port (19980 unless Settings says another, TCP and UDP) to this PC yourself, friends outside can come in anyway (Settings: the address they use, like a no-ip name).";
 pub const FIREWALL_TEXT: &str = "Windows will ask whether RampageRE may use the network: click Allow.";
 pub const CLOSE_TEXT: &str = "Your friends won't be able to join.";
-pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it: hosting stopped.";
-pub const GAME_CLOSED: &str = "The game closed: hosting stopped.";
+pub const GAME_CLOSED_EARLY: &str = "The game closed before your friends could see it. Your server is still running.";
+pub const GAME_CLOSED: &str = "The game closed. Your server is still running: launch it again, or stop the server.";
 
 /// What to send friends: the internet one when the router let us in, and the home network's always (a friend in the
 /// same house often can't reach the house's own public address).
@@ -131,12 +131,12 @@ pub fn by_hand(o: upnp::Opened, s: &Settings, lookup: impl FnOnce() -> Result<St
 impl App {
     pub fn hosting(&self) -> bool { self.host.lobby.is_some() }
 
-    /// "Run an Internet Multiplayer Server": the firewall note once, then the lobby, the router, the game.
+    /// "Start Internet Server" (step 1): the firewall note once, then the lobby and the router. The game is step 2
+    /// (launch_host_game), once the server runs.
     pub fn host_own(&mut self) {
-        let game = match &self.game {
-            Ok(g) => g.clone(),
-            Err(e) => return self.say(&e.clone(), true),
-        };
+        if let Err(e) = &self.game {
+            return self.say_on(1, &e.clone(), true);
+        }
         if !self.settings.firewall_note_shown {
             self.card = Some(Card::Firewall);
             return;
@@ -144,17 +144,28 @@ impl App {
         let port = self.settings.host_port();
         let lobby = match LobbyServer::start(port, None) {
             Ok(l) => l,
-            Err(StartError::PortInUse) => return self.say(PORT_IN_USE, true),
-            Err(StartError::Other(e)) => return self.say(&format!("The server couldn't start: {e}"), true),
-        };
-        let child = match game::start(&game, &Start::Host { lobby: format!("http://127.0.0.1:{port}"), port }) {
-            Ok(c) => c,
-            Err(e) => return self.say(&format!("Couldn't start RampageRE: {e}"), true),
+            Err(StartError::PortInUse) => return self.say_on(1, PORT_IN_USE, true),
+            Err(StartError::Other(e)) => return self.say_on(1, &format!("The server couldn't start: {e}"), true),
         };
         lobby.games.lock().unwrap().set_banned(self.settings.banned_ips());
-        self.host = Hosting { lobby: Some(lobby), game: Some(child), lan: upnp::lan_ip(), port, ..Default::default() };
+        self.host = Hosting { lobby: Some(lobby), lan: upnp::lan_ip(), port, ..Default::default() };
         self.host.open_router();
-        self.say("Starting your game and server...", false);
+        self.say_on(1, "Your server is running: now launch the game as host.", false);
+    }
+
+    /// "Launch Game as Host" (step 2): the game, hosting in this PC's server, the room as big as Players says.
+    pub fn launch_host_game(&mut self) {
+        let Ok(game) = self.game.clone() else { return };
+        let port = self.host.port;
+        let start = Start::Host { lobby: format!("http://127.0.0.1:{port}"), port, players: self.settings.internet_players() };
+        match game::start(&game, &start) {
+            Ok(c) => {
+                self.host.game = Some(c);
+                self.host.code = None;
+                self.say_on(1, "Starting your game...", false);
+            }
+            Err(e) => self.say_on(1, &format!("Couldn't start RampageRE: {e}"), true),
+        }
     }
 
     /// Stop hosting (the button): the hosting game closed too (as its X would, on a thread: it may take a moment to
@@ -164,7 +175,7 @@ impl App {
             std::thread::spawn(move || crate::game::close_gently(&mut c, std::time::Duration::from_secs(4)));
         }
         self.stop_hosting();
-        self.say("Stopped hosting: your game is closing.", false);
+        self.say_on(1, "Stopped hosting: your game is closing.", false);
     }
 
     /// Stops the lobby and removes the router's forward, on a thread (the router can take seconds). The game itself
@@ -196,8 +207,9 @@ impl App {
             return;
         }
         if let Some(why) = self.host.check_game() {
-            self.stop_hosting();
-            return self.say(why, true);
+            // (the server stays: the game launched again, or the server stopped, by the host)
+            self.host.code = None;
+            self.say_on(1, why, true);
         }
         if let Some(rx) = &self.host.reach_rx {
             if let Ok(o) = rx.try_recv() {
@@ -217,7 +229,7 @@ impl App {
         if self.host.forwarded && self.host.reach_rx.is_none() && due {
             self.host.open_router();
         }
-        if self.host.code.is_none() {
+        if self.host.code.is_none() && self.host.game.is_some() {
             if let Some(l) = &self.host.lobby {
                 self.host.code = find_my_code(&l.games.lock().unwrap(), self.host.port);
                 if self.host.code.is_some() {
@@ -227,10 +239,46 @@ impl App {
         }
     }
 
+    /// The server without its game yet (or the game closed): where friends connect, Players, Launch Game as Host.
+    fn server_box(&mut self, ui: &mut egui::Ui) {
+        look::section(ui, "Your server is running");
+        match &self.host.reach {
+            None => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Opening your router for friends...");
+                });
+            }
+            Some(Reach::Internet { public_ip }) => {
+                ui.label(RichText::new(format!("Friends anywhere Connect to: {public_ip}")).strong());
+            }
+            Some(Reach::HomeOnly { .. }) => {
+                ui.label(RichText::new("Only your home network can connect (the router didn't open).").color(YELLOW));
+            }
+        }
+        if let Some(lan) = &self.host.lan {
+            ui.label(RichText::new(format!("Same Wi-Fi: {}", with_port(lan, self.host.port))).color(look::DIM_TEXT));
+        }
+        ui.add_space(4.0);
+        if look::big(ui, "Launch Game as Host", true).on_hover_text("Step 2: your game, hosting a room in this server").clicked() {
+            self.launch_host_game();
+        }
+        self.room_size_choice(ui, 1);
+        self.note_line(ui, 1);
+        ui.separator();
+        if ui.button("Stop server").clicked() {
+            self.stop_hosting();
+            self.say_on(1, "Server stopped.", false);
+        }
+    }
+
     /// While hosting: the code big, the links to send, Stop.
     pub fn hosting_box(&mut self, ui: &mut egui::Ui) {
+        if self.host.game.is_none() {
+            return self.server_box(ui);
+        }
         let Some(code) = self.host.code.clone() else {
-            ui.label(RichText::new("Starting your game and server...").size(16.0));
+            ui.label(RichText::new("Starting your game...").size(16.0));
             ui.spinner();
             if ui.button("Stop hosting").on_hover_text("Closes your game too").clicked() {
                 self.stop_hosting_and_game();

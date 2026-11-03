@@ -122,5 +122,14 @@ fn shell_open(url: &str) {
     }
 }
 
+/// Spacewar in this Steam account's library, as Steam itself notes it (HKCU\Software\Valve\Steam\Apps\480, made
+/// when it is added): read only, no signing in (the Steam tab's tick). The buttons' own check asks Steam itself.
+#[cfg(windows)]
+pub fn spacewar_in_library() -> bool {
+    winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam\Apps\480").is_ok()
+}
+#[cfg(not(windows))]
+pub fn spacewar_in_library() -> bool { false }
+
 pub fn open_steam() { shell_open("steam://open/main") }
 pub fn get_spacewar() { shell_open("steam://install/480") }

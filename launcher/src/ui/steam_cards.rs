@@ -38,7 +38,7 @@ impl App {
     fn steam(&mut self, action: SteamAction) {
         let dir = match &self.game {
             Ok(g) => g.parent().map(|d| d.to_path_buf()).unwrap_or_default(),
-            Err(e) => return self.say(&e.clone(), true),
+            Err(e) => return self.say_on(2, &e.clone(), true),
         };
         if !self.settings.spacewar_card_shown {
             self.settings = Settings::update(|s| s.spacewar_card_shown = true);
@@ -51,7 +51,7 @@ impl App {
         });
         self.steam_check = Some((action, rx));
         self.steam_problem = None;
-        self.say("Checking Steam...", false);
+        self.say_on(2, "Checking Steam...", false);
     }
 
     pub fn poll_steam(&mut self) {
@@ -65,10 +65,11 @@ impl App {
             return;
         }
         let Ok(g) = self.game.clone() else { return };
-        let start = if action == SteamAction::Host { Start::SteamHost } else { Start::SteamWait };
+        let players = self.settings.steam_players();
+        let start = if action == SteamAction::Host { Start::SteamHost { players } } else { Start::SteamWait };
         match game::start(&g, &start) {
             Ok(_) => self.card = Some(if action == SteamAction::Host { Card::ShiftTab } else { Card::JoinGame }),
-            Err(e) => self.say(&format!("Couldn't start RampageRE: {e}"), true),
+            Err(e) => self.say_on(2, &format!("Couldn't start RampageRE: {e}"), true),
         }
     }
 

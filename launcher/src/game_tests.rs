@@ -25,12 +25,16 @@ fn args_per_start() {
     let (s, f) = ("--shell", "--four-players");
     // hosting: the menus offer up to 8 Player (the guests' screens follow the host's)
     let m = ["--menu-players", "8"];
-    assert_eq!(args(&Start::Host { lobby: l.clone(), port: 19980 }), vec![s, f, m[0], m[1], "--host", "--lobby", "http://127.0.0.1:19980"]);
+    let c = ["--seats", "8"];
+    assert_eq!(args(&Start::Host { lobby: l.clone(), port: 19980, players: 8 }), vec![s, f, m[0], m[1], c[0], c[1], "--host", "--lobby", "http://127.0.0.1:19980"]);
     // (another port, set in Settings: after --host, where the game reads it)
-    assert_eq!(args(&Start::Host { lobby: "http://127.0.0.1:20000".into(), port: 20000 }),
-               vec![s, f, m[0], m[1], "--host", "20000", "--lobby", "http://127.0.0.1:20000"]);
-    assert_eq!(args(&Start::SteamHost), vec![s, f, m[0], m[1], "--steam-host"]);
-    assert_eq!(args(&Start::HostLan), vec![s, f, m[0], m[1], "--host"]);
+    assert_eq!(args(&Start::Host { lobby: "http://127.0.0.1:20000".into(), port: 20000, players: 8 }),
+               vec![s, f, m[0], m[1], c[0], c[1], "--host", "20000", "--lobby", "http://127.0.0.1:20000"]);
+    assert_eq!(args(&Start::SteamHost { players: 8 }), vec![s, f, m[0], m[1], c[0], c[1], "--steam-host"]);
+    assert_eq!(args(&Start::HostLan { players: 8 }), vec![s, f, m[0], m[1], c[0], c[1], "--host"]);
+    // (Players: the room's size, the menus' N Player up to it)
+    assert_eq!(args(&Start::SteamHost { players: 3 }), vec![s, f, "--menu-players", "3", "--seats", "3", "--steam-host"]);
+    assert_eq!(args(&Start::HostLan { players: 1 })[2..6], ["--menu-players", "2", "--seats", "2"]);
     assert_eq!(args(&Start::Join { target: "K7PQ2".into(), lobby: Some(l.clone()) }), vec![s, f, "--lobby", l.as_str(), "--join", "K7PQ2"]);
     assert_eq!(args(&Start::Join { target: "203.0.113.5:27960".into(), lobby: None }), vec![s, f, "--join", "203.0.113.5:27960"]);
     // Join on Steam: the game signs in to Steam only when asked (--steam), so other starts never show "Spacewar"
@@ -97,7 +101,7 @@ fn old_game_without_online_play_is_refused() {
     fs::write(d.join("new.exe"), b"MZ...--host --steam-host --join...").unwrap();
     assert!(!supports_online(&d.join("old.exe")));
     assert!(supports_online(&d.join("new.exe")));
-    let e = start(&d.join("old.exe"), &Start::SteamHost).unwrap_err();
+    let e = start(&d.join("old.exe"), &Start::SteamHost { players: 8 }).unwrap_err();
     assert_eq!(e.to_string(), OLD_GAME);
 }
 
@@ -156,7 +160,7 @@ fn unlock_moves_on_by_default_and_passed() {
 
 #[test]
 fn host_local_hosts_without_a_server() {
-    assert_eq!(args(&Start::HostLan), vec!["--shell", "--four-players", "--menu-players", "8", "--host"]);
+    assert_eq!(args(&Start::HostLan { players: 8 }), vec!["--shell", "--four-players", "--menu-players", "8", "--seats", "8", "--host"]);
 }
 
 #[test]

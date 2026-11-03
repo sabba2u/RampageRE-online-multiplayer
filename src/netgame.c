@@ -2395,6 +2395,8 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
             net_start_join(argv[++i]);
         else if (!strcmp(argv[i], "--steam-host"))
             net_start_host_steam();
+        else if (!strcmp(argv[i], "--seats") && i + 1 < argc)
+            net_set_seat_cap(atoi(argv[++i]));       /* (the launcher's Players: the room's size) */
     }
     if (!hidden && netui_init(hwnd) != 0)
         printf("net: the panel (Dear ImGui) did not start\n");

@@ -34,7 +34,7 @@ impl App {
         let text = self.join_box.server_text.trim().to_string();
         let url = match links::server_url(&text) {
             Ok(u) => u,
-            Err(e) => return self.say(&e, true),
+            Err(e) => return self.say_on(1, &e, true),
         };
         if let Ok(links::Link::CodeAt { code, .. }) = links::parse_link(&text) {
             self.code = code;
@@ -46,7 +46,7 @@ impl App {
             let _ = tx.send(join::check_server(&u));
         });
         self.join_box.connecting = Some((url, rx));
-        self.say("Connecting to the server...", false);
+        self.say_on(1, "Connecting to the server...", false);
     }
 
     pub fn poll_connect(&mut self) {
@@ -60,7 +60,7 @@ impl App {
                 self.join_box.connected = Some(url);
                 self.note = None;
             }
-            Err(e) => self.say(&e, true),
+            Err(e) => self.say_on(1, &e, true),
         }
     }
 
@@ -121,7 +121,7 @@ impl App {
                 self.join();
             }
         });
-        if let Some((t, problem)) = &self.note {
+        if let Some((t, problem)) = self.note.as_ref().filter(|_| self.note_tab == 1) {
             ui.label(RichText::new(t).size(15.0).color(if *problem { RED } else { GREEN }));
         }
         self.rooms_list(ui, busy);

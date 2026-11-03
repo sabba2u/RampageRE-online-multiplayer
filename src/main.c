@@ -9379,7 +9379,7 @@ static int viewer_main(int argc, char **argv)
         }
         else if (strcmp(argv[i], "--host") == 0) {   /* NET: online play (netgame_init reads them) */
             if (i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9') i++;
-        } else if (strcmp(argv[i], "--join") == 0 && i + 1 < argc) i++;
+        } else if ((strcmp(argv[i], "--join") == 0 || strcmp(argv[i], "--seats") == 0) && i + 1 < argc) i++;
         else if (strcmp(argv[i], "+connect_lobby") == 0 && i + 1 < argc) i++;   /* (a Steam invite) */
         else if (strcmp(argv[i], "--steam-host") == 0 || strcmp(argv[i], "--steam") == 0) { }
         else if (strcmp(argv[i], "--film") == 0) { }  /* (lookfx: read after lookfx_load below) */

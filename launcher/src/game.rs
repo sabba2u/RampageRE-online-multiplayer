@@ -33,11 +33,12 @@ pub enum Start {
     /// Play Local: the game's own menus; four_players adds 3 and 4 Player there (rampage.cfg four_players)
     Offline { four_players: bool },
     /// hosting, listed in this lobby
-    Host { lobby: String, port: u16 },
+    /// `players`: the room's size, the host counted (--seats; the menus' N Player up to it)
+    Host { lobby: String, port: u16, players: u8 },
     /// Host Local (LAN): hosting with no server (friends join this PC's address: 127.0.0.1, its LAN one, or its
     /// public one when the router lets the game's port in)
-    HostLan,
-    SteamHost,
+    HostLan { players: u8 },
+    SteamHost { players: u8 },
     /// a code (through `lobby`) or an address
     Join { target: String, lobby: Option<String> },
     /// started in its menus, ready for a friend's Steam invite or Join Game
@@ -47,6 +48,11 @@ pub enum Start {
 pub fn args(s: &Start) -> Vec<String> {
     // a port other than the usual one follows --host (the game's net_start_host)
     let port = match s { Start::Host { port, .. } if *port != crate::settings::HOST_PORT => port.to_string(), _ => String::new() };
+    let seats = match s {
+        Start::Host { players, .. } | Start::HostLan { players } | Start::SteamHost { players } => (*players).clamp(2, 8).to_string(),
+        _ => String::new(),
+    };
+    let menu = if seats.is_empty() { "8" } else { seats.as_str() };
     let mut v: Vec<&str> = match s {
         Start::Offline { four_players: true } => vec!["--four-players"],
         Start::Offline { four_players: false } => vec!["--no-four-players"],
@@ -56,9 +62,9 @@ pub fn args(s: &Start) -> Vec<String> {
         Start::SteamWait => vec!["--four-players", "--steam"],
         // hosting: up to 8 Player in the menus (--menu-players 8: the host and seven guests; the guests' menus are the
         // host's)
-        Start::Host { lobby, .. } => vec!["--four-players", "--menu-players", "8", "--host", "--lobby", lobby],
-        Start::HostLan => vec!["--four-players", "--menu-players", "8", "--host"],
-        Start::SteamHost => vec!["--four-players", "--menu-players", "8", "--steam-host"],
+        Start::Host { lobby, .. } => vec!["--four-players", "--menu-players", menu, "--seats", menu, "--host", "--lobby", lobby],
+        Start::HostLan { .. } => vec!["--four-players", "--menu-players", menu, "--seats", menu, "--host"],
+        Start::SteamHost { .. } => vec!["--four-players", "--menu-players", menu, "--seats", menu, "--steam-host"],
         Start::Join { target, lobby: Some(l) } => vec!["--four-players", "--lobby", l, "--join", target],
         Start::Join { target, lobby: None } => vec!["--four-players", "--join", target],
     };

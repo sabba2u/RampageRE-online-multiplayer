@@ -105,12 +105,12 @@ impl App {
             Action::Mute(addr, on) => l.games.lock().unwrap().set_muted(&addr, on),
             Action::Kick(addr) => {
                 l.games.lock().unwrap().kick(&addr);
-                self.say("Removed from the game.", false);
+                self.say_on(1, "Removed from the game.", false);
             }
             Action::Ban(ip, name) => {
                 self.settings = Settings::update(|s| s.ban(&ip, &name));
                 self.send_bans();
-                self.say(&format!("{name} is banned (Settings can undo it)."), false);
+                self.say_on(1, &format!("{name} is banned (Settings can undo it)."), false);
             }
         }
     }

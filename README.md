@@ -40,10 +40,16 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
   **Allow through firewall** beside **Show my internet address** (Windows asks for admin once; it turns into **✔ Allowed
   through firewall** when the rule is there, **Unblock in firewall** when Windows is blocking it). By hand, in PowerShell as administrator:
   `New-NetFirewallRule -DisplayName "RampageRE" -Direction Inbound -Action Allow -Protocol UDP -Program "C:\Games\RampageRE\RampageRE.exe" -Profile Private,Domain`
-- **HOST AN INTERNET GAME**: **Run an Internet Multiplayer Server** shows a 5-letter room code and links to send your friends (the
-  launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
+- The launcher has three tabs, each working on its own: **LAN**, **Internet** and **Steam**. Each has its own
+  **Players** choice (how big the room is, you counted: the game's menu offers N Player up to it, and no more friends
+  get in: the game's `--seats N`).
+- **Internet tab**: **Start Internet Server** (step 1: the launcher's room server; it opens your router), then **Launch
+  Game as Host** (step 2). The room code shows with links to send your friends, and a **Players** list with Mute, Kick
+  and Ban. The game closing leaves the server running (launch it again, or **Stop server**).
 - **JOIN A ROOM**: click the link your host sent, or **Connect** to their server and **Join** with the room code.
-- **HOST ON STEAM**: **Host on Steam** (then Shift+Tab in the game to invite friends), or **Join on Steam** (then
+- **Steam tab**: it ticks **✔ Steam is running** and **✔ Spacewar is in your Steam library** (read from Steam's own
+  registry notes, no signing in); without Spacewar, **Install Spacewar (free)** comes first and the buttons wait.
+  **Host on Steam** (then Shift+Tab in the game to invite friends), or **Join on Steam** (then
   right-click your friend in Steam's friends list and pick **Join Game**). RampageRE must already be open when you click
   Join Game: **if the real Spacewar game starts instead, RampageRE wasn't running** (a step was missed): close Spacewar,
   click **Join on Steam** again, wait for RampageRE to open, then Join Game. Steam play borrows Valve's free test app

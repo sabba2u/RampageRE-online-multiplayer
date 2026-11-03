@@ -35,7 +35,7 @@ checks both):
 
 | Where | What | When it runs |
 |---|---|---|
-| **Inside the launcher** (`launcher/src/lobby/`, Rust) | **Host an internet game → Run an Internet Multiplayer Server** starts it on your PC | while the launcher is open (closing it while hosting asks first) |
+| **Inside the launcher** (`launcher/src/lobby/`, Rust) | the **Internet** tab's **Start Internet Server** starts it on your PC | while the launcher is open (closing it while hosting asks first) |
 | | `RampageRE-Launcher.exe --serve-lobby [port]`: the room server alone, no window | until you stop it |
 | **Node.js** (`lobby/`) | `lobby\start.bat` / `lobby/start.sh`: for Linux, or an always-on VPS (the public server planned for later) | as long as Node runs it |
 
@@ -49,12 +49,12 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 | Button | The game host (in RampageRE.exe) | A room server | Friends join with |
 |---|---|---|---|
 | **Host Local (LAN)** (up to 4 players) | yes, started hosting (`--host`) | no | your address in the game's Insert panel → **Join**: `127.0.0.1` on this PC, your LAN address on the same Wi-Fi, your public IP from the internet (when the router forwarded UDP 19980) |
-| **Run an Internet Multiplayer Server** | yes | yes, inside the launcher | the room code or the link the launcher shows |
+| **Start Internet Server**, then **Launch Game as Host** | yes | yes, inside the launcher | the room code or the link the launcher shows |
 | **Host on Steam** | yes, over Steam | no | Steam: Shift+Tab → Invite, or right-click you → **Join Game** |
 | **Play Local** / **Play Alone Locally** (1, 3 or 4) | no: a game on this PC (the game's own players screen: 1 to 4, humans or computer players). You can still host later from the game's **Insert** panel | no | |
 
 - **Host Local (LAN)** is the game alone: the launcher is only a shortcut and can be closed.
-- **Run an Internet Multiplayer Server** is the game *plus* the launcher's room server. Keep the launcher open while you host.
+- **Start Internet Server** is the launcher's room server; **Launch Game as Host** then starts the game in it. Keep the launcher open while you host.
 - **Host on Steam** is the game alone, using Steam's network instead of your router.
 
 ## Joining, in these terms

@@ -626,7 +626,7 @@ static void game_fields(char *b, int cap)
     form_add(b, cap, "city", L.city);
     snprintf(n, sizeof n, "%d", players_now() % 16);
     form_add(b, cap, "players", n);
-    snprintf(n, sizeof n, "%d", net_slots());
+    snprintf(n, sizeof n, "%d", net_seats_open());
     form_add(b, cap, "max", n);
     snprintf(n, sizeof n, "%d", players_now() / 16);
     form_add(b, cap, "reserved", n);

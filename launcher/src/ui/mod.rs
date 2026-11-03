@@ -32,6 +32,10 @@ pub struct App {
     code: String,
     /// the last thing to tell the player, and whether it is a problem
     note: Option<(String, bool)>,
+    /// the tab the note belongs to
+    note_tab: u8,
+    /// the Steam tab's look (Steam running, Spacewar in the library) and when: looked again every few seconds
+    steam_seen: Option<(bool, bool, std::time::Instant)>,
     /// a join under way: its outcome (the server to remember once it went through)
     busy: Option<Receiver<Result<(Option<String>, std::process::Child), String>>>,
     /// the room being joined (its server, its code): the guest view once the game started
@@ -82,7 +86,7 @@ impl App {
         let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
-        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None,
+        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, steam_seen: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
@@ -92,13 +96,19 @@ impl App {
         app
     }
 
-    pub fn say(&mut self, text: &str, problem: bool) { self.note = Some((text.to_string(), problem)); }
+    /// A message under the tab being looked at.
+    pub fn say(&mut self, text: &str, problem: bool) { self.say_on(self.settings.tab.min(2), text, problem) }
+    /// A message under its own tab (0 LAN, 1 Internet, 2 Steam): each tab works on its own, its messages with it.
+    pub fn say_on(&mut self, tab: u8, text: &str, problem: bool) {
+        self.note = Some((text.to_string(), problem));
+        self.note_tab = tab;
+    }
 
     /// The top button: 2 or 5 to 8 players host (friends join it, up to 8 players in all), 1, 3 and 4 play on this PC.
     fn play(&mut self) {
         let hosting = self.settings.hosts();
         // on this PC: the game's number of players screen with all of 1 to 4 (computer players fill the others)
-        let start = if hosting { Start::HostLan } else { Start::Offline { four_players: true } };
+        let start = if hosting { Start::HostLan { players: self.settings.local_players().max(2) } } else { Start::Offline { four_players: true } };
         match &self.game {
             Ok(g) => match game::start(g, &start) {
                 Ok(_) if hosting => self.say("Starting RampageRE, hosting: friends join this PC's address.", false),
@@ -379,17 +389,51 @@ impl App {
                 self.join_lan();
             }
         });
-        self.note_line(ui);
+        self.note_line(ui, 0);
     }
 
-    /// The Internet tab: host with the launcher's own server, or join a room on someone's.
+    /// The Internet tab: host with the launcher's own server (first the server, then the game in it), or join a
+    /// room on someone's. Hosting or joining shows here only: the other tabs stay as they are.
     fn internet_tab(&mut self, ui: &mut egui::Ui, ready: bool) {
+        if self.hosting() {
+            return self.hosting_box(ui);
+        }
+        if self.guest.is_some() {
+            return self.guest_box(ui);
+        }
         look::section(ui, "Host an internet game");
-        if look::big(ui, "Run an Internet Multiplayer Server", ready).clicked() {
+        if look::big(ui, "Start Internet Server", ready)
+            .on_hover_text("Step 1: your own room server (friends Connect to it). Then launch the game as host.")
+            .clicked()
+        {
             self.host_own();
         }
+        ui.add_enabled(false, egui::Button::new(RichText::new("Launch Game as Host").size(16.5).family(look::semibold()))
+            .min_size(egui::vec2(300.0, 44.0)))
+            .on_disabled_hover_text("Start the server first");
+        self.room_size_choice(ui, 1);
         ui.separator();
         self.join_room_box(ui);
+    }
+
+    /// Players for the Internet tab (1) or the Steam tab (2), each its own: the room's size, you counted. The game's
+    /// menu offers N Player up to it, and no more friends than that get in.
+    pub fn room_size_choice(&mut self, ui: &mut egui::Ui, tab: u8) {
+        let now = if tab == 1 { self.settings.internet_players() } else { self.settings.steam_players() };
+        let mut pick = now;
+        let label = |n: u8| format!("{n} players");
+        ui.horizontal(|ui| {
+            ui.add_space((ui.available_width() - 200.0).max(0.0) / 2.0);
+            ui.label(RichText::new("Players:").color(DIM_TEXT));
+            egui::ComboBox::from_id_salt(("room_size", tab)).selected_text(label(now)).width(120.0).show_ui(ui, |ui| {
+                for n in 2..=8u8 {
+                    ui.selectable_value(&mut pick, n, label(n));
+                }
+            });
+        }).response.on_hover_text(format!("You and up to {} friends", now - 1));
+        if pick != now {
+            self.settings = Settings::update(|s| if tab == 1 { s.internet_players = pick } else { s.steam_players = pick });
+        }
     }
 
     /// The Steam tab: host, or wait for a friend's Join Game, through Steam (Spacewar).
@@ -402,20 +446,45 @@ impl App {
                 self.card = Some(Card::Spacewar(None));
             }
         });
-        if look::big(ui, "Host on Steam", ready).clicked() {
+        // Steam running, and Spacewar owned (the buttons wait for it), looked at every few seconds while shown
+        if self.steam_seen.map_or(true, |s| s.2.elapsed().as_secs() >= 3) {
+            self.steam_seen = Some((crate::steam::steam_running(), crate::steam::spacewar_in_library(), std::time::Instant::now()));
+        }
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(3));
+        let (running, owned, _) = self.steam_seen.unwrap();
+        if running {
+            ui.label(RichText::new("✔ Steam is running").color(look::GREEN));
+        } else {
+            ui.label(RichText::new("Steam isn't running").color(look::YELLOW));
+            if ui.small_button("Open Steam").clicked() {
+                crate::steam::open_steam();
+            }
+        }
+        if owned {
+            ui.label(RichText::new("✔ Spacewar is in your Steam library").color(look::GREEN));
+        } else {
+            ui.label(RichText::new("You need Spacewar (free) in your Steam library first").color(look::RED));
+            if look::big(ui, "Install Spacewar (free)", true).clicked() {
+                crate::steam::get_spacewar();
+            }
+            ui.label(RichText::new(crate::steam::GET_SPACEWAR_NOTE).small().color(DIM_TEXT));
+        }
+        let can = ready && owned;
+        if look::big(ui, "Host on Steam", can).on_disabled_hover_text("Install Spacewar first").clicked() {
             self.steam_host();
         }
-        if look::big(ui, "Join on Steam", ready).clicked() {
+        self.room_size_choice(ui, 2);
+        if look::big(ui, "Join on Steam", can).on_disabled_hover_text("Install Spacewar first").clicked() {
             self.steam_join();
         }
         self.steam_problem_line(ui);
-        self.note_line(ui);
+        self.note_line(ui, 2);
     }
 
     /// What the last action said (an error red), under the tab that did it (the Internet tab shows it under its
     /// room code box).
-    fn note_line(&self, ui: &mut egui::Ui) {
-        if let Some((t, problem)) = &self.note {
+    pub fn note_line(&self, ui: &mut egui::Ui, tab: u8) {
+        if let Some((t, problem)) = self.note.as_ref().filter(|_| self.note_tab == tab) {
             ui.label(RichText::new(t).size(15.0).color(if *problem { look::RED } else { look::GREEN }));
         }
     }
@@ -427,18 +496,12 @@ impl App {
             look::panel().show(ui, |ui| {
                 ui.set_width(380.0);
                 ui.vertical_centered(|ui| {
-                    if self.hosting() {
-                        self.hosting_box(ui);
-                        return;
-                    }
-                    if self.guest.is_some() {
-                        self.guest_box(ui);
-                        return;
-                    }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
                     let mut tab = self.settings.tab.min(2) as usize;
-                    if look::tabs(ui, &["LAN", "Internet", "Steam"], &mut tab) {
+                    // (hosting or in a friend's room: a dot on the Internet tab, wherever you are)
+                    let internet = if self.hosting() || self.guest.is_some() { "Internet ●" } else { "Internet" };
+                    if look::tabs(ui, &["LAN", internet, "Steam"], &mut tab) {
                         self.settings = Settings::update(|s| s.tab = tab as u8);
                     }
                     ui.add_space(4.0);

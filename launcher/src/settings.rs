@@ -38,6 +38,10 @@ pub struct Settings {
     pub own_outline: bool,
     /// the main screen's tab: 0 LAN, 1 Internet, 2 Steam (the last one used)
     pub tab: u8,
+    /// the Internet tab's and the Steam tab's Players, each its own: the room's size, the host counted (2 to 8;
+    /// 0 never chosen: 8)
+    pub internet_players: u8,
+    pub steam_players: u8,
     /// the host forwarded the router's ports by hand (19980, TCP and UDP): the router's own opening (UPnP) failing
     /// no longer means "only your home network"
     pub forwarded_by_hand: bool,
@@ -52,7 +56,7 @@ impl Default for Settings {
         Settings { servers: Vec::new(), first_run_done: false, firewall_note_shown: false, spacewar_card_shown: false,
                    banned: Vec::new(), local_players: 0, unlock_all: true, unlock_moves: true, time_of_day: "game".into(),
                    smoothing: "off".into(), weather: "clear".into(),
-                   look: "normal".into(), shuffle_buildings: false, own_outline: false, tab: 0,
+                   look: "normal".into(), shuffle_buildings: false, own_outline: false, tab: 0, internet_players: 0, steam_players: 0,
                    forwarded_by_hand: false, public_name: String::new() }
     }
 }
@@ -63,6 +67,9 @@ pub struct Banned {
     pub ip: String,
     pub name: String,
 }
+
+/// A room's size as saved: 2 to 8, else (never chosen) 8.
+fn room_size(n: u8) -> u8 { if (2..=8).contains(&n) { n } else { 8 } }
 
 pub fn path() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
@@ -95,6 +102,8 @@ impl Settings {
 
     pub fn update(f: impl FnOnce(&mut Settings)) -> Settings { Settings::update_at(&path(), f) }
 
+    pub fn internet_players(&self) -> u8 { room_size(self.internet_players) }
+    pub fn steam_players(&self) -> u8 { room_size(self.steam_players) }
     pub fn local_players(&self) -> u8 { if (1..=8).contains(&self.local_players) { self.local_players } else { 2 } }
     /// 3 or 4 players: the game's menu gets 3 Player and 4 Player (--four-players)
     pub fn four_players(&self) -> bool { self.local_players() >= 3 }

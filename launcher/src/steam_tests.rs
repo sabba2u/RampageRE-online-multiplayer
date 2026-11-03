@@ -1,3 +1,9 @@
+#[test]
+#[ignore] // (reads this PC's Steam registry: run by hand) Spacewar added here: the Steam tab's tick
+fn spacewar_seen_here() {
+    assert!(crate::steam::spacewar_in_library());
+}
+
 use super::steam::*;
 
 #[test]

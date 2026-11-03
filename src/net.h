@@ -58,6 +58,8 @@ int net_slots(void);
 /* (port extra) the host: seats from this one on are given to no new guest (0: no limit; Boss Rumble's run under way:
  * its players' seats alone, a kept seat's guest still back) */
 void net_set_seat_limit(int n);
+void net_set_seat_cap(int n);                        /* --seats N: the host's players at most (its own seat counted) */
+int net_seats_open(void);
 int net_slot_state(int k, double *left);             /* NSL_*; *left a kept one's seconds (host and guests) */
 int net_slot_monster(int k);                         /* host: the monster k's guest asked for in its hello (-1 any) */
 int net_slot_joining(int k);                         /* slot k's guest is connected but plays nothing yet (loading) */
