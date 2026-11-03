@@ -164,7 +164,8 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 - **The end:** clear wave 12 and it's a **VICTORY**; every player out and it's Game Over. Both screens show the time,
   the wave and your **best time** (kept in `rumble_best.txt` beside your profile; online, each PC keeps its own).
 - **Online:** the host runs the bosses; guests see the same waves, bars and power-ups. Everyone must be in before the
-  run starts: once the waves have begun, new players are told the game is full (a player who drops can rejoin).
+  run starts: once the waves have begun, new players are told the game is full (a player who drops can rejoin,
+  and sees the power-ups that are out).
 
 ### Other changes in this fork
 

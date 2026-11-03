@@ -517,6 +517,7 @@ static void ng_edibles_r(Viewer *v, NetBuf *b)
         edible_net_count(v->edibles, ns);
 }
 
+static void ng_rpu_state(Viewer *v);
 static void ng_state_send(Viewer *v)                 /* host, after the frame's building changes went */
 {
     if (ng_state_due < 0 || !(net_role() == NET_HOST && net_live()))
@@ -570,6 +571,7 @@ static void ng_state_send(Viewer *v)                 /* host, after the frame's 
     net_w_u32(&b, c->up_taken);
     ng_state_out(m, b.len);
     ngt_street_lasting(v);                           /* the street objects' lasting effects (the searchlights) */
+    ng_rpu_state(v);                                 /* (Boss Rumble's power-ups out: in no window) */
     b = netbuf(m, sizeof m);
     net_w_u8(&b, NM_STATE);
     net_w_u8(&b, NST_DONE);
@@ -2400,12 +2402,9 @@ static void netgame_init(Viewer *v, int argc, char **argv, void *hwnd, int hidde
 
 /* main.c: a strike this copy picked (offline, or the host): the guests see it too */
 /* (port extra) Boss Rumble's power-up: out (op 0), taken by slot `taker` (1), gone untaken (2): to the guests */
-static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker)
+static int ng_rpu_msg(uint8_t *m, int cap, int op, int id, int kind, const float pos[3], int taker)
 {
-    if (net_role() != NET_HOST || !net_live())
-        return;
-    uint8_t m[32];
-    NetBuf b = netbuf(m, sizeof m);
+    NetBuf b = netbuf(m, cap);
     net_w_u8(&b, NM_RUMBLE_PICKUP);
     net_w_u8(&b, (uint32_t)op);
     net_w_u16(&b, (uint32_t)id);
@@ -2413,8 +2412,38 @@ static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], 
     for (int i = 0; i < 3; i++)
         net_w_f32(&b, pos ? pos[i] : 0);
     net_w_u8(&b, (uint32_t)(taker >= 0 ? taker : 255));
-    if (!b.err)
-        net_send_msg(1, m, b.len);
+    return b.err ? -1 : b.len;
+}
+static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker)
+{
+    if (net_role() != NET_HOST || !net_live())
+        return;
+    uint8_t m[32];
+    int n = ng_rpu_msg(m, (int)sizeof m, op, id, kind, pos, taker);
+    if (n > 0)
+        net_send_msg(1, m, n);
+}
+
+/* the host, with a block's state to the guests that asked (ng_state_send: one joining again, a resync): Boss
+ * Rumble's power-ups out in the city now, which are in no window (the edibles' state has the windows' alone), so it
+ * sees them too and its own map knows them when they are taken or go */
+static void ng_rpu_state(Viewer *v)
+{
+    if (v->play_type != GP_BOSS_RUMBLE || !v->edibles)
+        return;
+    for (int j = 0; j < v->rumble.npu; j++) {
+        int id = v->rumble.pu[j].id, kind = -1;
+        const Edible *d = edible_get(v->edibles, id);
+        if (!d || d->phase == EP_GONE)
+            continue;
+        for (int k = 0; k < edible_kinds(v->edibles) && kind < 0; k++)
+            if (edible_kind(v->edibles, k)->name == d->name)
+                kind = k;
+        uint8_t m[32];
+        int n = kind < 0 ? -1 : ng_rpu_msg(m, (int)sizeof m, 0, id, kind, d->pos, -1);
+        if (n > 0)
+            ng_state_out(m, n);
+    }
 }
 
 /* the guest: the host's power-ups, its ids against this copy's edibles (cleared with a new block or world:
@@ -2430,6 +2459,9 @@ static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
     if (b->err || !v->edibles || v->play_type != GP_BOSS_RUMBLE)
         return;
     if (op == 0) {
+        for (int i = 0; i < 16; i++)                     /* (one we have already: a resync's state again) */
+            if (map[i].here && map[i].host == id)
+                return;
         int here = edible_outdoor_add(v->edibles, kind, pos);
         for (int i = 0; here >= 0 && i < 16; i++)
             if (!map[i].here || map[i].host == id) {     /* (here 0 never an outdoor one: the windows' come first) */
