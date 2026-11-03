@@ -43,7 +43,9 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
   launcher opens your router for them), and a **Players** list with Mute, Kick and Ban.
 - **JOIN A ROOM**: click the link your host sent, or **Connect** to their server and **Join** with the room code.
 - **HOST ON STEAM**: **Host on Steam** (then Shift+Tab in the game to invite friends), or **Join on Steam** (then
-  right-click your friend in Steam's friends list and pick **Join Game**). Steam play borrows Valve's free test app
+  right-click your friend in Steam's friends list and pick **Join Game**). RampageRE must already be open when you click
+  Join Game: **if the real Spacewar game starts instead, RampageRE wasn't running** (a step was missed): close Spacewar,
+  click **Join on Steam** again, wait for RampageRE to open, then Join Game. Steam play borrows Valve's free test app
   **Spacewar** (the launcher explains it): add it to your Steam library once.
 - The first time, click **REGISTER RAMPAGE:// LINKS** so a link from a friend opens the game straight away.
 - **Settings**: join links, servers, banned players, and the **Game** options below.

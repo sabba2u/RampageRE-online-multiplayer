@@ -20,6 +20,9 @@ need to download or play it: it only has to be in your Steam library.",
 ];
 pub const SHIFT_TAB_TEXT: &str = "Press Shift+Tab in the game to open Steam, then click Invite to choose your friends.";
 pub const JOIN_GAME_TEXT: &str = "Open your Steam friends list, right-click your friend, then click Join Game.";
+/// Before Join Game: RampageRE has to be open already (Join on Steam started it). With it closed, Steam starts the real
+/// Spacewar instead.
+pub const SPACEWAR_WARNING: &str = "Keep RampageRE open while you do this. If the real Spacewar game starts instead, RampageRE wasn't running: close Spacewar, click Join on Steam again, and wait for RampageRE to open before you click Join Game.";
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum SteamAction {
@@ -143,6 +146,8 @@ impl App {
                         close = ui.vertical_centered(|ui| ui.button(RichText::new("OK").size(16.0).strong()).clicked()).inner;
                     }
                     Card::JoinGame => {
+                        ui.label(RichText::new(SPACEWAR_WARNING).size(15.0).color(YELLOW));
+                        ui.add_space(4.0);
                         ui.label(RichText::new(JOIN_GAME_TEXT).size(17.0).strong());
                         ui.label(RichText::new("Or accept their invite in Steam chat.").color(DIM_TEXT));
                         friends_picture(ui);
