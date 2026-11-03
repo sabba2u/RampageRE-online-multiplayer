@@ -1769,7 +1769,8 @@ typedef struct {
 static NgPuppet ng_pup[NGP_N];
 static NetSnapBuf ng_pup_snaps[NGP_N];
 static double ng_pup_at[NGP_N];
-static struct NgRpu { int host, here; } ng_rpu_map[16];   /* the guest: Boss Rumble's power-ups (ng_on_rumble_pickup) */
+static struct NgRpu { int host, here; } ng_rpu_map[16];   /* the guest: Boss Rumble's power-ups (ng_on_rumble_pickup);
+                                                      * here: this copy's edible id + 1, 0 an empty entry */
 static double ng_pup_bytes[NGP_N];                  /* the host: each channel's bytes out since its last report */
 /* the puppets' delta (NET_PROTO 6, netwire.h net_delta_*): the host keeps each channel's last NGD_SENT snapshots by
  * seq and sends each guest its snapshot against the newest that guest says it has (NM_PACK), else against nothing;
@@ -2513,7 +2514,7 @@ static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
                 keep = map[i].host == ids[j];
             if (!keep) {
                 printf("rumble: a power-up the host has no more, gone here too\n");
-                edible_outdoor_remove(v->edibles, map[i].here);
+                edible_outdoor_remove(v->edibles, map[i].here - 1);
                 map[i].here = 0;
             }
         }
@@ -2525,9 +2526,10 @@ static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
                 return;
         int here = edible_outdoor_add(v->edibles, kind, pos);
         for (int i = 0; here >= 0 && i < 16; i++)
-            if (!map[i].here || map[i].host == id) {     /* (here 0 never an outdoor one: the windows' come first) */
+            if (!map[i].here || map[i].host == id) {     /* (id + 1: a block's first edible is 0, the one that was
+                                                      * forgotten here and made twice, one left after it was taken) */
                 map[i].host = id;
-                map[i].here = here;
+                map[i].here = here + 1;
                 break;
             }
         printf("rumble: pickup %s (the host's)\n", here >= 0 ? edible_get(v->edibles, here)->name : "?");
@@ -2536,9 +2538,9 @@ static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
     for (int i = 0; i < 16; i++)
         if (map[i].here && map[i].host == id) {
             if (op == 1)                                 /* (its stats are the host's: the look and sound here) */
-                edible_outdoor_take(v->edibles, map[i].here, taker == 255 ? -1 : taker);
+                edible_outdoor_take(v->edibles, map[i].here - 1, taker == 255 ? -1 : taker);
             else
-                edible_outdoor_remove(v->edibles, map[i].here);
+                edible_outdoor_remove(v->edibles, map[i].here - 1);
             map[i].here = 0;
         }
 }
