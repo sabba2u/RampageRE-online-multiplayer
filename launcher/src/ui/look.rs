@@ -82,6 +82,30 @@ pub fn half(ui: &mut egui::Ui, text: &str, enabled: bool) -> egui::Response {
     ui.add_enabled(enabled, primary(text, 16.0, Vec2::new(w, 42.0)))
 }
 
+/// shadcn's tabs: a grey rounded strip, the chosen tab a darker raised segment with white text, the others grey
+/// text. True when the choice changed.
+pub fn tabs(ui: &mut egui::Ui, labels: &[&str], current: &mut usize) -> bool {
+    let mut changed = false;
+    egui::Frame::none().fill(SECONDARY).rounding(RADIUS + 2.0).inner_margin(4.0).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let w = (ui.available_width() - 4.0 * (labels.len() as f32 - 1.0)) / labels.len() as f32;
+        ui.horizontal(|ui| {
+            for (i, l) in labels.iter().enumerate() {
+                let on = i == *current;
+                let text = RichText::new(*l).size(15.0).family(semibold()).color(if on { TEXT } else { DIM_TEXT });
+                let b = egui::Button::new(text).min_size(Vec2::new(w, 32.0)).rounding(RADIUS)
+                    .fill(if on { BG } else { Color32::TRANSPARENT })
+                    .stroke(if on { egui::Stroke::new(1.0_f32, BORDER) } else { egui::Stroke::NONE });
+                if ui.add(b).clicked() && !on {
+                    *current = i;
+                    changed = true;
+                }
+            }
+        });
+    });
+    changed
+}
+
 /// The card the buttons sit on (the dimmed title screen showing a little through).
 pub fn panel() -> egui::Frame {
     egui::Frame::none()

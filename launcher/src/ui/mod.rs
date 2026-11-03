@@ -351,6 +351,75 @@ impl App {
         }
     }
 
+    /// The LAN tab: play or host on this network, or join a game on it.
+    fn lan_tab(&mut self, ui: &mut egui::Ui, ready: bool) {
+        let play = match self.settings.local_players() {
+            1 => "Play Alone Locally",
+            2 | 5..=8 => "Host Local (LAN)",
+            _ => "Play Local",
+        };
+        if look::big(ui, play, ready).clicked() {
+            self.play();
+        }
+        self.players_choice(ui);
+        ui.separator();
+        let searching = self.lan_rx.is_some();
+        let label = if searching { "Looking for games..." } else { "Join Local (LAN)" };
+        if look::big(ui, label, ready && !searching)
+            .on_hover_text("Joins a game hosted on your network: the address typed below, or (left empty) the game it finds")
+            .clicked()
+        {
+            self.join_lan();
+        }
+        ui.horizontal(|ui| {
+            ui.label("Host's address:");
+            let edit = ui.add(egui::TextEdit::singleline(&mut self.lan_addr)
+                .hint_text("empty: find it, or like 192.168.7.105").desired_width(240.0));
+            if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && ready && !searching {
+                self.join_lan();
+            }
+        });
+        self.note_line(ui);
+    }
+
+    /// The Internet tab: host with the launcher's own server, or join a room on someone's.
+    fn internet_tab(&mut self, ui: &mut egui::Ui, ready: bool) {
+        look::section(ui, "Host an internet game");
+        if look::big(ui, "Run an Internet Multiplayer Server", ready).clicked() {
+            self.host_own();
+        }
+        ui.separator();
+        self.join_room_box(ui);
+    }
+
+    /// The Steam tab: host, or wait for a friend's Join Game, through Steam (Spacewar).
+    fn steam_tab(&mut self, ui: &mut egui::Ui, ready: bool) {
+        ui.horizontal(|ui| {
+            // the heading centered over the row, the "?" at its end
+            ui.add_space((ui.available_width() - 170.0).max(0.0) / 2.0);
+            ui.label(RichText::new("Play through Steam").size(16.0).family(look::semibold()));
+            if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
+                self.card = Some(Card::Spacewar(None));
+            }
+        });
+        if look::big(ui, "Host on Steam", ready).clicked() {
+            self.steam_host();
+        }
+        if look::big(ui, "Join on Steam", ready).clicked() {
+            self.steam_join();
+        }
+        self.steam_problem_line(ui);
+        self.note_line(ui);
+    }
+
+    /// What the last action said (an error red), under the tab that did it (the Internet tab shows it under its
+    /// room code box).
+    fn note_line(&self, ui: &mut egui::Ui) {
+        if let Some((t, problem)) = &self.note {
+            ui.label(RichText::new(t).size(15.0).color(if *problem { look::RED } else { look::GREEN }));
+        }
+    }
+
     fn main_screen(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.add_space(12.0);
@@ -368,55 +437,16 @@ impl App {
                     }
                     // (without the game every button still answers: with why it can't start)
                     let ready = self.steam_check.is_none();
-                    look::section(ui, "Host a game (LAN)");
-                    let play = match self.settings.local_players() {
-                        1 => "Play Alone Locally",
-                        2 | 5..=8 => "Host Local (LAN)",
-                        _ => "Play Local",
-                    };
-                    if look::big(ui, play, ready).clicked() {
-                        self.play();
+                    let mut tab = self.settings.tab.min(2) as usize;
+                    if look::tabs(ui, &["LAN", "Internet", "Steam"], &mut tab) {
+                        self.settings = Settings::update(|s| s.tab = tab as u8);
                     }
-                    self.players_choice(ui);
-                    let searching = self.lan_rx.is_some();
-                    let label = if searching { "Looking for games..." } else { "Join Local (LAN)" };
-                    if look::big(ui, label, ready && !searching)
-                        .on_hover_text("Joins a game hosted on your network: the address typed below, or (left empty) the game it finds")
-                        .clicked()
-                    {
-                        self.join_lan();
+                    ui.add_space(4.0);
+                    match tab {
+                        0 => self.lan_tab(ui, ready),
+                        1 => self.internet_tab(ui, ready),
+                        _ => self.steam_tab(ui, ready),
                     }
-                    ui.horizontal(|ui| {
-                        ui.label("Host's address:");
-                        let edit = ui.add(egui::TextEdit::singleline(&mut self.lan_addr)
-                            .hint_text("empty: find it, or like 192.168.7.105").desired_width(240.0));
-                        if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && ready && !searching {
-                            self.join_lan();
-                        }
-                    });
-                    ui.separator();
-                    look::section(ui, "Host an internet game");
-                    if look::big(ui, "Run an Internet Multiplayer Server", ready).clicked() {
-                        self.host_own();
-                    }
-                    ui.separator();
-                    self.join_room_box(ui);
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        // the heading centered over the row, the "?" at its end
-                        ui.add_space((ui.available_width() - 170.0).max(0.0) / 2.0);
-                        ui.label(RichText::new("Host on Steam").size(16.0).family(look::semibold()));
-                        if ui.small_button("?").on_hover_text("What's Spacewar?").clicked() {
-                            self.card = Some(Card::Spacewar(None));
-                        }
-                    });
-                    if look::big(ui, "Host on Steam", ready).clicked() {
-                        self.steam_host();
-                    }
-                    if look::big(ui, "Join on Steam", ready).clicked() {
-                        self.steam_join();
-                    }
-                    self.steam_problem_line(ui);
                     ui.separator();
                     self.settings_button(ui);
                 });
@@ -502,7 +532,7 @@ pub fn run() -> eframe::Result<()> {
 
 fn run_with(renderer: eframe::Renderer) -> eframe::Result<()> {
     look::using_wgpu(renderer == eframe::Renderer::Wgpu);
-    let mut viewport = egui::ViewportBuilder::default().with_inner_size([900.0, 900.0]).with_resizable(false)
+    let mut viewport = egui::ViewportBuilder::default().with_inner_size([900.0, 760.0]).with_resizable(false)
         .with_maximize_button(false).with_title("RampageRE Launcher");
     if let Some(icon) = look::icon() {
         viewport = viewport.with_icon(icon);
