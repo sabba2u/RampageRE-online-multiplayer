@@ -2449,6 +2449,46 @@ static void ng_rpu_state(Viewer *v)
     }
 }
 
+/* the host, every 2 s of a Boss Rumble run: each power-up out now again (op 0: a guest that has it already lets it
+ * be) and then the list of them (op 3), so a guest's power-ups mend themselves when one went missing or stayed after
+ * it was taken (asked: "a desync in power ups") */
+static void netgame_rumble_sync(Viewer *v, float dt)
+{
+    static float t;
+    if (net_role() != NET_HOST || !net_live() || v->play_type != GP_BOSS_RUMBLE || !v->edibles)
+        return;
+    if ((t += dt) < 2.0f)
+        return;
+    t = 0;
+    int ids[4], n = 0;
+    for (int j = 0; j < v->rumble.npu && n < 4; j++) {
+        int id = v->rumble.pu[j].id, kind = -1;
+        const Edible *d = edible_get(v->edibles, id);
+        if (!d || d->phase == EP_GONE)
+            continue;
+        for (int k = 0; k < edible_kinds(v->edibles) && kind < 0; k++)
+            if (edible_kind(v->edibles, k)->name == d->name)
+                kind = k;
+        uint8_t m[32];
+        int len = kind < 0 ? -1 : ng_rpu_msg(m, (int)sizeof m, 0, id, kind, d->pos, -1);
+        if (len > 0) {
+            net_send_msg(1, m, len);
+            ids[n++] = id;
+        }
+    }
+    uint8_t m[48];
+    NetBuf b = netbuf(m, sizeof m);
+    int len = ng_rpu_msg(m, (int)sizeof m, 3, 0, 0, NULL, -1);
+    if (len < 0)
+        return;
+    b.len = len;
+    net_w_u8(&b, (uint32_t)n);
+    for (int i = 0; i < n; i++)
+        net_w_u16(&b, (uint32_t)ids[i]);
+    if (!b.err)
+        net_send_msg(1, m, b.len);
+}
+
 /* the guest: the host's power-ups, its ids against this copy's edibles (cleared with a new block or world:
  * ng_puppets_reset, so a run's leftovers never fill it and a new one's are always matched) */
 static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
@@ -2461,6 +2501,24 @@ static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
     taker = (int)net_r_u8(b);
     if (b->err || !v->edibles || v->play_type != GP_BOSS_RUMBLE)
         return;
+    if (op == 3) {                                       /* the host's list: any not on it, gone here too */
+        int n = (int)net_r_u8(b), ids[4];
+        for (int i = 0; i < n && i < 4; i++)
+            ids[i] = (int)net_r_u16(b);
+        if (b->err || n > 4)
+            return;
+        for (int i = 0; i < 16; i++) {
+            int keep = !map[i].here;
+            for (int j = 0; j < n && !keep; j++)
+                keep = map[i].host == ids[j];
+            if (!keep) {
+                printf("rumble: a power-up the host has no more, gone here too\n");
+                edible_outdoor_remove(v->edibles, map[i].here);
+                map[i].here = 0;
+            }
+        }
+        return;
+    }
     if (op == 0) {
         for (int i = 0; i < 16; i++)                     /* (one we have already: a resync's state again) */
             if (map[i].here && map[i].host == id)

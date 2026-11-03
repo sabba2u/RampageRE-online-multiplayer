@@ -4496,8 +4496,10 @@ static void edible_step(Viewer *v, float dt)
             case EE_REACTION:                        /* playReaction: the state of that name, only while alive; at
                                                       * the next step, its clip with it (forced here, the runner went
                                                       * on in the old clip from 0: Face_Eat_Item twice, no Yum) */
-                if (mo->hp > 0)
-                    force_state(mo, e->name);
+                if (mo->hp > 0 && (mo->mode == MODE_BUILDING || (strncmp(e->name, "React_Front_", 12) &&
+                                                                  strncmp(e->name, "React_Side_", 11))))
+                    force_state(mo, e->name);    /* (a wall's reaction, React_Front_Yum, only on a wall: Boss
+                                                  * Rumble's power-up eaten on the street held on to air, Front_Idle) */
                 break;
             case EE_SPEED: edible_power_speed(&mo->power, e->amount, e->v[0]); break;
             case EE_STATS:                           /* gCommon.addStats once (0x2C51A0): through the army (its
@@ -5297,6 +5299,7 @@ static void street_step(Viewer *v, float dt)
 static int netgame_idle(const Mon *mo);              /* NET: netgame.c */
 static int netgame_mine(const Viewer *v, int k);     /* NET: netgame.c (this PC's player) */
 static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], int taker);   /* NET: netgame.c */
+static void netgame_rumble_sync(Viewer *v, float dt);   /* NET: netgame.c, the host's power-ups again every 2 s */
 static int army_monsters(Viewer *v, ArmyMonster *m)
 {
     static float spheres[MONSTERS][64][4];
@@ -9240,6 +9243,7 @@ static void rumble_pu_step(Viewer *v, float dt)
         if (gone)
             v->rumble.pu[i--] = v->rumble.pu[--v->rumble.npu];
     }
+    netgame_rumble_sync(v, dt);
 }
 
 /* the run's end, once: the time, the wave reached and the best time (rumble_best.txt beside the profile, by its name;
