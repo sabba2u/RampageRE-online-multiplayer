@@ -274,6 +274,20 @@ static void test_slot_messages(void)
     rb = netbuf(m, b.len);
     net_r_hello(&rb, &r);
     CHECK(r.monster == -1);
+    {   /* its version (NET_PROTO 7: after the rest, so an older copy reads its proto first and says no) */
+        uint8_t m2[96];
+        NetHello hv = h;
+        snprintf(hv.version, sizeof hv.version, "1.3.0");
+        NetBuf b2 = netbuf(m2, sizeof m2);
+        net_w_hello(&b2, &hv);
+        NetBuf r2 = netbuf(m2, b2.len);
+        NetHello rv;
+        net_r_hello(&r2, &rv);
+        CHECK(!r2.err && !strcmp(rv.version, "1.3.0"));
+        r2 = netbuf(m2, b2.len - 6);                             /* an older hello: no version */
+        net_r_hello(&r2, &rv);
+        CHECK(!r2.err && rv.version[0] == 0 && rv.proto == 2);
+    }
     rb = netbuf(m, 12);                                          /* a proto 1 hello: shorter, read as broken */
     net_r_hello(&rb, &r);
     CHECK(rb.err);

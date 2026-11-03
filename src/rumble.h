@@ -16,6 +16,8 @@
                                                       * this long: their blows pass, they go for another or wait */
 #define RUMBLE_SPARE_HITS 3
 #define RUMBLE_SPARE_RUN 2.5f
+#define RUMBLE_REACH 25.0f                           /* a boss this near a living player is in reach */
+#define RUMBLE_STUCK 30.0f                           /* out of every player's reach this long: back beside them */
 
 int rumble_wave_size(int wave);                      /* wave 1 .. 12: the bosses at once; else 0 */
 float rumble_factor(int wave);                       /* their health and hits: 1, 1.25, 1.5, 1.75 by group of three */

@@ -705,7 +705,9 @@ static const char *ng_player_name(const Viewer *v, int who)
 const char *netgame_slot_name(int k)
 {
     const Viewer *v = g_ngv;
-    return v && k >= 0 && k < v->nmon && v->mon[k].monster >= 0 && v->play ? v->monsters[v->mon[k].monster] : "";
+    return v && k >= 0 && k < v->nmon && v->mon[k].monster >= 0 && v->play && !v->mon[k].boss ?   /* (a boss's
+                                                      * slot: no player's) */
+           v->monsters[v->mon[k].monster] : "";
 }
 
 /* a line: who is the speaker's slot. The host checks it is the sender's and passes it on to the other guests */
@@ -826,7 +828,11 @@ static void ng_chat_frame(Viewer *v)
         int d = v->play && v->mon[k].defeated;
         if (d && !was_defeated[k]) {
             char t[64];
-            snprintf(t, sizeof t, "%s was defeated", ng_player_name(v, k));
+            const Mon *mo = &v->mon[k];
+            if (mo->boss)                            /* (Boss Rumble's: not a player) */
+                snprintf(t, sizeof t, "%s (boss) beaten", mo->monster >= 0 ? v->monsters[mo->monster] : "A boss");
+            else
+                snprintf(t, sizeof t, "%s was defeated", ng_player_name(v, k));
             netui_chat_add(-2, NULL, t);
         }
         was_defeated[k] = d;
@@ -1136,6 +1142,12 @@ static void ng_send_snap(Viewer *v)
     for (int k = 0; k < v->nmon; k++) {
         NetPad p;
         ng_pad_out(&v->mon[k].pad, &p);
+        if (v->mon[k].is_ai) {                       /* the computer's (a bot, a boss): its AI's stick, which it walks by
+                                                      * here; else every guest stepped it with none, its walk held still
+                                                      * while it moved (floating) */
+            p.lx = v->mon[k].ai.stick[0];
+            p.ly = v->mon[k].ai.stick[1];
+        }
         net_w_f32(&b, p.lx); net_w_f32(&b, p.ly); net_w_f32(&b, p.rx); net_w_f32(&b, p.ry);
         net_w_u32(&b, p.held);
     }
@@ -1738,6 +1750,7 @@ typedef struct {
 static NgPuppet ng_pup[NGP_N];
 static NetSnapBuf ng_pup_snaps[NGP_N];
 static double ng_pup_at[NGP_N];
+static struct NgRpu { int host, here; } ng_rpu_map[16];   /* the guest: Boss Rumble's power-ups (ng_on_rumble_pickup) */
 static double ng_pup_bytes[NGP_N];                  /* the host: each channel's bytes out since its last report */
 /* the puppets' delta (NET_PROTO 6, netwire.h net_delta_*): the host keeps each channel's last NGD_SENT snapshots by
  * seq and sends each guest its snapshot against the newest that guest says it has (NM_PACK), else against nothing;
@@ -1859,6 +1872,7 @@ static void ng_queue_run(Viewer *v)
 /* a new world (all the events go) or block (the events of that block, sent before it began here, are kept) */
 static void ng_puppets_reset(Viewer *v, int new_world)
 {
+    memset(ng_rpu_map, 0, sizeof ng_rpu_map);        /* (Boss Rumble's power-ups: the block's edibles are new) */
     if (new_world)
         ng_queue_clear();
     else {
@@ -2387,10 +2401,11 @@ static void netgame_rumble_pickup(int op, int id, int kind, const float pos[3], 
         net_send_msg(1, m, b.len);
 }
 
-/* the guest: the host's power-ups, its ids against this copy's edibles */
+/* the guest: the host's power-ups, its ids against this copy's edibles (cleared with a new block or world:
+ * ng_puppets_reset, so a run's leftovers never fill it and a new one's are always matched) */
 static void ng_on_rumble_pickup(Viewer *v, NetBuf *b)
 {
-    static struct { int host, here; } map[16];
+    struct NgRpu *map = ng_rpu_map;
     int op = (int)net_r_u8(b), id = (int)net_r_u16(b), kind = (int)net_r_u8(b), taker;
     float pos[3];
     for (int i = 0; i < 3; i++)
@@ -2525,6 +2540,10 @@ static void ng_pad_send(Viewer *v, Pad *mine_in)
                 ng_pad_in(&ng_last.pad[k], &v->mon[k].pad, 0);
             else
                 memset(&v->mon[k].pad, 0, sizeof v->mon[k].pad);
+            if (v->mon[k].is_ai) {                   /* (the computer's: the host's AI's stick, its step's here) */
+                v->mon[k].ai.stick[0] = v->mon[k].pad.lx;
+                v->mon[k].ai.stick[1] = v->mon[k].pad.ly;
+            }
         }
 }
 

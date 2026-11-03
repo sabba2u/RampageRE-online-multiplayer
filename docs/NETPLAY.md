@@ -168,6 +168,15 @@ own wish (`Mon.ai_set`) when a guest takes such a seat. `RAMPAGE_NET_FLOAT_LOG=1
 monster moved with its clip still (each 5 s); `tools
 et4_test.ps1` checks it ("floating": at most 2 in 100): 18-27 in
 100 before, 0-2 in 1000s after. `RAMPAGE_NET_PRED_LOG=1` prints the guest's prediction error of its own monster.
+The computer's monsters (bots, Boss Rumble's bosses) had it too: the snapshot's pad of a monster the host's AI drives is
+now its AI's stick (`ai.stick`), which the guest steps it by, so it walks there as it does on the host.
+
+### Versions
+
+`src/version.h` `RAMPAGE_VERSION` (1.3.0, the same as res/rampagere.rc's ProductVersion and the launcher's) goes in
+NM_HELLO after the rest. The host refuses another protocol, or another build of another version, with "Different
+versions: the host has RampageRE 1.3.0, you have 1.2.9. Both need the same release" (an older copy: "you have an older
+one"), which the guest's panel shows. ENet's compression is off for it (an older copy could not read the first packet).
 
 ## Re-synchronizing
 

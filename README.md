@@ -153,12 +153,14 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 - **The run:** 12 waves of bosses, 1, 1, 1, then 2, 2, 2, then 3, 3, 3, then 4, 4, 4 at once. Any monster can be a
   boss; bosses have a **red glowing outline** and a health bar with their head and name under the clock. Every three
   waves they get 25 % more health and hit 25 % harder. A "WAVE N" banner comes between waves.
-- **The clock counts up:** how long you last is your score. The team shares 3 lives, as in the campaign.
+- **The clock counts up:** how long you last is your score. Each player has 3 lives of their own.
 - **Power-ups:** the game's own food and items appear on the street and on rooftops (up to 4 at a time, each gone after
   20 s); walk into one to take it.
 - **The bosses' manners:** a boss catches its breath for a second or so after each attack, and a player knocked down
   or hit three times in a row is left alone for 2 seconds, so nobody gets juggled against a wall.
-- **The end:** clear wave 12 and it's a **VICTORY**; lose every life and it's Game Over. Both screens show the time,
+- **Lives:** each player has three of their own; a player who loses all three is out (nobody takes another's), and
+  the run goes on while anyone is still in. A boss stuck out of everyone's reach for 30 seconds comes back to the street.
+- **The end:** clear wave 12 and it's a **VICTORY**; every player out and it's Game Over. Both screens show the time,
   the wave and your **best time** (kept in `rumble_best.txt` beside your profile; online, each PC keeps its own).
 - **Online:** the host runs the bosses; guests see the same waves, bars and power-ups. Everyone must be in before the
   run starts: once the waves have begun, new players are told the game is full (a player who drops can rejoin).

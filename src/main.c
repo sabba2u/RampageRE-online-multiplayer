@@ -126,6 +126,7 @@ typedef struct Mon {
                                                       * a game player (no lives, no points), a hunter of the players */
     float boss_factor;                               /* its health and hits x this (rumble_factor) */
     float boss_down;                                 /* seconds since its health ran out (beaten at RUMBLE_DOWN) */
+    float boss_far;                                  /* seconds with no living player within RUMBLE_REACH (RUMBLE_STUCK) */
     int boss_beaten;                                 /* out for good: hidden till its slot's next boss */
     float spared;                                    /* (Boss Rumble) a player's seconds left untouchable by the bosses
                                                       * after a knock down or a run of their hits (RUMBLE_SPARE*) */
@@ -2605,6 +2606,8 @@ static void clip_event(Mon *mo, const MoveEvent *e)
             if (getenv("RAMPAGE_TRACE"))
                 printf("  respawn at %.1f %.1f %.1f%s, %d lives\n", out.pos[0], out.pos[1], out.pos[2],
                        out.fall ? ", falling" : "", game_lives(v->game, mo->slot));
+            if (play_type(v) == GP_BOSS_RUMBLE)
+                printf("rumble: P%d back, %d lives left\n", mo->slot + 1, game_lives(v->game, mo->slot));
         }
         mo->streaker = -1;
         return;
@@ -8851,6 +8854,7 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
     mo->boss = 1;
     mo->boss_factor = f;
     mo->boss_down = 0;
+    mo->boss_far = 0;
     mo->boss_beaten = 0;
     if (city_monster_slot(v->city, &v->scene, k, v->monsters[monster], -1, x, y, deg) != k) {
         printf("rumble: %s not loaded in slot %d\n", v->monsters[monster], k);
@@ -8874,6 +8878,49 @@ static int mon_set_boss(Viewer *v, int k, int monster, float f, float x, float y
         mo->ai.bot.rest_len = RUMBLE_REST;           /* (a breath after each attack) */
     }
     return k;
+}
+
+/* a boss out of every living player's reach RUMBLE_STUCK seconds (on a roof it cannot leave, in a corner of the
+ * block): back on the street beside the players, where a wave's come in, its health as it was; else the run could
+ * never end */
+static void rumble_unstick(Viewer *v, Mon *mo, int k, float dt)
+{
+    float best = 1e30f;
+    for (int p = 0; p < v->rumble.players && p < v->nmon; p++) {
+        const Mon *pl = &v->mon[p];
+        if (pl->hp <= 0 || pl->defeated || !mon_in(pl) || mon_in(pl)->hidden || netgame_idle(pl))
+            continue;
+        float dx = pl->mx - mo->mx, dy = pl->my - mo->my, d = dx * dx + dy * dy;
+        if (d < best)
+            best = d;
+    }
+    float reach = rumble_env("RAMPAGE_RUMBLE_REACH", RUMBLE_REACH);   /* (tests: nearer) */
+    if (best > 1e29f || best < reach * reach) {      /* (nobody to reach: no clock) */
+        mo->boss_far = 0;
+        return;
+    }
+    mo->boss_far += dt;
+    float stuck = rumble_env("RAMPAGE_RUMBLE_STUCK", RUMBLE_STUCK);   /* (tests: sooner) */
+    if (mo->boss_far < stuck)
+        return;
+    float mid = players_mid_x(v), x = mid + (k % 2 ? 34.0f : -34.0f);
+    if (mo->have_graph)
+        let_go(mo, 0);
+    memset(&mo->mount, 0, sizeof mo->mount);
+    mo->mode = MODE_GROUND;
+    mo->mx = x; mo->my = -18; mo->mz = 0;
+    mo->heading = k % 2 ? 90.0f : 270.0f;
+    memset(mo->vel, 0, sizeof mo->vel);
+    start_moves(mo);
+    scene_monster_place(&v->scene, k, mo->mx, mo->my, mo->mz, mo->heading);
+    if (mo->have_graph) {
+        dir_ai_clear(&mo->ai);
+        dir_ai_destroy(&mo->ai, &mo->graph, v->bot_seed = v->bot_seed * 69069u + 1u + (uint32_t)k);
+        mo->ai.bot.hunter = 1;
+        mo->ai.bot.rest_len = RUMBLE_REST;
+    }
+    mo->boss_far = 0;
+    printf("rumble: %s out of reach %.0f s: back beside the players\n", v->monsters[mo->monster], (double)stuck);
 }
 
 /* the run again (Game Over's Continue): the bosses' slots let go (the block is built anew with the players' alone) */
@@ -8933,6 +8980,11 @@ static void rumble_driver_step(Viewer *v, float dt)
     }
     for (int k = 0; k < v->rumble.players && k < v->nmon; k++) {   /* the players' breath (RUMBLE_SPARE*) */
         Mon *mo = &v->mon[k];
+        static int was_out[MONSTERS];               /* (each player out on its own: its three lives gone) */
+        int is_out = mo->hp <= 0 && game_lives(v->game, k) <= 0;
+        if (is_out && !was_out[k])
+            printf("rumble: P%d is out\n", k + 1);
+        was_out[k] = is_out;
         mo->spared = mo->spared > dt ? mo->spared - dt : 0;
         mo->boss_hits_t += dt;
     }
@@ -8943,6 +8995,7 @@ static void rumble_driver_step(Viewer *v, float dt)
             continue;
         if (mo->hp > 0) {
             alive++;
+            rumble_unstick(v, mo, k, dt);
             continue;
         }
         mo->boss_down += dt;

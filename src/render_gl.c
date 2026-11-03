@@ -1160,6 +1160,12 @@ static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32
     }
     if (material_flags(sm->b, p->material) & MAT_TWO_SIDED) glDisable(GL_CULL_FACE);
     else glEnable(GL_CULL_FACE);
+    /* (port extra, 2026-11-02) a Wii monster's two-sided cloth (Plucky's tail feathers: a sheet seen from both sides)
+     * lit on its back by its back's normal: lit by its front's ("no flip", the PS2's way) a feather turned from the
+     * light was ambient only, its dark texture black, every frame he walked the other way. The PS2's monsters (George's
+     * hair) and the city's flags (their wind or their wall) are left as they were */
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, skin && skin->cloth && skin->particle && !skin->has_wind && !skin->has_plane &&
+                  sm->b && sm->b->wii && (material_flags(sm->b, p->material) & MAT_TWO_SIDED) ? GL_TRUE : GL_FALSE);
     if (id) {
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, id);

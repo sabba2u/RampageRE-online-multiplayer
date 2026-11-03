@@ -206,6 +206,11 @@ void net_w_hello(NetBuf *b, const NetHello *h)
     net_w_u32(b, h->world);
     net_w_u64(b, h->token);
     net_w_u16(b, (uint32_t)(uint16_t)(int16_t)h->monster);
+    int n = 0;                                       /* (last: an older copy reads the rest and stops) */
+    while (n < (int)sizeof h->version - 1 && h->version[n])
+        n++;
+    net_w_u8(b, (uint32_t)n);
+    net_w_bytes(b, h->version, n);
 }
 
 void net_r_hello(NetBuf *b, NetHello *h)
@@ -215,6 +220,14 @@ void net_r_hello(NetBuf *b, NetHello *h)
     h->world = net_r_u32(b);
     h->token = net_r_u64(b);
     h->monster = (int16_t)net_r_u16(b);
+    h->version[0] = 0;
+    if (!b->err && b->len < b->cap) {                /* (an older copy's hello stops here) */
+        int n = (int)net_r_u8(b);
+        if (n >= (int)sizeof h->version)
+            n = (int)sizeof h->version - 1;
+        net_r_bytes(b, h->version, n);
+        h->version[b->err ? 0 : n] = 0;
+    }
 }
 
 void net_w_slots(NetBuf *b, const NetSlots *s)

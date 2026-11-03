@@ -11,6 +11,7 @@
  * Every guest is told every slot's state (NM_SLOTS) for the labels over the monsters (netgame.c). */
 #include "net.h"
 #include "netwire.h"
+#include "version.h"
 #include "nettransport.h"
 #include "netupnp.h"
 #include "netstun.h"
@@ -72,7 +73,7 @@ static const SnapCopy *snap_find(const SnapCopy *ring, int n, int seq)
 static struct {
     int role, state, port;
     double now;
-    char peer[64], reject[128];
+    char peer[64], reject[200];
     uint32_t world, host_world;
     uint8_t info[NET_WORLD_INFO], host_info[NET_WORLD_INFO];
     int info_len, host_info_len;
@@ -657,13 +658,15 @@ static void on_hello(int peer, NetBuf *b)
     net_r_hello(b, &h);
     uint8_t m[160 + NET_WORLD_INFO];
     NetBuf o = netbuf(m, sizeof m);
-    char why[128] = "";
-    if (h.proto != NET_PROTO)
-        snprintf(why, sizeof why, "The other copy speaks another version");
+    char why[180] = "";
+    if (h.proto != NET_PROTO || (!b->err && h.build != build_id() && strcmp(h.version, RAMPAGE_VERSION)))
+        snprintf(why, sizeof why, "Different versions: the host has RampageRE %s, you have %s. Both need the same "
+                 "release", RAMPAGE_VERSION, h.version[0] ? h.version : "an older one");
     else if (b->err)
         snprintf(why, sizeof why, "Broken hello");
     else if (h.build != build_id())
-        snprintf(why, sizeof why, "The two copies are different builds of RampageRE");
+        snprintf(why, sizeof why, "The two copies are different builds of RampageRE %s: use RampageRE.exe from the "
+                 "same release on both", RAMPAGE_VERSION);
     char addr[64] = "";
     nt_peer_addr(peer, addr, sizeof addr);
     if (!why[0] && is_banned(addr))
@@ -903,7 +906,7 @@ static void on_data(int peer, const uint8_t *data, int len)
         break;
     }
     case NM_REJECT:
-        snprintf(g.reject, sizeof g.reject, "The host said no: %.100s", (const char *)data + 1);
+        snprintf(g.reject, sizeof g.reject, "The host said no: %.170s", (const char *)data + 1);
         net_log("%s", g.reject);
         g.state = NETS_FAILED;
         if (strstr(g.reject, "removed you")) {       /* (kicked: its token is no good now) */
@@ -992,7 +995,7 @@ void net_update(double now)
                 rejoin_load();
                 uint8_t m[32];
                 NetBuf b = netbuf(m, sizeof m);
-                NetHello h = { NET_PROTO, build_id(), g.world, g_token, g.wanted_monster };
+                NetHello h = { NET_PROTO, build_id(), g.world, g_token, g.wanted_monster, RAMPAGE_VERSION };
                 net_w_u8(&b, NM_HELLO);
                 net_w_hello(&b, &h);
                 nt_send(1, m, b.len);

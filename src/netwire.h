@@ -75,7 +75,10 @@ int net_slot_pick(const NetSlotPick *s, int n, uint64_t token, double now, doubl
 int net_game_slots(int steam);
 
 /* NM_HELLO after its type byte */
-typedef struct { uint32_t proto, build, world; uint64_t token; int monster; } NetHello;
+typedef struct {
+    uint32_t proto, build, world; uint64_t token; int monster;
+    char version[24];                                /* (NET_PROTO 7, last) the copy's RAMPAGE_VERSION; "": an older copy */
+} NetHello;
 void net_w_hello(NetBuf *b, const NetHello *h);
 void net_r_hello(NetBuf *b, NetHello *h);
 /* NM_SLOTS after its type byte: n, then each slot's state and seconds left */

@@ -339,10 +339,19 @@ static void checkpoint_restore(Game *g)              /* 0x33D820: back to the ch
         g->lives[i] = 3;
 }
 
+/* (port extra, the owner 2026-11-02) Boss Rumble's lives are each player's own: three, none taken from another; a
+ * player down with none left is out, and the run is over when every player is out */
+static int own_lives(const Game *g) { return g->cfg.play_type == GP_BOSS_RUMBLE; }
+
 static void take_life(Game *g, int slot)             /* 0x2D3950 / 0x2D37A4: a player out of lives takes the richest's */
 {
     if ((g->cfg.play_type != GP_CAMPAIGN && g->cfg.play_type != GP_BOSS_RUMBLE) || slot < 0 || slot >= GAME_PLAYERS)
-        return;                                      /* (Boss Rumble: the campaign's lives) */
+        return;
+    if (own_lives(g)) {                              /* (Boss Rumble: its own alone) */
+        if (g->lives[slot] > 0)
+            g->lives[slot]--;
+        return;
+    }
     int k = slot;
     if (g->lives[k] <= 0)
         for (int i = 0, most = 0; i < np(g); i++)
@@ -376,9 +385,9 @@ static void cancel_respawn(Game *g, int slot, int full)
 {
     if (!g->human[slot] && g->hp[slot] > 0)
         return;
-    int sum = total_lives(g);
+    int sum = own_lives(g) ? g->lives[slot] : total_lives(g);
     take_life(g, slot);
-    if (sum == 0 && g->cfg.play_type == GP_CAMPAIGN) {
+    if (sum == 0 && (g->cfg.play_type == GP_CAMPAIGN || own_lives(g))) {
         g->human[slot] = 1;                          /* +0xAB4 = 1, HP 0, object flag 0x20 off */
         g->hp[slot] = 0;
         return;
@@ -1094,10 +1103,12 @@ static void step(Game *g)
             adv = 1;                                 /* [R 0x324930] cheat 874098: the block is won at once */
         if (!g->game_over && (g->cfg.play_type == GP_CAMPAIGN || g->cfg.play_type == GP_BOSS_RUMBLE)) {   /* game
                                                       * over: fewer lives than monsters down */
-            int dead = 0;
-            for (int i = 0; i < np(g); i++)
+            int dead = 0, out = 0;
+            for (int i = 0; i < np(g); i++) {
                 dead += g->hp[i] <= 0;
-            if (total_lives(g) < dead) {
+                out += g->hp[i] <= 0 && g->lives[i] <= 0;
+            }
+            if (own_lives(g) ? out == np(g) : total_lives(g) < dead) {   /* (Boss Rumble: every player out) */
                 g->game_over = 1;
                 adv = 1;
             }
@@ -1282,8 +1293,8 @@ int game_can_respawn(const Game *g, int slot, int streaker_held)
 {
     if (!g || slot < 0 || slot >= np(g))
         return 0;
-    if (total_lives(g) == 0 && (g->cfg.play_type == GP_CAMPAIGN || g->cfg.play_type == GP_BOSS_RUMBLE))
-        return 0;
+    if (own_lives(g) ? g->lives[slot] == 0 : total_lives(g) == 0 && g->cfg.play_type == GP_CAMPAIGN)
+        return 0;                                    /* (Boss Rumble: its own lives) */
     return g->human[slot] && !streaker_held;
 }
 
