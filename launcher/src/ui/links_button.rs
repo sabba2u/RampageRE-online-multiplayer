@@ -248,11 +248,14 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label("Weather:");
                     egui::ComboBox::from_id_salt("weather").selected_text(match weather.as_str() {
-                        "rain" => "Rain", "storm" => "Storm (rain, lightning, thunder)", _ => "Clear" })
+                        "rain" => "Rain", "storm" => "Storm (rain, lightning, thunder)",
+                        "random" => "Random (each block)", _ => "As the game picks" })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut weather, "clear".to_string(), "Clear");
+                            ui.selectable_value(&mut weather, "clear".to_string(), "As the game picks");
                             ui.selectable_value(&mut weather, "rain".to_string(), "Rain");
                             ui.selectable_value(&mut weather, "storm".to_string(), "Storm (rain, lightning, thunder)");
+                            ui.selectable_value(&mut weather, "random".to_string(), "Random (each block)")
+                                .on_hover_text("Clear, rain or a storm, picked anew for every block. Online the host's pick is everyone's.");
                         });
                 });
                 ui.horizontal(|ui| {

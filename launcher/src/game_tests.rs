@@ -186,6 +186,8 @@ fn game_options_passed() {
     assert_eq!(game_options(&w), vec!["--weather", "storm"]);
     w.weather = "rain".into();
     assert_eq!(game_options(&w), vec!["--weather", "rain"]);
+    w.weather = "random".into();
+    assert_eq!(game_options(&w), vec!["--weather", "random"]);
     let mut f = Settings::default();
     assert_eq!(f.look, "normal");
     f.look = "film".into();

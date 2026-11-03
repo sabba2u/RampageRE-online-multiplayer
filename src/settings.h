@@ -31,7 +31,8 @@ typedef struct {
     /* time_of_day= (port extra): game (0, the default) as the game picks it (the campaign's cities' own, City Select's
      * toggle elsewhere), day (1) every city by day, night (2) every city by night; --time-of-day game|day|night */
     int time_of_day;
-    /* weather= (port extra, weather.h): clear (the default), rain, storm (rain, lightning and thunder); --weather */
+    /* weather= (port extra, weather.h): clear (the default), rain, storm (rain, lightning and thunder), random (3:
+     * each block clear, rain or storm, main.c); --weather */
     int weather;
     /* random_blocks= (port extra, city.c city_set_random): 0 (the default) the cities as built, else the seed every
      * building's template is picked by (the same width, as tall or taller); --random-blocks SEED */

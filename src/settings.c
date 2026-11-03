@@ -42,13 +42,15 @@ void settings_unset(Settings *f)
 /* the values kept to what the passes take */
 static int clamp_msaa(int n) { return n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 0; }
 static int clamp_aniso(int n) { return n >= 16 ? 16 : n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 1; }
-/* weather's value: "rain" / 1, "storm" / 2, anything else clear (0) (as weather.c's weather_of) */
+/* weather's value: "rain" / 1, "storm" / 2, "random" / 3 (each block its own: main.c), anything else clear (0) */
 static int weather_of_name(const char *v)
 {
     if (!_stricmp(v, "rain") || !strcmp(v, "1"))
         return 1;
     if (!_stricmp(v, "storm") || !strcmp(v, "2"))
         return 2;
+    if (!_stricmp(v, "random") || !strcmp(v, "3"))
+        return 3;
     return 0;
 }
 

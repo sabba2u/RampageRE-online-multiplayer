@@ -28,7 +28,7 @@ pub struct Settings {
     pub time_of_day: String,
     /// smoother edges: "off" (the game's rampage.cfg decides), "medium" (SMAA), "high" (SMAA high and 4x MSAA)
     pub smoothing: String,
-    /// "clear", "rain" or "storm" (rain, lightning and thunder) over every city (--weather)
+    /// "clear", "rain", "storm" (rain, lightning and thunder) or "random" (each block its own) over every city (--weather)
     pub weather: String,
     /// "normal" or "film" (a 1950s monster movie: black and white, scratches, grain, vignette: --film)
     pub look: String,

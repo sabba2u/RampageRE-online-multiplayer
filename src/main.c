@@ -265,6 +265,7 @@ typedef struct Viewer {
     int four_players;                                /* rampage.cfg four_players (port extra, settings.h) */
     int menu_players;                                /* rampage.cfg menu_players (port extra, settings.h): 5 .. 8 */
     int time_of_day;                                 /* rampage.cfg time_of_day: 0 the game's, 1 day, 2 night */
+    int weather_random;                              /* rampage.cfg weather=random: each block its own (weather_pick) */
     unsigned random_blocks;                          /* rampage.cfg random_blocks: the seed (0 the cities as built) */
     int game_block;                                  /* a block the game moved on to, to build after the frame; -1 */
     int left_block;                                  /* the block the game left, laid at -41 by that build; -1 */
@@ -1209,8 +1210,23 @@ static int mon_add_player(Viewer *v, int monster)
     return k;
 }
 
+/* weather=random: clear, rain or storm, a third each (its own seed: the game's randoms as before); online the host's,
+ * which its guests follow (netgame.c ng_follow) */
+static void weather_pick(Viewer *v)
+{
+    static unsigned seed;
+    if (!v->weather_random || net_role() == NET_GUEST)
+        return;
+    if (!seed)
+        seed = (unsigned)GetTickCount() | 1u;
+    seed = seed * 69069u + 1u;
+    weather_set((int)((seed >> 16) % 3u));
+    printf("weather: random, this block %s\n", weather_name(weather_get()));
+}
+
 static void build(Viewer *v)
 {
+    weather_pick(v);                                 /* (each block, weather=random) */
     if (v->have_scene)
         scene_free(&v->scene);
     if (!v->game_built && v->fxw)                    /* a new world (a city, a game): the last one's effects gone
@@ -9632,7 +9648,8 @@ static int viewer_main(int argc, char **argv)
     v.menu_players = gfx.menu_players;
     v.time_of_day = gfx.time_of_day;
     v.random_blocks = gfx.random_blocks;
-    weather_set(gfx.weather);                        /* port extra: rain, a storm (weather.c) */
+    v.weather_random = gfx.weather == 3;
+    weather_set(gfx.weather == 3 ? 0 : gfx.weather);   /* port extra: rain, a storm (weather.c); random: each block */
     int prof_read = !newprofile && v.prof_write ? profile_read(&v.prof, v.prof_path) : -1;
     if (prof_read > 0) {
         printf("profile %s\n", v.prof_path);

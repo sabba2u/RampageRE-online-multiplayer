@@ -115,6 +115,7 @@ pub fn game_options(s: &crate::settings::Settings) -> Vec<String> {
     match s.weather.as_str() {
         "rain" => a.extend(["--weather", "rain"]),
         "storm" => a.extend(["--weather", "storm"]),
+        "random" => a.extend(["--weather", "random"]),
         _ => {}
     }
     if s.look == "film" {
