@@ -465,12 +465,12 @@ impl App {
         if let Some((t, problem)) = self.note.as_ref().filter(|_| self.note_tab == tab) {
             ui.label(RichText::new(t).size(15.0).color(if *problem { look::RED } else { look::GREEN }));
             if let Some(addr) = &self.note_copy {
-                if ui.button(format!("Copy {addr}")).on_hover_text("For friends in your home (same Wi-Fi): paste it to them; they type it in Join Local's Host's address.").clicked() {
+                if ui.add_sized([220.0, 30.0], egui::Button::new(format!("Copy {addr}"))).on_hover_text("For friends in your home (same Wi-Fi): paste it to them; they type it in Join Local's Host's address.").clicked() {
                     ui.ctx().copy_text(addr.clone());
                 }
                 match &self.note_public {
                     Some(ip) => {
-                        if ui.button(format!("Copy {ip}")).on_hover_text("Your public IP, for friends outside your home: your router must forward UDP 19980 to this PC.").clicked() {
+                        if ui.add_sized([220.0, 30.0], egui::Button::new(format!("Copy {ip}"))).on_hover_text("Your public IP, for friends outside your home: your router must forward UDP 19980 to this PC.").clicked() {
                             ui.ctx().copy_text(ip.clone());
                         }
                     }
