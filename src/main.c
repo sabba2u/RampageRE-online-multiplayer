@@ -9044,6 +9044,16 @@ static void rumble_driver_step(Viewer *v, float dt)
             alive++;                                 /* (down: not cleared yet) */
     }
     rumble_pu_step(v, dt);
+    if (v->ap && getenv("RAMPAGE_RUMBLE_SHOTS")) {   /* (testing: each wave's bosses, 1.5 s after they come) */
+        static int shot_wave;
+        static float shot_in;
+        if (v->rumble.wave != shot_wave && v->rumble.nboss) {
+            shot_wave = v->rumble.wave;
+            shot_in = 1.5f;
+        }
+        if (shot_in > 0 && (shot_in -= dt) <= 0)
+            ap_want_shot(v->ap, "bosses");
+    }
     if (alive)
         return;
     if (v->rumble.wave >= RUMBLE_WAVES) {

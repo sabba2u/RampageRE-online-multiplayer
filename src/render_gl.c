@@ -252,7 +252,8 @@ typedef struct { const MeshPart *parts; uint32_t nparts; PartBuf *pb; } MeshBuf;
 
 struct Renderer {
     const Scene *scene;
-    BundleTex cache[16]; int ncache;
+    BundleTex *cache; int ncache, cache_cap;           /* (grown as bundles come: Boss Rumble loads a new
+                                                      * monster's each wave; a fixed 16 left the later ones white) */
     Ifl ifl[32]; int nifl;
     uint32_t drawn;
     const uint8_t *video; int video_w, video_h, video_new;   /* rnd_video */
@@ -510,6 +511,7 @@ void rnd_free(Renderer *r)
     free(r->held);
     free(r->bound);
     free(r->stage);
+    free(r->cache);
     free(r);
 }
 
@@ -575,8 +577,14 @@ static BundleTex *bundle_tex(Renderer *r, const Bundle *b)
     for (int k = 0; k < r->ncache; k++)
         if (r->cache[k].b == b)
             return &r->cache[k];
-    if (r->ncache == 16)
-        return NULL;
+    if (r->ncache == r->cache_cap) {                 /* (a new bundle never comes while a caller holds one of these) */
+        int cap = r->cache_cap ? 2 * r->cache_cap : 32;
+        BundleTex *grown = realloc(r->cache, sizeof *grown * (size_t)cap);
+        if (!grown)
+            return NULL;
+        r->cache = grown;
+        r->cache_cap = cap;
+    }
     BundleTex *bt = &r->cache[r->ncache++];
     memset(bt, 0, sizeof *bt);
     bt->b = b;
