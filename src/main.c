@@ -9099,6 +9099,10 @@ static int rumble_pu_kind(Viewer *v)
     return -1;
 }
 
+/* where the street's power-ups go: the band the monsters walk in (about -10 to -4 from the buildings' fronts; the
+ * street itself, -16, is out of their reach: a pickup is the body within 5) */
+#define RUMBLE_STREET_Y -7.0f
+
 static void rumble_pu_place(Viewer *v)
 {
     int kind = rumble_pu_kind(v);
@@ -9107,7 +9111,7 @@ static void rumble_pu_place(Viewer *v)
     float mid = players_mid_x(v), pos[3];
     int roof = rumble_rand(&v->rumble.seed) % 2, b = -1;
     if (getenv("RAMPAGE_RUMBLE_PICKUP_HERE")) {      /* (testing: under player 1) */
-        pos[0] = v->mon[0].mx + 8; pos[1] = -16; pos[2] = 1.5f;   /* (8 to its right) */
+        pos[0] = v->mon[0].mx + 8; pos[1] = RUMBLE_STREET_Y; pos[2] = 1.5f;   /* (8 to its right) */
     } else {
         for (uint32_t tries = 0; roof && b < 0 && tries < 12; tries++) {   /* a standing building near the players */
             uint32_t i = rumble_rand(&v->rumble.seed) % (v->scene.nbuildings ? v->scene.nbuildings : 1);
@@ -9127,8 +9131,8 @@ static void rumble_pu_place(Viewer *v)
             pos[1] = bb->min[1] + 2.5f;
             pos[2] = bb->max[2] + 1.5f;
         } else {
-            pos[0] = mid - 14 + (float)(rumble_rand(&v->rumble.seed) % 2800u) / 100.0f;
-            pos[1] = -16;
+            pos[0] = mid - 8 + (float)(rumble_rand(&v->rumble.seed) % 1600u) / 100.0f;   /* (on screen) */
+            pos[1] = RUMBLE_STREET_Y;
             pos[2] = 1.5f;
         }
     }

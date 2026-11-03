@@ -74,8 +74,11 @@ static void seed_drops(void)
         W.drop[i][2] = 1.6f + frand(&W.rng) * 1.2f;  /* screens a second */
         W.drop[i][3] = 0.03f + frand(&W.rng) * 0.04f;
     }
-    for (int i = 0; i < SPLASHES; i++)
-        W.splash[i][2] = SPLASH_S + frand(&W.rng) * SPLASH_S;   /* (free, staggered) */
+    for (int i = 0; i < SPLASHES; i++) {
+        W.splash[i][0] = frand(&W.rng);
+        W.splash[i][1] = GROUND_TOP + frand(&W.rng) * (GROUND_BOTTOM - GROUND_TOP);
+        W.splash[i][2] = -frand(&W.rng) * SPLASH_S * 2;   /* (waiting, each its own while) */
+    }
     W.seeded = 1;
 }
 
@@ -98,12 +101,14 @@ int weather_update(float dt, float *x, unsigned *seed)
             W.drop[i][0] = frand(&W.rng) * 1.2f;
         }
     }
-    for (int i = 0; i < SPLASHES; i++) {           /* drops landing: each free one comes back somewhere new */
+    for (int i = 0; i < SPLASHES; i++) {           /* drops landing: each done one waits a while of its own (age
+                                                      * below 0: not drawn), then lands somewhere new, so they
+                                                      * stay spread out in time (no waves of them together) */
         W.splash[i][2] += dt;
-        if (W.splash[i][2] >= SPLASH_S * 2 && frand(&W.rng) < W.amount) {
+        if (W.splash[i][2] >= SPLASH_S && frand(&W.rng) < W.amount) {
             W.splash[i][0] = frand(&W.rng);
             W.splash[i][1] = GROUND_TOP + frand(&W.rng) * (GROUND_BOTTOM - GROUND_TOP);
-            W.splash[i][2] = 0;
+            W.splash[i][2] = -frand(&W.rng) * SPLASH_S * 2;
         }
     }
     if (W.kind != WEATHER_STORM || W.amount < 0.8f || !W.local || dt <= 0) {
@@ -220,11 +225,12 @@ void weather_draw(int width, int height)
         glBegin(GL_LINES);
         for (int i = 0; i < SPLASHES; i++) {
             float age = W.splash[i][2];
-            if (age >= SPLASH_S)
+            if (age < 0 || age >= SPLASH_S)
                 continue;
             float k = age / SPLASH_S, x = W.splash[i][0], y = W.splash[i][1];
             float closer = (y - GROUND_TOP) / (GROUND_BOTTOM - GROUND_TOP);   /* (nearer the camera: bigger) */
-            float sz = (0.006f + 0.008f * closer) * (0.5f + k), al = 0.55f * (1 - k) * a;
+            float sz = (0.002f + 0.0028f * closer) * (0.5f + k), al = 0.55f * (1 - k) * a;   /* (a few pixels:
+                                                      * the side-on camera is far off) */
             glColor4f(0.85f, 0.9f, 1.0f, al);
             glVertex2f(x, y); glVertex2f(x - sz, y - sz * 1.6f);
             glVertex2f(x, y); glVertex2f(x + sz, y - sz * 1.6f);
