@@ -29,6 +29,9 @@ void weather_strike(float x, unsigned seed);         /* a strike, as picked (her
 void weather_strike_to(float x, float y, unsigned seed);
 /* render_gl.c: the rain, the bolt and the flash over the world (GL state: the HUD's 2D, set and put back here) */
 void weather_draw(int width, int height);
+/* render_gl.c, in the world's pass (its matrices, its depth): the drops landing on the ground about the camera at
+ * cam (x, y, z), hidden by what stands in front; height: the window's (the lines' width) */
+void weather_draw_ground(const float cam[3], int height);
 /* the mixer (sound.c, its own thread): the thunder added into out (stereo floats at SOUND_RATE) */
 void weather_mix(float *out, int frames);
 

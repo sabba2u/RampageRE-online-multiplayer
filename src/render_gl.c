@@ -1902,6 +1902,8 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
     glDisable(GL_CULL_FACE);
     if (s->nfx)                                            /* the effects' particles, over the world */
         draw_fx(r, s->fx, s->nfx, cam, fogged ? fog_near : 0, fogged ? fog_far : 0, 1);
+    if (s->nhud)                                           /* port extra: the rain's splashes on the ground (weather.c) */
+        weather_draw_ground(cam->pos, w->height);
     if (s->nspheres) {                                     /* the overlay: three great circles per sphere */
         glDisable(GL_LIGHTING);
         glDisable(GL_TEXTURE_2D);

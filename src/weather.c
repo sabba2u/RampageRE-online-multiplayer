@@ -173,6 +173,55 @@ static float flash_at(float a)
     return 0;
 }
 
+/* the drops landing, in the world: a little crown (two short strokes up and out) and a ring spreading flat on the
+ * ground, both fading; depth tested (not written), so a monster, a car or a person in front hides them. Each splash's
+ * x (0..1) is across GROUND_SPAN about the camera, its band place (0..1, 1 nearest) from GROUND_FAR to GROUND_NEAR */
+#define GROUND_SPAN 80.0f                            /* world units across: wider than the screen at the street */
+#define GROUND_NEAR -18.0f                           /* the street's near edge (the monsters walk about -10 .. -4) */
+#define GROUND_FAR -2.0f                             /* by the buildings' fronts */
+#define GROUND_Z 0.05f                               /* (just above the ground) */
+
+void weather_draw_ground(const float cam[3], int height)
+{
+    float a = W.amount;
+    if (!W.visible || a <= 0.001f || !cam)
+        return;
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_LINE_BIT | GL_CURRENT_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_FOG);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glLineWidth(height > 900 ? 2.0f : 1.0f);
+    glBegin(GL_LINES);
+    for (int i = 0; i < SPLASHES; i++) {
+        float age = W.splash[i][2];
+        if (age < 0 || age >= SPLASH_S)
+            continue;
+        float k = age / SPLASH_S;
+        float closer = (W.splash[i][1] - GROUND_TOP) / (GROUND_BOTTOM - GROUND_TOP);   /* 0 far .. 1 near */
+        float x = cam[0] + (W.splash[i][0] - 0.5f) * GROUND_SPAN;
+        float y = GROUND_FAR + (GROUND_NEAR - GROUND_FAR) * closer, z = GROUND_Z;
+        float sz = 0.22f * (0.5f + k), al = 0.55f * (1 - k) * a;   /* (world units: a few pixels from the camera) */
+        glColor4f(0.85f, 0.9f, 1.0f, al);
+        glVertex3f(x, y, z); glVertex3f(x - sz, y, z + sz * 1.6f);
+        glVertex3f(x, y, z); glVertex3f(x + sz, y, z + sz * 1.6f);
+        float r = sz * 1.6f;                         /* the ring, flat on the ground */
+        for (int s = 0; s < 8; s++) {
+            float a0 = s * 0.7853982f, a1 = (s + 1) * 0.7853982f;
+            glColor4f(0.8f, 0.85f, 0.95f, al * 0.6f);
+            glVertex3f(x + r * cosf(a0), y + r * sinf(a0), z);
+            glVertex3f(x + r * cosf(a1), y + r * sinf(a1), z);
+        }
+    }
+    glEnd();
+    glPopAttrib();
+}
+
 void weather_draw(int width, int height)
 {
     float flash = W.nbolt ? flash_at(W.strike_age) : 0;
@@ -220,29 +269,7 @@ void weather_draw(int width, int height)
         glColor4f(0.55f, 0.65f, 0.8f, 0.10f * a);
         glVertex2f(1, 1); glVertex2f(0, 1);
         glEnd();
-        /* the drops landing: a little crown (two short strokes up and out) and a ring spreading, both fading */
-        glLineWidth(height > 900 ? 2.0f : 1.0f);
-        glBegin(GL_LINES);
-        for (int i = 0; i < SPLASHES; i++) {
-            float age = W.splash[i][2];
-            if (age < 0 || age >= SPLASH_S)
-                continue;
-            float k = age / SPLASH_S, x = W.splash[i][0], y = W.splash[i][1];
-            float closer = (y - GROUND_TOP) / (GROUND_BOTTOM - GROUND_TOP);   /* (nearer the camera: bigger) */
-            float sz = (0.002f + 0.0028f * closer) * (0.5f + k), al = 0.55f * (1 - k) * a;   /* (a few pixels:
-                                                      * the side-on camera is far off) */
-            glColor4f(0.85f, 0.9f, 1.0f, al);
-            glVertex2f(x, y); glVertex2f(x - sz, y - sz * 1.6f);
-            glVertex2f(x, y); glVertex2f(x + sz, y - sz * 1.6f);
-            float r = sz * 1.6f, rv = r * 0.3f;   /* the ring: flat, as on the ground seen from the side */
-            for (int s = 0; s < 8; s++) {
-                float a0 = s * 0.7853982f, a1 = (s + 1) * 0.7853982f;
-                glColor4f(0.8f, 0.85f, 0.95f, al * 0.6f);
-                glVertex2f(x + r * cosf(a0), y + rv * sinf(a0));
-                glVertex2f(x + r * cosf(a1), y + rv * sinf(a1));
-            }
-        }
-        glEnd();
+        /* (the drops landing: weather_draw_ground, in the world, behind what stands in front) */
     }
     if (W.nbolt && W.strike_age < 0.3f) {            /* the bolt: lit while the flash is on */
         int lit = W.strike_age < 0.07f || (W.strike_age > 0.11f && W.strike_age < 0.24f);
