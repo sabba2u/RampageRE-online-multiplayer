@@ -131,6 +131,8 @@ typedef struct Mon {
     float spared;                                    /* (Boss Rumble) a player's seconds left untouchable by the bosses
                                                       * after a knock down or a run of their hits (RUMBLE_SPARE*) */
     int boss_hits; float boss_hits_t;                /* the bosses' hits on it in a row, seconds since the last */
+    float zap_hold;                                  /* (port extra) seconds a lightning strike's knock-down still has:
+                                                      * a lighter hit meanwhile takes HP, not its reaction */
     int drive;                                       /* DRIVE_*: whose pad */
     Pad pad;                                         /* this frame's pad (keys, --do, or the computer's) */
     float mx, my, mz, heading;                       /* where the monster stands, its turn about Z (0: facing +Y) */
@@ -4629,6 +4631,8 @@ static void monster_take(Mon *mo, const char *name, float amount, int level, int
 {
     if (netgame_shielded(mo))                        /* NET: an online slot nobody plays: idle, untouchable */
         return;
+    if (mo->zap_hold > 0 && level < 2)               /* (a punch with the lightning: the strike's fall stands) */
+        slot = -1;
     int was = mo->pending_slot;
     if (slot >= 0)                                   /* (what it holds let go of: set_reaction) */
         set_reaction(mo, slot);
@@ -6128,6 +6132,8 @@ static void mon_step(Mon *mo, float dt)
     static const uint8_t none[MV_COUNT];
     float lx = mo->pad.lx, ly = mo->pad.ly;
     const uint8_t *pressed = mo->pad.pressed, *held = mo->pad.held;
+    if (mo->zap_hold > 0)
+        mo->zap_hold = mo->zap_hold > dt ? mo->zap_hold - dt : 0;
     if (mo->thrown_t > 0)                            /* 0x2E1E88 .. 0x2E1EAC */
         mo->thrown_t = mo->thrown_t > dt ? mo->thrown_t - dt : 0;
     if (mo->is_ai) {                                  /* the game drives the monster: no pad */
@@ -8820,6 +8826,7 @@ static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
                                                       * isn't there, on a wall it hung there and could not climb on */
         float knock[3] = { 0, -ZAP_KNOCK, ZAP_KNOCK * 0.5f }, from[3] = { mo->mx, mo->my - 5, mo->mz };
         monster_hit(mo, "lightning", 15, 2, knock, from);
+        mo->zap_hold = 0.2f;
     }
     if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_NET_TRACE"))
         printf("  lightning strikes monster %d (%.2f, %.2f of the screen), HP %.0f\n", k, sx, sy, mo->hp);
