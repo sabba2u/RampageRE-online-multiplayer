@@ -8826,17 +8826,32 @@ static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
     return 1;
 }
 
-/* a strike this copy picked (offline, the host): 2 in 5 onto a monster that can be struck (every one with
- * RAMPAGE_ZAP_TEST), picked by the strike's seed; the monster, -1 into the city */
+/* a monster up high, where lightning finds it more: on a wall, or above the street (a roof) */
+static int zap_high(const Mon *mo) { return mo->mode == MODE_BUILDING || mo->mz > 3; }
+
+/* a strike this copy picked (offline, the host): onto a monster that can be struck 2 in 5, 3 in 5 (half as much
+ * again) while one is up high (every one with RAMPAGE_ZAP_TEST); which, by the strike's seed, one up high counting
+ * half as much again as one on the street; the monster, -1 into the city */
 static int lightning_pick(Viewer *v, unsigned seed)
 {
-    int can[MONSTERS], n = 0;
+    int can[MONSTERS], n = 0, high = 0, weight = 0;
     for (int k = 0; k < v->nmon && k < MONSTERS; k++)
-        if (zap_target(v, k))
+        if (zap_target(v, k)) {
             can[n++] = k;
-    if (!n || (!getenv("RAMPAGE_ZAP_TEST") && (seed >> 7) % 5 >= 2))
+            high |= zap_high(&v->mon[k]);
+            weight += zap_high(&v->mon[k]) ? 3 : 2;
+        }
+    if (!n || (!getenv("RAMPAGE_ZAP_TEST") && (seed >> 7) % 10 >= (high ? 6u : 4u)))
         return -1;
-    int k = can[(seed >> 13) % (unsigned)n];
+    int pick = (int)((seed >> 13) % (unsigned)weight), k = can[0];
+    for (int i = 0; i < n; i++) {
+        int w = zap_high(&v->mon[can[i]]) ? 3 : 2;
+        if (pick < w) {
+            k = can[i];
+            break;
+        }
+        pick -= w;
+    }
     return lightning_zap(v, k, seed, 1) ? k : -1;
 }
 
