@@ -34,11 +34,9 @@ et8_menu_test.ps1; docs/NETPLAY.md "Eight players". Not yet: eight real PCs) **M
   (136 to a 2 player game's guest), 4.8 Mbit/s on average and 6.6 at peak with three guests. Most is the people, army
   and traffic copied to each guest at 60 updates a second. Fewer updates a second for the world's puppets, or sending
   only what changed, would cut it.
-- (done 2026-11-02 for lightning: main.c lightning_zap, render_gl.c draw_xray) **X-ray zap** (asked): in a storm 2
-  strikes in 5 land on a monster in play on the screen (the host picks; NM_WEATHER names it to the guests): the bolt
-  onto it, the thunder at once, React_Front_Zap (React_Side_L_Zap on a wall) and 15 HP, and for 1.2 s it flickers
-  between its look and an electric-blue x-ray with its skeleton's bones white. The game's own shocks too (done 2026-11-02: main.c play_state, any state
-  named *_Zap: an electric sign, Hazard_Shock, the blimp's barriers; the --do word `react NAME` forces a state).
+- (dropped 2026-11-02, asked: the bones drawn were the animation's, not a skeleton, and looked wrong) **X-ray zap**: a
+  storm's bolt onto a monster now gives the game's own shock alone (React_Front_Zap / React_Side_L_Zap, the sparks,
+  15 HP), as an electric sign does; render_gl.c's draw_xray is left unused. The --do word `react NAME` forces a state.
 - (done 2026-11-02: **Boss Rumble**, the fifth game type: docs/superpowers/specs/2026-11-02-boss-rumble-design.md, main.c
   rumble_*, rumble.c) 12 waves (1,1,1 .. 4,4,4) of any monster as bosses, hunting the players, a red glowing outline, bars
   with heads and names under the clock, the clock counting up, power-ups on the streets and roofs, the end line (time,
