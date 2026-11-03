@@ -8797,8 +8797,9 @@ static int zap_target(const Viewer *v, int k)
 
 /* lightning onto monster k: the bolt down onto it (weather_strike_to, the thunder at once), the sparks
  * (Electrical_Shock_1), the blue flicker for 1.2 s (Instance.xray, render_gl.c draw_xray: no bones); and where the game is run
- * (offline, the host: own) the zap itself: on a wall React_Front_Zap (React_Side_L_Zap on a side), elsewhere a hit
+ * (offline, the host: own) the zap itself: a hit (monster_hit: the reaction where it is: ground, air, wall)
  * and 15 HP. A guest only draws it: its monster's move and HP are the host's (the snapshots). 0: k cannot be struck */
+#define ZAP_KNOCK 30.0f                              /* the strike's knock: toward the camera and up, heavy (level 2) */
 static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
 {
     if (!v || k < 0 || k >= v->nmon)
@@ -8813,17 +8814,12 @@ static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
     float at[3] = { mo->mx, mo->my, mo->mz + 5 * (mo->scale > 0 ? mo->scale : 1) };
     if (v->fxw)
         fx_spawn(v->fxw, getenv("RAMPAGE_ZAP_FX") ? getenv("RAMPAGE_ZAP_FX") : "Electrical_Shock_1", at, NULL, 1);
-    if (own && monster_hittable(mo) && mo->mode == MODE_BUILDING) {   /* on a wall: zapped there, as the blimp's
-                                                      * barrier does (NewYork.bsf: both Zap states are a wall's) */
-        const char *move = mo->have_graph ? mo->graph.states[mo->run.state].name : "";
-        float d[2] = { 0, 0 };
-        monster_take(mo, "lightning", 15, 1, -1, d, 0);
-        if (mo->hp > 0)
-            force_state(mo, strstr(move, "Side") ? "React_Side_L_Zap" : "React_Front_Zap");
-    } else if (own && monster_hittable(mo)) {        /* on the ground or in the air: a hit (its own reaction there);
-                                                      * a wall's Zap here held it on a wall that isn't there */
-        float knock[3] = { 0, 0, 0 }, from[3] = { mo->mx, mo->my - 5, mo->mz };
-        monster_hit(mo, "lightning", 15, 1, knock, from);
+    if (own && monster_hittable(mo)) {               /* a hit, as a shot's: its own reaction where it is (the ground,
+                                                      * the air, a wall's). The Zap states forced (React_Front_Zap) let
+                                                      * go of the wall's hold: on the ground the monster held a wall that
+                                                      * isn't there, on a wall it hung there and could not climb on */
+        float knock[3] = { 0, -ZAP_KNOCK, ZAP_KNOCK * 0.5f }, from[3] = { mo->mx, mo->my - 5, mo->mz };
+        monster_hit(mo, "lightning", 15, 2, knock, from);
     }
     if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_NET_TRACE"))
         printf("  lightning strikes monster %d (%.2f, %.2f of the screen), HP %.0f\n", k, sx, sy, mo->hp);
