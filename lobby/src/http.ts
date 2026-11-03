@@ -53,8 +53,13 @@ export function httpHandler(games: Games, opts: { trustProxy?: boolean } = {}) {
       }
       if (k && k[2] === "knocks" && req.method === "GET") {
         const token = req.headers["x-token"] ?? url.searchParams.get("token");
-        return send(200, ["ok", ...games.takeKnocks(k[1], token).map(a => `knock ${a}`)].join("\n") + "\n");
+        const knocks = games.takeKnocks(k[1], token);
+        const rows = url.searchParams.get("players");
+        if (rows !== null) games.reportPlayers(k[1], token, rows);
+        return send(200, ["ok", ...knocks.map(a => `knock ${a}`)].join("\n") + "\n");
       }
+      const pl = p.match(/^\/games\/([A-Za-z0-9]+)\/players$/);
+      if (pl && req.method === "GET") return json(200, { players: games.players(pl[1]) });
       if (req.method === "GET") {
         if (p === "/health") return send(200, "rampage_lobby\n");
         if (p === "/") return send(200, files.page(), "text/html; charset=utf-8");

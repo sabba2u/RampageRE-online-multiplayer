@@ -38,7 +38,26 @@ export type Game = GameFields & {
   source: string; external: string; stun: string; lan: string;
   since: number; seen: number;
   knocks: { addr: string; at: number }[];
+  /** who is in it, as its game says with its knocks every second (src/netlobby.c player_rows) */
+  roster?: Player[];
 };
+
+/** A player in a game: its slot, state (host, online, joining, local, kept), address ("" the host's own), ping, monster. */
+export type Player = { slot: number; state: string; addr: string; ping: number; name: string };
+
+/** The game's rows: "slot\tstate\taddr\tping\tname" each, one a line; others left out; 8 at most. */
+export function parsePlayers(rows: string): Player[] {
+  const out: Player[] = [];
+  for (const l of rows.split("\n")) {
+    const f = l.replace(/\r$/, "").split("\t");
+    const slot = Number(f[0]);
+    if (f.length !== 5 || f[0] === "" || !Number.isInteger(slot)) continue;
+    out.push({ slot, state: clean(f[1], 12), addr: clean(f[2], 64), ping: Number.isInteger(Number(f[3])) ? Number(f[3]) : 0,
+               name: clean(f[4], 32) });
+    if (out.length === 8) break;
+  }
+  return out;
+}
 
 /** What everyone sees of a game: no token, no source. `address` is the public one ("" when the lobby can't tell:
  *  a host on the lobby's own PC or network with no UPnP), `lan` the local one ("" none). */
@@ -176,6 +195,18 @@ export class Games {
     const t = this.now(), out = g.knocks.filter(k => t - k.at < KNOCK_S * 1000).map(k => k.addr);
     g.knocks = [];
     return out;
+  }
+
+  /** The host's game, with its knocks: who is in it now (parsePlayers). */
+  reportPlayers(code: string, token: unknown, rows: string) {
+    this.own(code, token).roster = parsePlayers(rows);
+  }
+
+  /** Who is in `code`, for its guests' launchers: names and states, no addresses. */
+  players(code: string): { slot: number; state: string; name: string; ping: number }[] {
+    const g = this.get(code);
+    if (!g) throw new LobbyError(404, "no game with that code");
+    return (g.roster ?? []).map(({ slot, state, name, ping }) => ({ slot, state, name, ping }));
   }
 
   unregister(code: string, token: unknown) {

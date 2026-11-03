@@ -89,6 +89,14 @@ describe.each(lobbies)("the $name lobby", lobby => {
     expect([k.status, await k.text()]).toEqual([200, "ok\n"]);
     expect(await (await fetch(`${base}/games/${code}/knocks?token=${token}`)).text()).toBe("ok\nknock 127.0.0.1:51000\n");
     expect(await (await fetch(`${base}/games/${code}/knocks?token=${token}`)).text()).toBe("ok\n");
+
+    // the players the game says with its knocks, kept for the guests' launchers (same game: registering is limited)
+    const rows = "0\thost\t\t0\tGeorge\n1\tonline\t203.0.113.9:27960\t42\tLizzie";
+    const kp = await fetch(`${base}/games/${code}/knocks?token=${token}&${form({ players: rows })}`);
+    expect(kp.status).toBe(200);
+    expect(await (await fetch(`${base}/games/${code}/players`)).json()).toEqual({ players: [
+      { slot: 0, state: "host", name: "George", ping: 0 }, { slot: 1, state: "online", name: "Lizzie", ping: 42 }] });
+    expect((await fetch(`${base}/games/ZZZZZ/players`)).status).toBe(404);
   });
 
   it.runIf(run)("answers health and unknown paths", async () => {
