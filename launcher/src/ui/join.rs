@@ -140,12 +140,15 @@ pub fn public_ip_from(body: &str) -> Result<String, String> {
     t.parse::<std::net::IpAddr>().map(|ip| ip.to_string()).map_err(|_| NO_PUBLIC_IP.to_string())
 }
 
-/// This connection's address on the internet, as a lookup service sees it (asked only when the player clicks).
+/// Services that answer with the caller's address alone. Plain http: the launcher's web client has no HTTPS.
+pub const PUBLIC_IP_SERVICES: [&str; 3] = ["http://api.ipify.org", "http://checkip.amazonaws.com", "http://icanhazip.com"];
+
+/// This connection's address on the internet, as a lookup service sees it: the first that answers.
 pub fn public_ip() -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(5)).build();
-    let body = agent.get("https://api.ipify.org").call().ok().and_then(|r| r.into_string().ok())
-        .ok_or_else(|| NO_PUBLIC_IP.to_string())?;
-    public_ip_from(&body)
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(4)).build();
+    PUBLIC_IP_SERVICES.iter()
+        .find_map(|url| agent.get(url).call().ok().and_then(|r| r.into_string().ok()).and_then(|b| public_ip_from(&b).ok()))
+        .ok_or_else(|| NO_PUBLIC_IP.to_string())
 }
 
 /// What the player typed in the Join box: a code, or a pasted group link.

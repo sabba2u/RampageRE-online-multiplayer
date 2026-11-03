@@ -115,3 +115,15 @@ fn public_ip_answer_checked() {
     assert!(public_ip_from("<html>oops</html>").is_err());
     assert!(public_ip_from("").is_err());
 }
+
+#[test]
+#[ignore] // (asks the internet: run by hand) the lookup answers, with no HTTPS in the launcher's web client
+fn public_ip_looked_up_here() {
+    assert!(public_ip().is_ok(), "{:?}", public_ip());
+}
+
+#[test]
+fn public_ip_services_plain_http() {
+    // the launcher's ureq is built without TLS: an https:// service would always fail
+    assert!(PUBLIC_IP_SERVICES.iter().all(|u| u.starts_with("http://")));
+}

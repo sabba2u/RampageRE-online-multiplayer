@@ -36,6 +36,9 @@ pub struct App {
     note_tab: u8,
     /// an address the message offers to copy (Host Local's LAN address, to send to a friend)
     note_copy: Option<String>,
+    /// with it, this connection's real public IP (looked up on a thread when Host Local starts; nothing shown if it fails)
+    note_public: Option<String>,
+    public_rx: Option<Receiver<Result<String, String>>>,
     /// the Steam tab's look (Steam running, Spacewar in the library) and when: looked again every few seconds
     steam_seen: Option<(bool, bool, std::time::Instant)>,
     /// a join under way: its outcome (the server to remember once it went through)
@@ -85,7 +88,7 @@ impl App {
         let dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_default();
         let game = game::find_game(&dir);
         let build = game.as_ref().ok().and_then(|g| game::build_id(g).ok()).unwrap_or_default();
-        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, note_copy: None, steam_seen: None,
+        let mut app = App { game, build, settings: Settings::load(), links: LinkStatus::NotSet, code: String::new(), note: None, note_tab: 0, note_copy: None, note_public: None, public_rx: None, steam_seen: None,
                             busy: None, joining: None, guest: None, settings_read: std::time::Instant::now(), host: host::Hosting::default(), card: None,
                             steam_check: None, steam_problem: None, settings_open: false,
                             join_box: join_box::JoinBox::default(), lan_ip: crate::upnp::lan_ip(),
@@ -101,6 +104,8 @@ impl App {
         self.note = Some((text.to_string(), problem));
         self.note_tab = tab;
         self.note_copy = None;
+        self.note_public = None;
+        self.public_rx = None;
     }
 
     /// The top button: 2 or 5 to 8 players host (friends join it, up to 8 players in all), 1, 3 and 4 play on this PC.
@@ -114,6 +119,9 @@ impl App {
                     Some(ip) => {
                         self.say(&format!("Starting RampageRE, hosting: friends join this PC's address: {ip}"), false);
                         self.note_copy = Some(ip);
+                        let (tx, rx) = channel();
+                        std::thread::spawn(move || { let _ = tx.send(join::public_ip()); });
+                        self.public_rx = Some(rx);
                     }
                     None => self.say("Starting RampageRE, hosting: friends join this PC's address.", false),
                 },
@@ -327,6 +335,12 @@ impl App {
 
     /// The LAN tab: play or host on this network, or join a game on it.
     fn lan_tab(&mut self, ui: &mut egui::Ui, ready: bool) {
+        if let Some(rx) = &self.public_rx {
+            match rx.try_recv() {
+                Ok(r) => { self.note_public = r.ok(); self.public_rx = None; }
+                Err(_) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(300)),
+            }
+        }
         let play = match self.settings.local_players() {
             1 => "Play Alone Locally",
             2 | 5..=8 => "Host Local (LAN)",
@@ -451,8 +465,17 @@ impl App {
         if let Some((t, problem)) = self.note.as_ref().filter(|_| self.note_tab == tab) {
             ui.label(RichText::new(t).size(15.0).color(if *problem { look::RED } else { look::GREEN }));
             if let Some(addr) = &self.note_copy {
-                if ui.button(format!("Copy {addr}")).on_hover_text("Paste it to your friend (email, chat...): they type it in Join Local's Host's address.").clicked() {
+                if ui.button(format!("Copy {addr}")).on_hover_text("For friends in your home (same Wi-Fi): paste it to them; they type it in Join Local's Host's address.").clicked() {
                     ui.ctx().copy_text(addr.clone());
+                }
+                match &self.note_public {
+                    Some(ip) => {
+                        if ui.button(format!("Copy {ip}")).on_hover_text("Your public IP, for friends outside your home: your router must forward UDP 19980 to this PC.").clicked() {
+                            ui.ctx().copy_text(ip.clone());
+                        }
+                    }
+                    None if self.public_rx.is_some() => { ui.label(RichText::new("Looking up your public IP...").small().color(look::DIM_TEXT)); }
+                    None => {}
                 }
             }
         }
