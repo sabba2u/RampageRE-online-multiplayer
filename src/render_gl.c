@@ -1093,10 +1093,9 @@ static void draw_grey(const MeshPart *p, GLuint tex, const void *idx, double t, 
     glPopAttrib();
 }
 
-/* port extra: a monster struck by lightning (Instance.xray, main.c lightning_zap) flickers into an x-ray, as a cartoon
+/* port extra: a monster struck by lightning (Instance.xray, main.c lightning_zap) flickers electric blue, as a cartoon
  * zap: on the flicker's on frames each opaque part is drawn again over itself in a pale electric blue (unlit, the
- * texture's alpha cutting it out as draw_grey's), and its skeleton after the scene's items over everything
- * (draw_xray_bones) */
+ * texture's alpha cutting it out as draw_grey's). No skeleton: the bones there are the animation's, not one (asked) */
 static void draw_xray(const MeshPart *p, GLuint tex, const void *idx)
 {
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TEXTURE_BIT | GL_CURRENT_BIT);
@@ -1128,49 +1127,6 @@ static void draw_xray(const MeshPart *p, GLuint tex, const void *idx)
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glPopClientAttrib();
     glPopAttrib();
-}
-
-/* the x-rayed instances' skeletons: thick white bones with a pale blue edge and round joints, through everything */
-static void draw_xray_bones(const Scene *s, const int *list, int n)
-{
-    static float seg[256][6];
-    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_CURRENT_BIT | GL_LINE_BIT |
-                 GL_POINT_BIT);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_FOG);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_ALPHA_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_LINE_SMOOTH);
-    glEnable(GL_POINT_SMOOTH);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
-    for (int i = 0; i < n; i++) {
-        int ns = instance_bones(&s->instances[list[i]], seg, 256);
-        for (int pass = 0; pass < 2; pass++) {       /* the blue edge, then the bone */
-            glLineWidth(pass ? 4.0f : 8.0f);
-            glPointSize(pass ? 7.0f : 11.0f);
-            if (pass)
-                glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            else
-                glColor4f(0.15f, 0.45f, 1.0f, 0.75f);
-            glBegin(GL_LINES);
-            for (int k = 0; k < ns; k++) {
-                glVertex3fv(seg[k]);
-                glVertex3fv(seg[k] + 3);
-            }
-            glEnd();
-            glBegin(GL_POINTS);
-            for (int k = 0; k < ns; k++)
-                glVertex3fv(seg[k]);
-            glEnd();
-        }
-    }
-    glPopAttrib();
-    glLineWidth(1.0f);
-    glPointSize(1.0f);
 }
 
 static void draw_part(Renderer *r, const SceneMesh *sm, const Skin *skin, uint32_t i, uint32_t first, double t)
@@ -1879,7 +1835,6 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
     }
     float view_mv[16], ty = tanf(cam->fov_deg * 3.14159265f / 360.0f), tx = ty * aspect;
     glGetFloatv(GL_MODELVIEW_MATRIX, view_mv);
-    int xrays[8], nxray = 0;                             /* port extra: the instances x-rayed this frame */
     for (int pass = 0; pass < 2; pass++) {               /* the street, its building shadows, then the rest */
         r->hold = pass && gtao_active();                 /* port extra: the blended parts after the occlusion (the
                                                           * street's lie on it, darkened as it is) */
@@ -1899,13 +1854,6 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
             r->outline = in->outline;
             /* struck by lightning: on and off about 9 times a second */
             r->xray = in->xray > 0 && fmodf(in->xray * 9.0f, 1.0f) < 0.6f;
-            if (r->xray) {
-                int seen = 0;
-                for (int k = 0; k < nxray; k++)
-                    seen |= xrays[k] == it->instance;
-                if (!seen && nxray < 8)
-                    xrays[nxray++] = it->instance;
-            }
             draw_mesh(r, &s->meshes[it->mesh], it->skin, t);
             r->grey = 0;
             r->boss = 0;
@@ -1939,8 +1887,6 @@ void rnd_frame(Renderer *r, const Window *w, const Camera *cam, double t, int fo
         draw_shadows(r, SHADOW_PASS_DECAL);
         draw_shadows(r, SHADOW_PASS_WALL);
     }
-    if (nxray)                                             /* port extra: the lightning's x-ray, its skeletons */
-        draw_xray_bones(s, xrays, nxray);
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState(GL_NORMAL_ARRAY);
     glDisableClientState(GL_TEXTURE_COORD_ARRAY);

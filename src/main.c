@@ -515,6 +515,14 @@ static float root_yaw(Mon *mo, double t)
 }
 
 /* the monster plays the clip of the runner's state, from the runner's time */
+static int has_zap(const char *s)                  /* "_Zap" in a state's or clip's name, any case */
+{
+    for (; s && *s; s++)
+        if (s[0] == '_' && (s[1] | 32) == 'z' && (s[2] | 32) == 'a' && (s[3] | 32) == 'p')
+            return 1;
+    return 0;
+}
+
 static void play_state(Mon *mo)
 {
     Viewer *v = mo->v;
@@ -533,6 +541,14 @@ static void play_state(Mon *mo)
     mo->ev15 = mo->ev15x = mo->ev15r = 0;
     mo->mode = MODE_GROUND;                           /* (its events set the mode it is in) */
     climb_clip_started(&mo->mount, st->name);
+    if (mon_in(mo) && (has_zap(st->name) || has_zap(st->clip))) {   /* (port extra) a shock's reaction
+                                                      * (React_Front_Zap, React_Side_L_Zap: an electric sign,
+                                                      * Hazard_Shock, the blimp's barriers, the lightning): its blue
+                                                      * flicker, as the lightning's (no bones) */
+        mon_in(mo)->xray = 1.2f;
+        if (getenv("RAMPAGE_TRACE") || getenv("RAMPAGE_ZAP_TEST"))
+            printf("  %s: a shock's blue flicker\n", st->name);
+    }
     tail_blend(&mo->tail, st->tail, st->blend);      /* 0x2E6884: to node +0x10 over the request's +0x4, which is
                                                         always the node's blend (0x2ECC08), cut or not */
     mo->mirror = mo->mirror_queued;                    /* 0x2E67E8: a clip starts in the queued mirror state */
@@ -7199,7 +7215,7 @@ static const char *play_script(Viewer *v, const char *script, float aspect)
             continue;
         }
         if (_stricmp(word, "react") == 0) {          /* react name: the monster forced into that state (React_Front_Zap:
-                                                      * a shock's, its x-ray too) */
+                                                      * a shock's, its blue flicker too) */
             char name[64];
             int k = 0;
             while (*p == ' ') p++;
@@ -8774,7 +8790,7 @@ static int zap_target(const Viewer *v, int k)
 }
 
 /* lightning onto monster k: the bolt down onto it (weather_strike_to, the thunder at once), the sparks
- * (Electrical_Shock_1) and the game's own shock (no x-ray: its bones are the animation's, not a skeleton); and where the game is run
+ * (Electrical_Shock_1), the blue flicker for 1.2 s (Instance.xray, render_gl.c draw_xray: no bones); and where the game is run
  * (offline, the host: own) the zap itself, as an electric sign gives it: React_Front_Zap (React_Side_L_Zap on a wall)
  * and 15 HP. A guest only draws it: its monster's move and HP are the host's (the snapshots). 0: k cannot be struck */
 static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
@@ -8787,6 +8803,7 @@ static int lightning_zap(Viewer *v, int k, unsigned seed, int own)
     if (!in || in->hidden || !mon_screen(v, mo, &sx, &sy))
         return 0;
     weather_strike_to(sx, sy, seed);
+    in->xray = 1.2f;
     float at[3] = { mo->mx, mo->my, mo->mz + 5 * (mo->scale > 0 ? mo->scale : 1) };
     if (v->fxw)
         fx_spawn(v->fxw, getenv("RAMPAGE_ZAP_FX") ? getenv("RAMPAGE_ZAP_FX") : "Electrical_Shock_1", at, NULL, 1);

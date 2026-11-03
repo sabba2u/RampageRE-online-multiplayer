@@ -108,7 +108,7 @@ goes back to the main menu. Its keys: the arrows, Enter / Space accept, Backspac
 square, triangle and R2 buttons, F2 the cheat entry. With `--shot` the `--do` words drive it first (`wait S`,
 `until NAME` (frames until that interface has the focus: `MainMenu`, `MonsterSelect`, `MonsterSheet`, ...; the boot's
 movies run on the clock, so a script waits for its menus this way),
-`react NAME` (the monster forced into state NAME: `react React_Front_Zap` a shock), `menu up|down|left|right|accept|back|start`, `button N`, `type TEXT`, `done`; `p2` .. `p4` the menu words after it from that player's pad, `p1` again player 1's), the words left once a game
+`react NAME` (the monster forced into state NAME: `react React_Front_Zap` a shock, with its blue flicker), `menu up|down|left|right|accept|back|start`, `button N`, `type TEXT`, `done`; `p2` .. `p4` the menu words after it from that player's pad, `p1` again player 1's), the words left once a game
 starts play in it, and those left once it goes back play on in the shell. After 120 s untouched in the menus the
 attract mode runs its movies and then a demo game: a random city, block, day or night and one or two monsters, all
 the computer's, for a minute (the 65 demos come in turn, 4 first; "Press START button" blinks); any key or

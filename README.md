@@ -53,7 +53,7 @@ changes):
 | **Unlock all moves** (on) | every monster's upgrade moves from the start; untick it and each monster has only the upgrades it earned |
 | **Shuffle the city's buildings** | every game a new street: each lot gets another of the city's buildings of its size (online, the host's) |
 | **Time of day** | As the game picks / Always day / Always night |
-| **Weather** | Clear / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, with the game's own shock) |
+| **Weather** | Clear / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes electric blue) |
 | **Look** | Normal / 1950s monster movie (black and white, scratches, grain) |
 | **Smooth edges** | Game's setting / Medium / High (anti-aliasing) |
 | **Outline my monster** | a thin outline in your player's colour around your own monster, on your screen only (also in the game's Insert panel, Camera and look) |
