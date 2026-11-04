@@ -78,6 +78,9 @@ void net_set_admin(const char *banned, const char *muted);
 int net_my_slot(void);                               /* the guest: its slot (0 until welcomed); the host 0 */
 int net_msg_slot(void);                              /* host: the slot whose message the handler has now (-1) */
 void net_set_wanted_monster(int monster);            /* the guest: asked for in the hello (-1 any) */
+/* this copy has the Wii's data (main.c, at the start): a guest says it in its hello; a host with it turns away a
+ * guest without it, saying why (netwire.h net_content_ok) */
+void net_set_wii_data(int has);
 uint64_t net_rejoin_token(void);                     /* the guest: the token it has (0 none) */
 
 /* the guests' pads: each guest sends its own every frame; the host takes slot k's (the presses since the last take,

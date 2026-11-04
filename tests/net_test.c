@@ -284,9 +284,23 @@ static void test_slot_messages(void)
         NetHello rv;
         net_r_hello(&r2, &rv);
         CHECK(!r2.err && !strcmp(rv.version, "1.3.0"));
-        r2 = netbuf(m2, b2.len - 6);                             /* an older hello: no version */
+        CHECK(rv.content == NET_CONTENT_UNSAID);                 /* (not set: an older copy's) */
+        hv.content = NET_CONTENT_WII;                            /* the game data it has, after the version */
+        b2 = netbuf(m2, sizeof m2);
+        net_w_hello(&b2, &hv);
+        r2 = netbuf(m2, b2.len);
         net_r_hello(&r2, &rv);
-        CHECK(!r2.err && rv.version[0] == 0 && rv.proto == 2);
+        CHECK(!r2.err && !strcmp(rv.version, "1.3.0") && rv.content == NET_CONTENT_WII);
+        r2 = netbuf(m2, b2.len - 1);                             /* a 1.3.0 hello: a version, no game data */
+        net_r_hello(&r2, &rv);
+        CHECK(!r2.err && !strcmp(rv.version, "1.3.0") && rv.content == NET_CONTENT_UNSAID);
+        r2 = netbuf(m2, b2.len - 7);                             /* an older hello: no version */
+        net_r_hello(&r2, &rv);
+        CHECK(!r2.err && rv.version[0] == 0 && rv.proto == 2 && rv.content == NET_CONTENT_UNSAID);
+        /* a host with the Wii's data turns away a guest that says it has none; the rest come in */
+        CHECK(!net_content_ok(1, NET_CONTENT_PS2));
+        CHECK(net_content_ok(1, NET_CONTENT_WII) && net_content_ok(1, NET_CONTENT_UNSAID));
+        CHECK(net_content_ok(0, NET_CONTENT_PS2) && net_content_ok(0, NET_CONTENT_WII));
     }
     rb = netbuf(m, 12);                                          /* a proto 1 hello: shorter, read as broken */
     net_r_hello(&rb, &r);

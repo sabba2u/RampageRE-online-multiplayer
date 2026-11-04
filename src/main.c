@@ -9559,6 +9559,7 @@ static int viewer_main(int argc, char **argv)
             free(sd);
         if (v.wii_roster.n)
             printf("wii data: the roster of %d monsters, %d cities\n", v.wii_roster.n, v.nwii_cities);
+        net_set_wii_data(v.wii_roster.n > 0);        /* NET: said in a guest's hello, checked by a host */
     }
     if (v.lang < 0)
         v.lang = console_language(gfx.language, v.region);   /* rampage.cfg's language= (settings.h) */

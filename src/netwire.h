@@ -79,8 +79,13 @@ int net_game_slots(int steam);
 /* NM_HELLO after its type byte */
 typedef struct {
     uint32_t proto, build, world; uint64_t token; int monster;
-    char version[24];                                /* (NET_PROTO 7, last) the copy's RAMPAGE_VERSION; "": an older copy */
+    char version[24];                                /* (NET_PROTO 7) the copy's RAMPAGE_VERSION; "": an older copy */
+    int content;                                     /* (last) the game data it has: NET_CONTENT_* */
 } NetHello;
+/* a hello's game data: unsaid (an older copy, 1.3.0's), the PS2's alone, the Wii's too (its 40 monsters, its cities) */
+enum { NET_CONTENT_UNSAID = 0, NET_CONTENT_PS2 = 1, NET_CONTENT_WII = 2 };
+/* 0: a host with the Wii's data (host_wii) cannot take a guest without it (its monsters and cities not shown there) */
+int net_content_ok(int host_wii, int guest_content);
 void net_w_hello(NetBuf *b, const NetHello *h);
 void net_r_hello(NetBuf *b, NetHello *h);
 /* NM_SLOTS after its type byte: n, then each slot's state and seconds left */

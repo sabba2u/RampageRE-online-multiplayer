@@ -73,7 +73,7 @@ static const SnapCopy *snap_find(const SnapCopy *ring, int n, int seq)
 static struct {
     int role, state, port;
     double now;
-    char peer[64], reject[200];
+    char peer[64], reject[280];
     uint32_t world, host_world;
     uint8_t info[NET_WORLD_INFO], host_info[NET_WORLD_INFO];
     int info_len, host_info_len;
@@ -296,6 +296,9 @@ int net_slots(void) { return g.role == NET_GUEST ? (g.told.n ? g.told.n : NET_GA
 int net_my_slot(void) { return g.role == NET_GUEST ? g.my_slot : 0; }
 int net_msg_slot(void) { return g.msg_slot; }
 void net_set_wanted_monster(int monster) { g.wanted_monster = monster; }
+
+static int g_wii_data;                               /* (net_set_wii_data) */
+void net_set_wii_data(int has) { g_wii_data = has != 0; }
 uint64_t net_rejoin_token(void) { return g_token; }
 
 int net_slot_state(int k, double *left)
@@ -372,10 +375,15 @@ static int is_banned(const char *addr)
 
 static void send_reject(int peer, const char *why)
 {
-    uint8_t m[160];
+    uint8_t m[256];                                  /* (the reason cut to fit, always ended: a longer one was sent
+                                                      * as its type byte alone, read there as junk) */
     NetBuf o = netbuf(m, sizeof m);
     net_w_u8(&o, NM_REJECT);
-    net_w_bytes(&o, why, (int)strlen(why) + 1);
+    int n = (int)strlen(why);
+    if (n > (int)sizeof m - 2)
+        n = (int)sizeof m - 2;
+    net_w_bytes(&o, why, n);
+    net_w_u8(&o, 0);
     nt_send_to(peer, 1, m, o.len);
     nt_flush();
 }
@@ -668,12 +676,15 @@ static void on_hello(int peer, NetBuf *b)
     net_r_hello(b, &h);
     uint8_t m[160 + NET_WORLD_INFO];
     NetBuf o = netbuf(m, sizeof m);
-    char why[180] = "";
+    char why[240] = "";
     if (h.proto != NET_PROTO || (!b->err && h.build != build_id() && strcmp(h.version, RAMPAGE_VERSION)))
         snprintf(why, sizeof why, "Different versions: the host has RampageRE %s, you have %s. Both need the same "
                  "release", RAMPAGE_VERSION, h.version[0] ? h.version : "an older one");
     else if (b->err)
         snprintf(why, sizeof why, "Broken hello");
+    else if (!net_content_ok(g_wii_data, h.content))
+        snprintf(why, sizeof why, "Missing the Wii data: this host plays with the Wii's extra monsters and cities. "
+                 "Set wii_data= in rampage.cfg to the Wii disc's files");
     else if (h.build != build_id())
         snprintf(why, sizeof why, "The two copies are different builds of RampageRE %s: use RampageRE.exe from the "
                  "same release on both", RAMPAGE_VERSION);
@@ -915,7 +926,8 @@ static void on_data(int peer, const uint8_t *data, int len)
         break;
     }
     case NM_REJECT:
-        snprintf(g.reject, sizeof g.reject, "The host said no: %.170s", (const char *)data + 1);
+        snprintf(g.reject, sizeof g.reject, "The host said no: %.*s", len > 1 ? (int)strnlen((const char *)data + 1,
+                 (size_t)(len - 1)) : 0, (const char *)data + 1);   /* (no more than came) */
         net_log("%s", g.reject);
         g.state = NETS_FAILED;
         if (strstr(g.reject, "removed you")) {       /* (kicked: its token is no good now) */
@@ -1002,9 +1014,10 @@ void net_update(double now)
             } else {
                 g.state = NETS_HANDSHAKE;
                 rejoin_load();
-                uint8_t m[32];
+                uint8_t m[64];
                 NetBuf b = netbuf(m, sizeof m);
-                NetHello h = { NET_PROTO, build_id(), g.world, g_token, g.wanted_monster, RAMPAGE_VERSION };
+                NetHello h = { NET_PROTO, build_id(), g.world, g_token, g.wanted_monster, RAMPAGE_VERSION,
+                               g_wii_data ? NET_CONTENT_WII : NET_CONTENT_PS2 };
                 net_w_u8(&b, NM_HELLO);
                 net_w_hello(&b, &h);
                 nt_send(1, m, b.len);

@@ -211,7 +211,10 @@ void net_w_hello(NetBuf *b, const NetHello *h)
         n++;
     net_w_u8(b, (uint32_t)n);
     net_w_bytes(b, h->version, n);
+    net_w_u8(b, (uint32_t)h->content);               /* (last: a 1.3.0 copy stops before it) */
 }
+
+int net_content_ok(int host_wii, int guest_content) { return !host_wii || guest_content != NET_CONTENT_PS2; }
 
 void net_r_hello(NetBuf *b, NetHello *h)
 {
@@ -221,12 +224,17 @@ void net_r_hello(NetBuf *b, NetHello *h)
     h->token = net_r_u64(b);
     h->monster = (int16_t)net_r_u16(b);
     h->version[0] = 0;
+    h->content = NET_CONTENT_UNSAID;
     if (!b->err && b->len < b->cap) {                /* (an older copy's hello stops here) */
         int n = (int)net_r_u8(b);
         if (n >= (int)sizeof h->version)
             n = (int)sizeof h->version - 1;
         net_r_bytes(b, h->version, n);
         h->version[b->err ? 0 : n] = 0;
+    }
+    if (!b->err && b->len < b->cap) {                /* (a 1.3.0 copy's stops here) */
+        int c = (int)net_r_u8(b);
+        h->content = c == NET_CONTENT_PS2 || c == NET_CONTENT_WII ? c : NET_CONTENT_UNSAID;
     }
 }
 
