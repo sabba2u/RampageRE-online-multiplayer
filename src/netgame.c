@@ -174,12 +174,53 @@ static uint32_t ng_world_id(const NgWorld *w)
 
 static void ng_puppets_reset(Viewer *v, int new_world);
 
+/* the lobby's list, more of the room (netlobby_set_info): its mode, what it is doing, whether one may join now, how long
+ * this game has run (since its world began here), its weather and time of day, and the game data it has */
+static void ng_lobby_info(Viewer *v, int in_game, uint32_t world)
+{
+    static double started;
+    static uint32_t started_world;
+    double now = (double)GetTickCount64() / 1000.0;
+    const char *content = v->wii_roster.n ? "ps2+wii" : "ps2";
+    const char *tod = !in_game ? "" : v->night ? "night" : "day";
+    if (!in_game || !v->game) {
+        started = 0;
+        netlobby_set_info("", "In the menus", 1, 0, "", "", content);
+        return;
+    }
+    if (!started || world != started_world) {
+        started = now;
+        started_world = world;
+    }
+    int pt = v->play_type;
+    const char *mode = pt == GP_CAMPAIGN ? "Campaign" : pt == GP_KING_CITY ? "King of the City" :
+                       pt == GP_KING_WORLD ? "King of the World" : pt == GP_TIMED_RUN ? "Timed Run" :
+                       pt == GP_BOSS_RUMBLE ? "Boss Rumble" : "Playing";
+    char status[40];
+    int st = game_state(v->game);
+    if (v->hud && hud_paused(v->hud))
+        snprintf(status, sizeof status, "Paused");
+    else if (st == GS_PLAY && pt == GP_BOSS_RUMBLE && v->rumble.wave > 0)
+        snprintf(status, sizeof status, "Boss Rumble wave %d", v->rumble.wave);
+    else if (st == GS_PLAY)
+        snprintf(status, sizeof status, "Playing");
+    else if (st == GS_GAME_OVER)
+        snprintf(status, sizeof status, "Game over");
+    else if (st >= GS_BLOCK_WON && st <= GS_END_WORLD)
+        snprintf(status, sizeof status, "Results");
+    else
+        snprintf(status, sizeof status, "Starting a block");
+    int joinable = !(pt == GP_BOSS_RUMBLE && v->rumble.players);   /* (a run under way: its seats are kept) */
+    netlobby_set_info(mode, status, joinable, (int)(now - started), weather_name(weather_get()), tod, content);
+}
+
 static void ng_set_world(Viewer *v)
 {
     NgWorld w;
     if (!ng_world_of(v, &w)) {
         net_set_world(0, NULL, 0);
         netlobby_set_game("", "");                   /* the lobby's list: in the menus (netlobby.c) */
+        ng_lobby_info(v, 0, 0);
         return;
     }
     char where[40];                                  /* the lobby's list: "George", "Chicago 2" */
@@ -190,6 +231,7 @@ static void ng_set_world(Viewer *v)
     /* (Boss Rumble under way: its bosses have the slots after the players, no new guest takes one) */
     net_set_seat_limit(net_role() == NET_HOST && v->play_type == GP_BOSS_RUMBLE ? v->rumble.players : 0);
     uint32_t id = ng_world_id(&w);
+    ng_lobby_info(v, 1, id);
     static uint32_t was_id;
     static int was_block = -1;
     if (id != was_id || v->block != was_block)       /* a new world or block: the puppets start again */

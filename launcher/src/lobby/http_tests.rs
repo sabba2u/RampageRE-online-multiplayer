@@ -183,3 +183,41 @@ fn players_for_guests_without_addresses() {
     assert_eq!(call("GET", &format!("{url}/games/ZZZZZ/players"), false, None).0, 404);
     drop(s);
 }
+
+#[test]
+fn new_fields_in_the_listing_and_info() {
+    let (_s, url) = start();
+    let extra = "&version=1.3.0&platform=PC&content=ps2%2Bwii&mode=Boss%20Rumble&status=Boss%20Rumble%20wave%207&joinable=0\
+                 &playing=100&weather=Storm&tod=Night";
+    let (st, body) = call("POST", &format!("{url}/games"), true, Some(&format!("{GAME}{extra}")));
+    assert_eq!(st, 200, "{body}");
+    let p: Vec<&str> = body.trim_end().split(' ').collect();
+    let (code, token) = (p[1].to_string(), p[2].to_string());
+    // the text listing keeps its nine columns
+    let (_, txt) = call("GET", &format!("{url}/games.txt"), false, None);
+    assert_eq!(txt.trim_end().split('\n').nth(1).unwrap().split('\t').count(), 9);
+    let one = |url: &str| -> serde_json::Value {
+        serde_json::from_str(&call("GET", &format!("{url}/games/{code}"), false, None).1).unwrap()
+    };
+    let v = one(&url);
+    assert_eq!((v["version"].as_str(), v["platform"].as_str(), v["content"].as_str(), v["mode"].as_str()),
+               (Some("1.3.0"), Some("pc"), Some("ps2+wii"), Some("Boss Rumble")));
+    assert_eq!((v["status"].as_str(), v["joinable"].as_u64(), v["weather"].as_str(), v["tod"].as_str()),
+               (Some("Boss Rumble wave 7"), Some(0), Some("Storm"), Some("Night")));
+    assert!(v["playing"].as_u64().unwrap() >= 100);
+    let at = format!("{url}/games/{code}");
+    assert_eq!(call("PUT", &at, false, Some(&format!("token={token}&status=In%20the%20menus&playing=0&joinable=1"))).0, 204);
+    let (_, list) = call("GET", &format!("{url}/games"), false, None);
+    let l: serde_json::Value = serde_json::from_str(&list).unwrap();
+    let v = &l["games"][0];
+    assert_eq!((v["status"].as_str(), v["playing"].as_u64(), v["joinable"].as_u64(), v["mode"].as_str()),
+               (Some("In the menus"), Some(0), Some(1), Some("Boss Rumble")));
+    assert_eq!(call("PUT", &at, false, Some(&format!("token={token}&platform=PC!"))),
+               (400, "error platform: up to 12 of a-z 0-9\n".into()));
+    assert_eq!(call("PUT", &at, false, Some(&format!("token={token}&joinable=5"))),
+               (400, "error joinable: a number from 0 to 1\n".into()));
+    let (st, info) = call("GET", &format!("{url}/info"), false, None);
+    let i: serde_json::Value = serde_json::from_str(&info).unwrap();
+    assert_eq!((st, i["server"].as_str(), i["games"].as_u64()), (200, Some("rampage_lobby"), Some(1)));
+    assert!(i["uptime"].as_u64().is_some());
+}

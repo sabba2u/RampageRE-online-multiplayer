@@ -496,7 +496,7 @@ each player sets them up once, from the page:
 
 | | |
 |---|---|
-| `POST /games` | name, monster, city, players, max, reserved? (slots kept for a player who dropped out), port, build (8 hex), external?, stun? (the host's `ip:port` as STUN saw it), lan? as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
+| `POST /games` | name, monster, city, players, max, reserved? (slots kept for a player who dropped out), port, build (8 hex), external?, stun? (the host's `ip:port` as STUN saw it), lan?, and the optional fields below, as JSON or a form. JSON `{code, token, heartbeat}`, or `ok <code> <token> <heartbeat>` with `Accept: text/plain`. 429: more than 6 registrations a minute or 4 listed games from one address; a host listing again from the same place and port replaces its old listing |
 | `PUT /games/<code>` | the heartbeat: `token` (or `X-Token`) and any changed fields. 404: forgotten, list again; 403: not your token |
 | `DELETE /games/<code>` | unlist, with the token |
 | `POST /games/<code>/knock` | a guest about to join: `stun` (its `ip:port` as STUN saw it) or `port`. Kept 15 s, 8 at most per game |
@@ -504,6 +504,22 @@ each player sets them up once, from the page:
 | `GET /games`, `GET /games/<code>` | JSON, each game with `join`: the address for whoever asked |
 | `GET /games.txt`, `GET /games/<code>.txt` | `rampage-lobby 1`, then a line per game, tab-separated: code, join (`-` none), players, max, build, name, monster, city, reserved (a ninth field; a reader of eight skips it) |
 | `GET /` `/install.ps1` `/install-linux.sh` `/health` | the page, the link installers, `rampage_lobby` |
+| `GET /info` | JSON `{"server":"rampage_lobby","uptime":<whole seconds since the lobby started>,"games":<how many listed>}` |
+
+Optional fields of `POST /games` and `PUT /games/<code>` (left out of a registration: the default; of a heartbeat:
+unchanged; a wrong one is a 400 like the others). All are in the JSON listings (`GET /games`, `GET /games/<code>`), never
+in the `.txt` ones:
+
+- `version`: the game's version ("1.3.0"), up to 16 of 0-9 A-Z a-z `.` `+` `-`; default ""
+- `platform`: "pc", up to 12 of a-z 0-9 (lowercased); default ""
+- `content`: which game data the host has ("ps2", "ps2+wii"), up to 16 of a-z 0-9 `+` (lowercased); default ""
+- `mode`: "Boss Rumble", text (control characters made spaces), 24 at most; default ""
+- `status`: "Boss Rumble wave 7", "In the menus", text, 40 at most; default ""
+- `joinable`: 1 a guest may join now, 0 not; default 1
+- `playing`: seconds the current game has run when sent, 0 to 604800 (0: not in a game); default 0. The lobby keeps it
+  as a start time, lists it as whole seconds counted on to now, and a later `playing` re-bases it
+- `weather`: text, 12 at most; default ""
+- `tod`: the time of day, text, 12 at most; default ""
 
 Colyseus clients join `lobby` (the built-in LobbyRoom): each listed game is a `game` room whose id is its code and whose
 metadata is the listing.

@@ -27,6 +27,29 @@ describe("registration fields", () => {
     expect(parseFields({ ...base, name: "" }).name).toBe("Rampage host");
     expect(parseFields({ players: 2 }, true)).toEqual({ players: 2 });
   });
+  it("takes what the host says of its game", () => {
+    expect(parseFields(base)).toMatchObject({ version: "", platform: "", content: "", mode: "", status: "", joinable: 1,
+                                              playing: 0, weather: "", tod: "" });
+    expect(parseFields({ ...base, version: "1.3.0-rc+2", platform: "PC", content: "PS2+Wii", mode: " Boss\tRumble ",
+                         joinable: "0", playing: 100, weather: "Thunderstorms!!", tod: "a\nb" })).toMatchObject({
+      version: "1.3.0-rc+2", platform: "pc", content: "ps2+wii", mode: "Boss Rumble", joinable: 0, playing: 100,
+      weather: "Thunderstorm", tod: "a b" });
+    const refused: [string, string | number][] = [["platform", "PC!"], ["version", "1.3.0 beta"], ["version", "12345678901234567"],
+                                                  ["content", "ps2,wii"], ["joinable", 5], ["playing", 604801], ["playing", -1]];
+    for (const [k, v] of refused) expect(() => parseFields({ players: 1, [k]: v }, true)).toThrow(new RegExp(`^${k}: `));
+    let t = 1_000_000;
+    const games = new Games({ now: () => t });
+    t += 2_900;
+    const g = games.register({ ...base, playing: 100, mode: "Boss Rumble" }, "203.0.113.5");
+    t += 5_500;
+    expect(games.public(g)).toMatchObject({ playing: 105, mode: "Boss Rumble", joinable: 1 });
+    games.heartbeat(g.code, { token: g.token, status: "In the menus", playing: 3 });
+    expect(games.public(g)).toMatchObject({ playing: 3, status: "In the menus", mode: "Boss Rumble" });
+    games.heartbeat(g.code, { token: g.token, playing: 0 });
+    t += 9_000;
+    expect(games.public(g).playing).toBe(0);
+    expect(games.info()).toEqual({ server: "rampage_lobby", uptime: 17, games: 1 });
+  });
   it("takes rooms of up to 8 players", () => {
     expect(parseFields({ ...base, players: 8, max: 8 })).toMatchObject({ players: 8, max: 8 });
     expect(parseFields({ ...base, players: 1, max: 8, reserved: 7 })).toMatchObject({ players: 1, max: 8, reserved: 7 });

@@ -6,7 +6,8 @@ import { normIp } from "./addr";
 
 /** The plain HTTP side, for RampageRE (src/netlobby.c) and anything else without a Colyseus SDK:
  *    POST   /games              register: name, monster, city, players, max, reserved?, port, build, external?, lan? (JSON or
- *                               form). Answers {code, token, heartbeat} as JSON, or "ok <code> <token> <heartbeat>"
+ *                               form), and optionally version, platform, content, mode, status, joinable, playing (s the
+ *                               current game has run; the listing counts on from it), weather, tod. Answers {code, token, heartbeat} as JSON, or "ok <code> <token> <heartbeat>"
  *                               when the request says Accept: text/plain (the game)
  *    PUT    /games/<code>       the heartbeat, every `heartbeat` seconds: token plus any field that changed. 404: the
  *                               lobby forgot it (restarted, or 30 s without one): register again
@@ -24,7 +25,8 @@ import { normIp } from "./addr";
  *    GET    /logo.png /background.jpg  its pictures (launcher/assets)
  *    GET    /install.ps1        sets up rampage:// links on Windows, with this lobby's address filled in
  *    GET    /install-linux.sh   the same for Linux desktops (xdg-mime)
- *    GET    /health             "rampage_lobby" */
+ *    GET    /health             "rampage_lobby"
+ *    GET    /info               {server: "rampage_lobby", uptime: whole seconds since it started, games: how many listed} */
 export function httpHandler(games: Games, opts: { trustProxy?: boolean } = {}) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -62,6 +64,7 @@ export function httpHandler(games: Games, opts: { trustProxy?: boolean } = {}) {
       if (pl && req.method === "GET") return json(200, { players: games.players(pl[1]) });
       if (req.method === "GET") {
         if (p === "/health") return send(200, "rampage_lobby\n");
+        if (p === "/info") return json(200, games.info());
         if (p === "/") return send(200, files.page(), "text/html; charset=utf-8");
         if (p === "/colyseus.js") return send(200, files.colyseus(), "text/javascript");
         if (p === "/logo.png" || p === "/background.jpg") {

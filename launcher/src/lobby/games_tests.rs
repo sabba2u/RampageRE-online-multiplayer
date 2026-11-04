@@ -165,3 +165,51 @@ fn players_reported_and_the_hosts_word() {
     assert_eq!(games.report_players(&g.code, Some(&g.token), rows).unwrap(), vec!["admin 1", "ban 203.0.113.9"]);
     assert!(games.roster("ZZZZZ").is_empty());
 }
+
+#[test]
+fn what_the_host_says_of_its_game() {
+    let (t, mut games) = clock(1_000_000);
+    // left out: the defaults
+    let g = games.register(&base(json!({})), "203.0.113.5").unwrap();
+    let p = games.public(&g);
+    assert_eq!((p.version.as_str(), p.platform.as_str(), p.content.as_str(), p.mode.as_str(), p.status.as_str()), ("", "", "", "", ""));
+    assert_eq!((p.joinable, p.playing, p.weather.as_str(), p.tod.as_str()), (1, 0, "", ""));
+    let g = games.register(&base(json!({"port": 27961, "version": "1.3.0-rc+2", "platform": "PC", "content": "PS2+Wii",
+                                        "mode": " Boss\tRumble ", "status": "Boss Rumble wave 7", "joinable": "0",
+                                        "playing": 100, "weather": "Storm", "tod": "Night"})), "203.0.113.5").unwrap();
+    let p = games.public(&g);
+    assert_eq!((p.version.as_str(), p.platform.as_str(), p.content.as_str(), p.mode.as_str(), p.status.as_str()),
+               ("1.3.0-rc+2", "pc", "ps2+wii", "Boss Rumble", "Boss Rumble wave 7"));
+    assert_eq!((p.joinable, p.playing, p.weather.as_str(), p.tod.as_str()), (0, 100, "Storm", "Night"));
+    // `playing` counts on in the listing
+    advance(&t, 5_500);
+    assert_eq!(games.public(games.get(&g.code).unwrap()).playing, 105);
+    // a heartbeat changes only what it says; its `playing` re-bases the clock, 0 is out of a game
+    games.heartbeat(&g.code, &obj(json!({"token": g.token, "status": "In the menus", "playing": 3}))).unwrap();
+    let p = games.public(games.get(&g.code).unwrap());
+    assert_eq!((p.status.as_str(), p.mode.as_str(), p.playing, p.joinable), ("In the menus", "Boss Rumble", 3, 0));
+    games.heartbeat(&g.code, &obj(json!({"token": g.token, "joinable": 1, "playing": 0}))).unwrap();
+    advance(&t, 9_000);
+    let p = games.public(games.get(&g.code).unwrap());
+    assert_eq!((p.joinable, p.playing, p.version.as_str()), (1, 0, "1.3.0-rc+2"));
+    // too long, wrong characters, out of range: refused
+    for (k, v) in [("platform", json!("PC!")), ("version", json!("1.3.0 beta")), ("version", json!("12345678901234567")),
+                   ("content", json!("ps2,wii")), ("joinable", json!(5)), ("playing", json!(604801)), ("playing", json!(-1))] {
+        let e = games.heartbeat(&g.code, &obj(json!({"token": g.token, k: v}))).unwrap_err();
+        assert_eq!(e.status, 400);
+        assert!(e.msg.starts_with(&format!("{k}: ")), "{}", e.msg);
+    }
+    assert!(parse_fields(&base(json!({"platform": "pc 2"})), false).unwrap_err().contains("platform"));
+    // typed text is cleaned and cut
+    let f = parse_fields(&base(json!({"status": "x".repeat(50), "weather": "Thunderstorms!!", "tod": "a\nb"})), false).unwrap();
+    assert_eq!((f.status.unwrap().len(), f.weather.as_deref(), f.tod.as_deref()), (40, Some("Thunderstorm"), Some("a b")));
+}
+
+#[test]
+fn info_uptime_and_count() {
+    let (t, mut games) = clock(1_000_000);
+    advance(&t, 2_900);
+    games.register(&base(json!({})), "203.0.113.5").unwrap();
+    assert_eq!(games.info(), Info { server: "rampage_lobby", uptime: 2, games: 1 });
+    assert_eq!(serde_json::to_string(&games.info()).unwrap(), r#"{"server":"rampage_lobby","uptime":2,"games":1}"#);
+}

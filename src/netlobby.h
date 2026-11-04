@@ -54,6 +54,11 @@ void netlobby_set_name(const char *name);
 /* ---- the host's listing: made, kept alive (a heartbeat every ~10 s) and taken down by netlobby_update, while
  * hosting over ENet with listing on ---- */
 void netlobby_set_game(const char *monster, const char *city);   /* netgame.c, as the world changes ("" menus) */
+/* netgame.c, each frame: the room's more for the list (the launcher's browser): the mode ("Boss Rumble", "" menus),
+ * the status ("Boss Rumble wave 7", "In the menus"), 0 when no one may join now (a Boss Rumble run's seats), the
+ * seconds this game has run (0 none), the weather and time of day, the game data ("ps2", "ps2+wii") */
+void netlobby_set_info(const char *mode, const char *status, int joinable, int playing, const char *weather,
+                       const char *tod, const char *content);
 void netlobby_set_external(const char *addr);       /* our address on the internet, when known (UPnP), "" none */
 const char *netlobby_my_code(void);                  /* our join code while listed, "" not */
 const char *netlobby_host_status(void);              /* "Listed: code K7PQ2", "Lobby not reachable" ... */

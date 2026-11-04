@@ -127,3 +127,51 @@ fn public_ip_services_plain_http() {
     // the launcher's ureq is built without TLS: an https:// service would always fail
     assert!(PUBLIC_IP_SERVICES.iter().all(|u| u.starts_with("http://")));
 }
+
+#[test]
+fn rooms_say_more() {
+    let body = r#"{"games":[
+        {"code":"K7PQ2","name":"sabba","monster":"George","city":"Las Vegas 8","players":2,"max":4,"reserved":0,
+         "build":"CAFE1234","version":"1.3.0","platform":"pc","content":"ps2+wii","mode":"Boss Rumble",
+         "status":"Boss Rumble wave 7","joinable":0,"playing":372,"weather":"storm","tod":"night","since":1000}],
+        "you":"1.2.3.4","heartbeat":15}"#;
+    let r = &parse_rooms(body).unwrap()[0];
+    assert_eq!((r.version.as_str(), r.platform.as_str(), r.content.as_str()), ("1.3.0", "pc", "ps2+wii"));
+    assert_eq!((r.mode.as_str(), r.status.as_str(), r.joinable, r.playing), ("Boss Rumble", "Boss Rumble wave 7", false, 372));
+    assert_eq!(r.version_shown(), "v1.3.0");
+    let d = r.details(1000 + 42 * 60 * 1000);
+    for want in ["1.3.0", "CAFE1234", "PC", "PS2 + Wii", "Boss Rumble wave 7", "6:12", "42 min", "storm", "night"] {
+        assert!(d.contains(want), "{want} in {d}");
+    }
+    // why one can't join: a run under way, another version, the Wii's data missing here
+    assert!(r.why_not("1.3.0", true).unwrap().contains("Boss Rumble"));
+    let mut open = r.clone();
+    open.joinable = true;
+    assert_eq!(open.why_not("1.3.0", true), None);
+    assert!(open.why_not("1.4.0", true).unwrap().contains("1.3.0"));
+    assert!(open.why_not("1.3.0", false).unwrap().contains("Wii"));
+    open.content = "ps2".into();
+    assert_eq!(open.why_not("1.3.0", false), None);
+    // an older server or game without the fields: joinable, the version unknown
+    let old = &parse_rooms(r#"{"games":[{"code":"ZZZZZ","players":1,"max":2}]}"#).unwrap()[0];
+    assert!(old.joinable);
+    assert_eq!(old.version_shown(), "v?");
+    assert_eq!(old.why_not("1.3.0", false), None);
+}
+
+#[test]
+fn wii_data_found_beside_the_game() {
+    let d = std::env::temp_dir().join(format!("rre_wii_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    assert!(!has_wii_data(&d));
+    std::fs::create_dir_all(d.join("wii")).unwrap();
+    assert!(!has_wii_data(&d), "a wii folder alone: the Windows game doesn't look there");
+    let elsewhere = d.join("w");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    std::fs::write(d.join("rampage.cfg"), format!("wii_data={}\n", elsewhere.display())).unwrap();
+    assert!(has_wii_data(&d));
+    std::fs::write(d.join("rampage.cfg"), "wii_data=none\n").unwrap();
+    assert!(!has_wii_data(&d));
+    let _ = std::fs::remove_dir_all(&d);
+}

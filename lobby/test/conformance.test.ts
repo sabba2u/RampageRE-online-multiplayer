@@ -99,8 +99,52 @@ describe.each(lobbies)("the $name lobby", lobby => {
     expect((await fetch(`${base}/games/ZZZZZ/players`)).status).toBe(404);
   });
 
-  it.runIf(run)("answers health and unknown paths", async () => {
+  it.runIf(run)("lists what the host says of its game, and a heartbeat changes only what it says", async () => {
+    // the same host and port as the first test's: it replaces that listing (4 at most from one address, 6 a minute)
+    const extra = { version: "1.3.0", platform: "PC", content: "PS2+wii", mode: "Boss Rumble", status: "Boss Rumble wave 7",
+                    joinable: 0, playing: 100, weather: "Storm", tod: "Night" };
+    const bad = await fetch(`${base}/games`, { method: "POST", headers: { "Content-Type": "application/json" },
+                                               body: JSON.stringify({ ...GAME, port: 27970, platform: "PC!" }) });
+    expect([bad.status, await bad.text()]).toEqual([400, "error platform: up to 12 of a-z 0-9\n"]);
+    const res = await fetch(`${base}/games`, { method: "POST", headers: { Accept: "text/plain", "Content-Type": "application/json" },
+                                               body: JSON.stringify({ ...GAME, port: 27970, ...extra }) });
+    expect(res.status).toBe(200);
+    const [, code, token] = (await res.text()).trim().split(" ");
+    const one = await (await fetch(`${base}/games/${code}`)).json();
+    expect(one).toMatchObject({ code, version: "1.3.0", platform: "pc", content: "ps2+wii", mode: "Boss Rumble",
+                                status: "Boss Rumble wave 7", joinable: 0, weather: "Storm", tod: "Night", reserved: 0 });
+    expect(one.playing).toBeGreaterThanOrEqual(100);
+    expect(one.playing).toBeLessThan(110);
+    // the text listings keep their nine columns
+    const line = (await (await fetch(`${base}/games/${code}.txt`)).text()).split("\n")[1];
+    expect(line).toBe(`${code}\t127.0.0.1:27970\t1\t2\tCAFE1234\tsabba\tGeorge\tChicago 1\t0`);
+
+    const at = `${base}/games/${code}`;
+    expect((await fetch(at, { method: "PUT", headers: FORM, body: form({ token, status: "In the menus", playing: 0, joinable: 1 }) })).status).toBe(204);
+    const list = await (await fetch(`${base}/games`)).json();
+    expect(list.games.find((g: { code: string }) => g.code === code)).toMatchObject({
+      status: "In the menus", playing: 0, joinable: 1, mode: "Boss Rumble", version: "1.3.0", platform: "pc" });
+    const refused: [Record<string, string | number>, string][] = [
+      [{ platform: "PC!" }, "platform: up to 12 of a-z 0-9"], [{ joinable: 5 }, "joinable: a number from 0 to 1"],
+      [{ version: "1.3 beta" }, "version: up to 16 of 0-9 A-Z a-z . + -"], [{ playing: 604801 }, "playing: a number from 0 to 604800"]];
+    for (const [body, err] of refused) {
+      const r = await fetch(at, { method: "PUT", headers: FORM, body: form({ token, ...body }) });
+      expect([r.status, await r.text()]).toEqual([400, `error ${err}\n`]);
+    }
+    expect((await fetch(at, { method: "PUT", headers: FORM, body: form({ token, playing: 50 }) })).status).toBe(204);
+    const again = await (await fetch(at)).json();
+    expect([again.playing >= 50 && again.playing < 60, again.status]).toEqual([true, "In the menus"]);
+  });
+
+  it.runIf(run)("answers health, info and unknown paths", async () => {
     expect(await (await fetch(`${base}/health`)).text()).toBe("rampage_lobby\n");
+    const info = await fetch(`${base}/info`);
+    expect([info.status, info.headers.get("content-type")]).toEqual([200, "application/json"]);
+    const i = await info.json();
+    const listed = (await (await fetch(`${base}/games`)).json()).games.length;
+    expect(Object.keys(i)).toEqual(["server", "uptime", "games"]);
+    expect(i).toEqual({ server: "rampage_lobby", uptime: i.uptime, games: listed });
+    expect(Number.isInteger(i.uptime) && i.uptime >= 0).toBe(true);
     const nope = await fetch(`${base}/nope`);
     expect([nope.status, await nope.text()]).toEqual([404, "error not found\n"]);
   });

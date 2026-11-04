@@ -27,7 +27,18 @@ export type GameFields = {
   reserved: number;  // player slots kept for a player who dropped out (60 s, for their rejoin): not open to others
   port: number;      // the host's ENet port (UDP)
   build: string;     // 8 hex digits: net.c's build id; guest and host must match or the host refuses the hello
+  version: string;   // the game's version, "1.3.0": 0-9 A-Z a-z . + -, 16 at most ("" not said)
+  platform: string;  // "pc": a-z 0-9, 12 at most
+  content: string;   // which game data the host has, "ps2" or "ps2+wii": a-z 0-9 +, 16 at most
+  mode: string;      // "Boss Rumble", "" not said
+  status: string;    // "Boss Rumble wave 7", "In the menus"
+  joinable: number;  // 1 a guest may join now, 0 not
+  weather: string;   // as the host's game names it ("" not said)
+  tod: string;       // the time of day, the same
 };
+
+/** What a registration or heartbeat says besides GameFields: `playing`, how long the current game has run (s, 0 none). */
+export type ParsedFields = Partial<GameFields> & { external?: string; stun?: string; lan?: string; playing?: number };
 
 /** One listed game. `source` is where its registration came from; `external` what UPnP (or the player) said the
  *  host's public address is; `stun` what a STUN server saw of the host's game socket ("ip:port": the port its router
@@ -37,6 +48,8 @@ export type Game = GameFields & {
   code: string; token: string;
   source: string; external: string; stun: string; lan: string;
   since: number; seen: number;
+  /** when the current game started (ms, the lobby's clock: now - `playing`), null not in a game */
+  started: number | null;
   knocks: { addr: string; at: number }[];
   /** who is in it, as its game says with its knocks every second (src/netlobby.c player_rows) */
   roster?: Player[];
@@ -61,7 +74,9 @@ export function parsePlayers(rows: string): Player[] {
 
 /** What everyone sees of a game: no token, no source. `address` is the public one ("" when the lobby can't tell:
  *  a host on the lobby's own PC or network with no UPnP), `lan` the local one ("" none). */
-export type PublicGame = GameFields & { code: string; address: string; lan: string; since: number };
+export type PublicGame = GameFields & { code: string; address: string; lan: string; since: number;
+  /** whole seconds the current game has run, now (0 not in a game) */
+  playing: number };
 
 /** Typed by players and sent by games: no control characters, no tabs (games.txt's separator), not too long. */
 const clean = (s: unknown, n: number) => String(s ?? "").replace(/[\x00-\x1f\x7f]/g, " ").trim().slice(0, n);
@@ -73,7 +88,6 @@ function int(v: unknown, lo: number, hi: number, dflt?: number): number {
   return n;
 }
 
-/** A registration or a heartbeat's body, checked. `partial`: a heartbeat may leave anything out. */
 /** "a.b.c.d:port" on the internet (a STUN answer), else undefined. */
 export function publicEndpoint(v: unknown): string | undefined {
   const m = String(v ?? "").trim().match(/^([\d.]+):(\d{1,5})$/);
@@ -81,8 +95,17 @@ export function publicEndpoint(v: unknown): string | undefined {
   return `${m[1]}:${Number(m[2])}`;
 }
 
-export function parseFields(b: Record<string, unknown>, partial = false): Partial<GameFields> & { external?: string; stun?: string; lan?: string } {
-  const out: Partial<GameFields> & { external?: string; stun?: string; lan?: string } = {};
+/** A word from a fixed set of characters (`ok`), `n` at most, "" allowed; `lower`: lowercased first. */
+function word(v: unknown, n: number, ok: RegExp, what: string, lower = false): string {
+  let s = String(v ?? "").trim();
+  if (lower) s = s.toLowerCase();
+  if (s.length > n || ![...s].every(c => ok.test(c))) throw new Error(`up to ${n} of ${what}`);
+  return s;
+}
+
+/** A registration or a heartbeat's body, checked. `partial`: a heartbeat may leave anything out. */
+export function parseFields(b: Record<string, unknown>, partial = false): ParsedFields {
+  const out: ParsedFields = {};
   const has = (k: string) => b[k] !== undefined && b[k] !== null;
   const field = (k: string, f: () => void) => {
     try { f(); } catch (e: any) { throw new Error(`${k}: ${e.message}`); }
@@ -99,6 +122,15 @@ export function parseFields(b: Record<string, unknown>, partial = false): Partia
     if (!/^[0-9A-Fa-f]{8}$/.test(s)) throw new Error("8 hex digits");
     out.build = s.toUpperCase();
   });
+  if (has("version") || !partial) field("version", () => { out.version = word(b.version, 16, /[0-9A-Za-z.+-]/, "0-9 A-Z a-z . + -"); });
+  if (has("platform") || !partial) field("platform", () => { out.platform = word(b.platform, 12, /[a-z0-9]/, "a-z 0-9", true); });
+  if (has("content") || !partial) field("content", () => { out.content = word(b.content, 16, /[a-z0-9+]/, "a-z 0-9 +", true); });
+  if (has("mode") || !partial) out.mode = clean(b.mode, 24);
+  if (has("status") || !partial) out.status = clean(b.status, 40);
+  if (has("joinable") || !partial) field("joinable", () => { out.joinable = int(b.joinable, 0, 1, 1); });
+  if (has("playing") || !partial) field("playing", () => { out.playing = int(b.playing, 0, 604800, 0); });
+  if (has("weather") || !partial) out.weather = clean(b.weather, 12);
+  if (has("tod") || !partial) out.tod = clean(b.tod, 12);
   if (has("external") && b.external !== "") field("external", () => {
     const hp = splitHostPort(String(b.external));
     if (!hp) throw new Error("not a host or host:port");
@@ -130,13 +162,14 @@ export class Games {
   private games = new Map<string, Game>();
   private recent = new Map<string, number[]>();   // per source address: when it registered, for the rate limit
   listeners: Listener[] = [];
+  private readonly startedAt: number;   // when this lobby started (GET /info's uptime)
 
-  constructor(private opts: { publicAddress?: string; now?: () => number } = {}) {}
+  constructor(private opts: { publicAddress?: string; now?: () => number } = {}) { this.startedAt = this.now(); }
   private now() { return this.opts.now ? this.opts.now() : Date.now(); }
 
   register(body: Record<string, unknown>, from: string): Game {
     const source = normIp(from);
-    const f = parseFields(body) as GameFields & { external?: string; stun?: string; lan?: string };
+    const { playing, ...f } = parseFields(body) as GameFields & { external?: string; stun?: string; lan?: string; playing: number };
     const t = this.now();
     const times = (this.recent.get(source) ?? []).filter(x => t - x < 60_000);
     if (times.length >= REGISTER_PER_MINUTE) throw new LobbyError(429, "too many games registered from your address, try again in a minute");
@@ -151,7 +184,8 @@ export class Games {
     do code = Array.from(crypto.randomBytes(CODE_LENGTH), b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
     while (this.games.has(code));
     const g: Game = { ...f, code, token: crypto.randomBytes(16).toString("hex"), source, external: f.external ?? "",
-                      stun: f.stun ?? "", lan: f.lan ?? (isPrivate(source) ? source : ""), since: t, seen: t, knocks: [] };
+                      stun: f.stun ?? "", lan: f.lan ?? (isPrivate(source) ? source : ""), since: t, seen: t,
+                      started: playing ? t - playing * 1000 : null, knocks: [] };
     this.games.set(code, g);
     for (const l of this.listeners) l.add(this.public(g));
     return g;
@@ -168,8 +202,10 @@ export class Games {
 
   heartbeat(code: string, body: Record<string, unknown>): Game {
     const g = this.own(code, body.token);
-    const f = parseFields(body, true);
-    Object.assign(g, f, { seen: this.now() });
+    const { playing, ...f } = parseFields(body, true);
+    const t = this.now();
+    Object.assign(g, f, { seen: t });
+    if (playing !== undefined) g.started = playing ? t - playing * 1000 : null;   // the game's word re-bases it
     if (g.players > g.max) g.players = g.max;
     if (g.players + g.reserved > g.max) g.reserved = Math.max(0, g.max - g.players);
     for (const l of this.listeners) l.update(this.public(g));
@@ -242,8 +278,15 @@ export class Games {
 
   public(g: Game): PublicGame {
     const { code, name, monster, city, players, max, reserved, port, build, since } = g;
+    const { version, platform, content, mode, status, joinable, weather, tod } = g;
     return { code, name, monster, city, players, max, reserved, port, build, since, address: this.publicAddress(g),
-             lan: g.lan ? `${g.lan}:${g.port}` : "" };
+             lan: g.lan ? `${g.lan}:${g.port}` : "", version, platform, content, mode, status, joinable,
+             playing: g.started === null ? 0 : Math.max(0, Math.floor((this.now() - g.started) / 1000)), weather, tod };
+  }
+
+  /** GET /info: what this is, how long it has run (whole seconds), how many games it lists. */
+  info() {
+    return { server: "rampage_lobby", uptime: Math.max(0, Math.floor((this.now() - this.startedAt) / 1000)), games: this.games.size };
   }
 
   /** The address a guest asking from `from` should join, "ip:port":

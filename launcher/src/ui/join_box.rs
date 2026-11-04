@@ -154,13 +154,27 @@ impl App {
             return;
         }
         let mut join_code = None;
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+        let (mine, wii) = (env!("CARGO_PKG_VERSION"), join::here_has_wii_data());
         for r in self.join_box.rooms.clone() {
+            let why = r.why_not(mine, wii);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(&r.code).monospace().strong());
                 ui.label(RichText::new(r.label()).small());
                 ui.label(RichText::new(r.seats()).small().color(if r.full() { RED } else { GREEN }));
-                let b = ui.add_enabled(!busy && !r.full(), egui::Button::new(RichText::new("Join").strong()));
-                if b.clicked() {
+                if !r.status.is_empty() {
+                    ui.label(RichText::new(&r.status).small().color(DIM_TEXT));
+                }
+                // the version, the rest on hover: its build, platform, game data, mode, times, weather
+                let uses_wii = r.content.contains("wii");
+                let shown = if uses_wii { format!("{} +Wii", r.version_shown()) } else { r.version_shown() };
+                let mut v = RichText::new(shown).small();
+                if (!r.version.is_empty() && r.version != mine) || (uses_wii && !wii) { v = v.color(RED); }
+                ui.label(v).on_hover_text(r.details(now_ms));
+                let b = ui.add_enabled(!busy && why.is_none(), egui::Button::new(RichText::new("Join").strong()));
+                if let Some(w) = &why {
+                    b.on_disabled_hover_text(w.as_str());
+                } else if b.clicked() {
                     join_code = Some(r.code.clone());
                 }
             });

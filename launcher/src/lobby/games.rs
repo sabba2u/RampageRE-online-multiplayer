@@ -34,6 +34,17 @@ pub struct Fields {
     pub reserved: Option<u32>,
     pub port: Option<u16>,
     pub build: Option<String>,
+    /// the game's version ("1.3.0"), platform ("pc"), game data ("ps2+wii"), mode, status, whether a guest may join
+    /// now, how long its current game has run (s, 0 none), weather and time of day
+    pub version: Option<String>,
+    pub platform: Option<String>,
+    pub content: Option<String>,
+    pub mode: Option<String>,
+    pub status: Option<String>,
+    pub joinable: Option<u32>,
+    pub playing: Option<u32>,
+    pub weather: Option<String>,
+    pub tod: Option<String>,
     pub external: Option<String>,
     pub stun: Option<String>,
     pub lan: Option<String>,
@@ -51,6 +62,16 @@ pub struct Game {
     pub reserved: u32,
     pub port: u16,
     pub build: String,
+    pub version: String,
+    pub platform: String,
+    pub content: String,
+    pub mode: String,
+    pub status: String,
+    pub joinable: u32,
+    pub weather: String,
+    pub tod: String,
+    /// when its current game started (ms, this lobby's clock: now - `playing`), None not in a game
+    pub started: Option<u64>,
     /// where its registration came from; what UPnP said; what STUN saw; its own address on its network ("" none)
     pub source: String,
     pub external: String,
@@ -110,6 +131,24 @@ pub struct PublicGame {
     pub since: u64,
     pub address: String,
     pub lan: String,
+    pub version: String,
+    pub platform: String,
+    pub content: String,
+    pub mode: String,
+    pub status: String,
+    pub joinable: u32,
+    /// whole seconds its current game has run, now (0 not in a game)
+    pub playing: u64,
+    pub weather: String,
+    pub tod: String,
+}
+
+/// GET /info, its fields in this order (as the Node lobby says them).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Info {
+    pub server: &'static str,
+    pub uptime: u64,
+    pub games: usize,
 }
 
 #[derive(Debug)]
@@ -162,6 +201,18 @@ fn int(v: Option<&Value>, lo: u32, hi: u32, dflt: Option<u32>) -> Result<u32, St
     Ok(n as u32)
 }
 
+/// A word from a fixed set of characters (`ok`), `n` at most, "" allowed; `lower`: lowercased first.
+fn word(v: Option<&Value>, n: usize, ok: fn(char) -> bool, what: &str, lower: bool) -> Result<String, String> {
+    let mut s = js_string(v).trim().to_string();
+    if lower {
+        s = s.to_lowercase();
+    }
+    if s.chars().count() > n || !s.chars().all(ok) {
+        return Err(format!("up to {n} of {what}"));
+    }
+    Ok(s)
+}
+
 /// A registration or a heartbeat's body, checked. `partial`: a heartbeat may leave anything out.
 pub fn parse_fields(b: &Map<String, Value>, partial: bool) -> Result<Fields, String> {
     let has = |k: &str| b.get(k).map_or(false, |v| !v.is_null());
@@ -184,6 +235,25 @@ pub fn parse_fields(b: &Map<String, Value>, partial: bool) -> Result<Fields, Str
         }
         out.build = Some(s.to_uppercase());
     }
+    let text = |k: &str, r: Result<String, String>| r.map_err(|e| format!("{k}: {e}"));
+    if has("version") || !partial {
+        out.version = Some(text("version", word(b.get("version"), 16, |c| c.is_ascii_alphanumeric() || ".+-".contains(c),
+                                                "0-9 A-Z a-z . + -", false))?);
+    }
+    if has("platform") || !partial {
+        out.platform = Some(text("platform", word(b.get("platform"), 12, |c| c.is_ascii_lowercase() || c.is_ascii_digit(),
+                                                  "a-z 0-9", true))?);
+    }
+    if has("content") || !partial {
+        out.content = Some(text("content", word(b.get("content"), 16, |c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '+',
+                                                "a-z 0-9 +", true))?);
+    }
+    if has("mode") || !partial { out.mode = Some(clean(b.get("mode"), 24)); }
+    if has("status") || !partial { out.status = Some(clean(b.get("status"), 40)); }
+    if has("joinable") || !partial { out.joinable = Some(field("joinable", int(b.get("joinable"), 0, 1, Some(1)))?); }
+    if has("playing") || !partial { out.playing = Some(field("playing", int(b.get("playing"), 0, 604800, Some(0)))?); }
+    if has("weather") || !partial { out.weather = Some(clean(b.get("weather"), 12)); }
+    if has("tod") || !partial { out.tod = Some(clean(b.get("tod"), 12)); }
     let given = |k: &str| has(k) && b.get(k) != Some(&Value::String(String::new()));
     if given("external") {
         let (h, p) = split_host_port(&js_string(b.get("external"))).ok_or("external: not a host or host:port")?;
@@ -224,14 +294,20 @@ pub struct Games {
     banned: Vec<String>,
     muted: Vec<String>,
     kicks: Vec<String>,
+    /// when this lobby started (GET /info's uptime)
+    started_at: u64,
 }
+
+/// `started` for a game that says it has run `playing` s by `now` (0: not in a game).
+fn start_of(playing: u32, now: u64) -> Option<u64> { (playing > 0).then(|| now.saturating_sub(playing as u64 * 1000)) }
 
 impl Games {
     /// `public_address`: this machine's address on the internet, for hosts on its PC or network without UPnP;
     /// `now`: the clock in milliseconds.
     pub fn new(public_address: Option<String>, now: Box<dyn Fn() -> u64 + Send>) -> Games {
+        let started_at = now();
         Games { games: HashMap::new(), recent: HashMap::new(), public_address: public_address.filter(|s| !s.is_empty()), now,
-                banned: Vec::new(), muted: Vec::new(), kicks: Vec::new() }
+                banned: Vec::new(), muted: Vec::new(), kicks: Vec::new(), started_at }
     }
 
     pub fn set_public_address(&mut self, ip: Option<String>) { self.public_address = ip.filter(|s| !s.is_empty()); }
@@ -273,6 +349,9 @@ impl Games {
             code: code.clone(), token: hex(&tok),
             name: f.name.unwrap(), monster: f.monster.unwrap(), city: f.city.unwrap(),
             players: f.players.unwrap(), max: f.max.unwrap(), reserved: f.reserved.unwrap(), port, build: f.build.unwrap(),
+            version: f.version.unwrap(), platform: f.platform.unwrap(), content: f.content.unwrap(), mode: f.mode.unwrap(),
+            status: f.status.unwrap(), joinable: f.joinable.unwrap(), weather: f.weather.unwrap(), tod: f.tod.unwrap(),
+            started: start_of(f.playing.unwrap(), t),
             external: f.external.unwrap_or_default(), stun: f.stun.unwrap_or_default(),
             lan: lan.unwrap_or_else(|| if is_private(&source) { source.clone() } else { String::new() }),
             source, since: t, seen: t, knocks: Vec::new(), roster: Vec::new(), roster_at: 0,
@@ -303,6 +382,15 @@ impl Games {
         if let Some(v) = f.reserved { g.reserved = v; }
         if let Some(v) = f.port { g.port = v; }
         if let Some(v) = f.build { g.build = v; }
+        if let Some(v) = f.version { g.version = v; }
+        if let Some(v) = f.platform { g.platform = v; }
+        if let Some(v) = f.content { g.content = v; }
+        if let Some(v) = f.mode { g.mode = v; }
+        if let Some(v) = f.status { g.status = v; }
+        if let Some(v) = f.joinable { g.joinable = v; }
+        if let Some(v) = f.playing { g.started = start_of(v, now); } // the game's word re-bases it
+        if let Some(v) = f.weather { g.weather = v; }
+        if let Some(v) = f.tod { g.tod = v; }
         if let Some(v) = f.external { g.external = v; }
         if let Some(v) = f.stun { g.stun = v; }
         if let Some(v) = f.lan { g.lan = v; }
@@ -412,7 +500,15 @@ impl Games {
             code: g.code.clone(), name: g.name.clone(), monster: g.monster.clone(), city: g.city.clone(),
             players: g.players, max: g.max, reserved: g.reserved, port: g.port, build: g.build.clone(), since: g.since,
             address: self.public_address(g), lan: if g.lan.is_empty() { String::new() } else { format!("{}:{}", g.lan, g.port) },
+            version: g.version.clone(), platform: g.platform.clone(), content: g.content.clone(), mode: g.mode.clone(),
+            status: g.status.clone(), joinable: g.joinable,
+            playing: g.started.map_or(0, |s| (self.now)().saturating_sub(s) / 1000), weather: g.weather.clone(), tod: g.tod.clone(),
         }
+    }
+
+    /// GET /info: what this is, how long it has run (whole seconds), how many games it lists.
+    pub fn info(&self) -> Info {
+        Info { server: "rampage_lobby", uptime: (self.now)().saturating_sub(self.started_at) / 1000, games: self.games.len() }
     }
 
     /// The address a guest asking from `from` should join: 127.0.0.1 when both are on the lobby's PC; the host's LAN

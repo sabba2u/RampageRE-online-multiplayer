@@ -3,7 +3,7 @@
 //!   PUT    /games/<code>         the heartbeat; DELETE /games/<code> unlists (token in the body, ?token= or X-Token)
 //!   GET    /games, /games.txt, /games/<code>[.txt]
 //!   POST   /games/<code>/knock   a guest about to join; GET /games/<code>/knocks?token= the host's, every second
-//!   GET    /, /logo.png, /background.jpg, /health
+//!   GET    /, /logo.png, /background.jpg, /health, /info ({server, uptime, games})
 //! No Colyseus (/colyseus.js is a 404: the page then reads /games every few seconds), no link installers (the launcher
 //! sets links up itself), no trustProxy (that is for the Node lobby behind nginx).
 use super::addr::norm_ip;
@@ -272,6 +272,11 @@ fn handle(games: &Mutex<Games>, mut req: Request) {
         if method == Method::Get {
             match p.as_str() {
                 "/health" => { text(req, 200, "rampage_lobby\n"); return Ok(()); }
+                "/info" => {
+                    let v = games.lock().unwrap().info();
+                    send(req, 200, serde_json::to_vec(&v).unwrap(), "application/json");
+                    return Ok(());
+                }
                 "/" => { send(req, 200, PAGE.as_bytes().to_vec(), "text/html; charset=utf-8"); return Ok(()); }
                 "/logo.png" => { send(req, 200, LOGO.to_vec(), "image/png"); return Ok(()); }
                 "/background.jpg" => { send(req, 200, BACKGROUND.to_vec(), "image/jpeg"); return Ok(()); }

@@ -214,6 +214,7 @@ int netlobby_parse_admin(const char *text, NetLobbyAdmin *a)
 #include "netstun.h"
 #include "nettransport.h"
 #include "netwire.h"
+#include "version.h"
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -456,6 +457,8 @@ static void form_add(char *b, int cap, const char *key, const char *val)
 static struct {
     int init, url_fixed, listing;
     char url[256], name[32], monster[32], city[40], external[80];
+    char mode[24], status[40], weather[12], tod[12], content[16];   /* (netlobby_set_info) */
+    int joinable, playing;
     /* the host's listing */
     char code[8], token[80], listed_url[256], host_status[160], sent_stun[24];
     int heartbeat, sent_players;
@@ -562,6 +565,22 @@ void netlobby_set_game(const char *monster, const char *city)
     snprintf(L.city, sizeof L.city, "%s", city ? city : "");
 }
 
+void netlobby_set_info(const char *mode, const char *status, int joinable, int playing, const char *weather,
+                       const char *tod, const char *content)
+{
+    if (strcmp(mode, L.mode) || strcmp(status, L.status) || joinable != L.joinable || strcmp(weather, L.weather) ||
+        strcmp(tod, L.tod) || strcmp(content, L.content))
+        L.beat_at = 0;                               /* (shown in the list: the next heartbeat at once; the time
+                                                      * playing goes with the usual ones) */
+    snprintf(L.mode, sizeof L.mode, "%s", mode);
+    snprintf(L.status, sizeof L.status, "%s", status);
+    snprintf(L.weather, sizeof L.weather, "%s", weather);
+    snprintf(L.tod, sizeof L.tod, "%s", tod);
+    snprintf(L.content, sizeof L.content, "%s", content);
+    L.joinable = joinable;
+    L.playing = playing;
+}
+
 void netlobby_set_external(const char *addr)
 {
     snprintf(L.external, sizeof L.external, "%s", addr ? addr : "");
@@ -634,6 +653,18 @@ static void game_fields(char *b, int cap)
         form_add(b, cap, "external", L.external);
     if (netstun_public()[0])
         form_add(b, cap, "stun", netstun_public());
+    /* the room's more, for the launcher's browser (a lobby without them lets them be) */
+    form_add(b, cap, "version", RAMPAGE_VERSION);
+    form_add(b, cap, "platform", "pc");
+    if (L.content[0])
+        form_add(b, cap, "content", L.content);
+    form_add(b, cap, "mode", L.mode);
+    form_add(b, cap, "status", L.status);
+    form_add(b, cap, "joinable", L.joinable && players_now() % 16 < net_seats_open() ? "1" : "0");
+    snprintf(n, sizeof n, "%d", L.playing > 0 ? L.playing : 0);
+    form_add(b, cap, "playing", n);
+    form_add(b, cap, "weather", L.weather);
+    form_add(b, cap, "tod", L.tod);
     snprintf(L.sent_stun, sizeof L.sent_stun, "%s", netstun_public());
 }
 
@@ -713,7 +744,7 @@ static void host_frame(double now)
     }
     if (!L.code[0]) {
         if (job_idle(J_REGISTER) && now >= L.retry_at) {
-            char body[700] = "", n[16];
+            char body[1200] = "", n[16];
             game_fields(body, sizeof body);
             snprintf(n, sizeof n, "%d", net_port());
             form_add(body, sizeof body, "port", n);
@@ -738,7 +769,7 @@ static void host_frame(double now)
         L.knocks_at = now;
     }
     if (job_idle(J_BEAT) && now - L.beat_at >= L.heartbeat) {
-        char body[700] = "", path[32];
+        char body[1200] = "", path[32];
         form_add(body, sizeof body, "token", L.token);
         size_t k = strlen(body);
         body[k] = '&';
