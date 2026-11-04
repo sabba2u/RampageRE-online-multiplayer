@@ -401,7 +401,7 @@ impl App {
         if self.lobby_here == Some((port, true)) {
             ui.label(RichText::new(format!("✔ A RampageRE server is already running on this PC (port {port})")).color(GREEN));
             if look::big(ui, "Use the Running Server", ready)
-                .on_hover_text("Step 1: your game will host its room in that server (lobby\\start.bat's Node.js one, or another launcher's)")
+                .on_hover_text("Step 1: your game will host its room in that server (rampagelobby\\start.bat's Node.js one, or another launcher's)")
                 .clicked()
             {
                 self.use_running_server(port);

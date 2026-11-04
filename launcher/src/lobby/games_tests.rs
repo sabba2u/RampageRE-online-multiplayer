@@ -1,4 +1,4 @@
-//! lobby/test/games.test.ts, case for case.
+//! rampagelobby/test/games.test.ts, case for case.
 use super::games::*;
 use serde_json::{json, Map, Value};
 use std::sync::{Arc, Mutex};

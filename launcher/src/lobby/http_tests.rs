@@ -1,4 +1,4 @@
-//! The HTTP side against a real server on a free port, as the game and lobby/test talk to it.
+//! The HTTP side against a real server on a free port, as the game and rampagelobby/test talk to it.
 use super::http::{LobbyServer, StartError};
 
 fn call(method: &str, url: &str, accept_text: bool, form: Option<&str>) -> (u16, String) {

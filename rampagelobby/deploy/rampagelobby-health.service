@@ -1,0 +1,8 @@
+# One look at the room server: if /health does not answer within 5 s (running but stuck), restart it.
+# Run every minute by rampagelobby-health.timer.
+[Unit]
+Description=RampageLobby health check
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'curl -fsS --max-time 5 http://127.0.0.1:19980/health | grep -q rampage_lobby || systemctl restart rampagelobby'

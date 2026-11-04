@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { makeServer } from "./server";
 
-/** config.json in the folder it is started from (lobby/); every field is optional.
+/** config.json in the folder it is started from (rampagelobby/); every field is optional.
  *    port           the lobby's port (HTTP + Colyseus, TCP), default 19980; PORT overrides it
  *    publicAddress  this machine's address on the internet, for games hosted on this PC or its network that don't
  *                   know their own (no UPnP): what guests from the internet are given. Leave it "" on a VPS

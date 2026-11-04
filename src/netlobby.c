@@ -1,7 +1,7 @@
-/* netlobby.c - online play's game list (netlobby.h): a host lists itself with the lobby (lobby/), a guest browses
+/* netlobby.c - online play's game list (netlobby.h): a host lists itself with the lobby (rampagelobby/), a guest browses
  * the list or asks for a join code, and joins over ENet as typing the address would.
  *
- * The lobby speaks plain HTTP (lobby/src/http.ts): POST /games to list a game (a form body; with Accept: text/plain
+ * The lobby speaks plain HTTP (rampagelobby/src/http.ts): POST /games to list a game (a form body; with Accept: text/plain
  * it answers "ok <code> <token> <heartbeat>"), PUT /games/<code> with the token as the heartbeat (404: the lobby
  * forgot us, list again), DELETE /games/<code> to go; GET /games.txt and GET /games/<code>.txt for the guest. Each
  * request runs on a thread of its own (one of each kind at a time) and leaves its answer for netlobby_update, which
@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char CODE_ALPHABET[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* lobby/src/Games.ts: no 0 O 1 I */
+static const char CODE_ALPHABET[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* rampagelobby/src/Games.ts: no 0 O 1 I */
 #define CODE_LENGTH 5
 
 static void copy(char *to, int cap, const char *from, int n)   /* n bytes of from (or less), always ended */
@@ -93,7 +93,7 @@ int netlobby_join_kind(const char *arg, char *out, int cap)
         arg++;
     char s[80];
     copy(s, sizeof s, arg, (int)strlen(arg));
-    if (!strncmp(s, "rampage://", 10)) {             /* a link from the lobby's page (lobby/launcher/) */
+    if (!strncmp(s, "rampage://", 10)) {             /* a link from the lobby's page (rampagelobby/launcher/) */
         if (strncmp(s + 10, "join/", 5))
             return NLJ_NONE;
         memmove(s, s + 15, strlen(s + 15) + 1);
@@ -286,7 +286,7 @@ static int http_request(const char *method, const char *url, const char *body, c
     snprintf(ports, sizeof ports, "%d", port);
     struct addrinfo hints, *ai = NULL;
     memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET;                       /* (the lobby listens on IPv4: lobby/src/index.ts) */
+    hints.ai_family = AF_INET;                       /* (the lobby listens on IPv4: rampagelobby/src/index.ts) */
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, ports, &hints, &ai) || !ai)
         return -1;
@@ -427,7 +427,7 @@ static int job_done(int k)
     return 1;
 }
 
-/* the lobby's "error <why>" (lobby/src/http.ts), else what went wrong on the way */
+/* the lobby's "error <why>" (rampagelobby/src/http.ts), else what went wrong on the way */
 static void why(char *to, int cap, const char *what, const Job *j)
 {
     if (j->status < 0)

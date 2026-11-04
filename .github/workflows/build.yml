@@ -8,7 +8,7 @@
 # with make_standalone.bat / make_android_bundle.bat, never here). Each package is listed file by file and checked for
 # disc files before it is uploaded. A pushed tag v* (which must match the version in res/rampagere.rc) also publishes a
 # GitHub release with RampageRE-windows-<tag>.zip (RampageRE.exe, RampageRE-dev.exe, RampageRE-Launcher.exe (launcher/,
-# Rust), steam_api64.dll (third_party/steamworks) and steam_appid.txt (480), the Node lobby (lobby/ as tracked, without its
+# Rust), steam_api64.dll (third_party/steamworks) and steam_appid.txt (480), the Node lobby (rampagelobby/ as tracked, without its
 # tests) and the pictures it shows (launcher/assets), README.md, LICENSE, docs/NATIVE.md, docs/TEXTURES.md), RampageRE-linux-x86_64-<tag>.tar.gz (rampage and the same files), RampageRE-android-<tag>.zip
 # (RampageRE-<tag>.apk, README.md, LICENSE, docs/NATIVE.md) and RampageRE-switch-<tag>.zip (switch/rampagere/ with
 # rampage.nro, README.md, LICENSE: unpacked onto the SD card as it is) and RampageRE-vita-<tag>.zip (rampage.vpk,
@@ -107,7 +107,7 @@ jobs:
           $ver = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { $env:GITHUB_SHA.Substring(0, 7) }
           $name = "RampageRE-windows-$ver"
           # file by file, never a folder or a glob: nothing else can end up in the zip
-          $lobby = @(git ls-files lobby | Where-Object { $_ -notmatch '^lobby/test/' }) + 'launcher/assets/logo.png', 'launcher/assets/background.jpg'
+          $lobby = @(git ls-files rampagelobby | Where-Object { $_ -notmatch '^rampagelobby/test/' }) + 'launcher/assets/logo.png', 'launcher/assets/background.jpg'
           foreach ($f in @('RampageRE.exe', 'RampageRE-dev.exe', 'README.md', 'LICENSE', 'docs/NATIVE.md', 'docs/TEXTURES.md') + $lobby) {
             $dir = "pkg/$name/" + (Split-Path $f)
             New-Item -ItemType Directory -Force $dir | Out-Null
@@ -130,7 +130,7 @@ jobs:
           $bad = @($names | Where-Object { $_ -match '(?i)\.(vol|elf|iso|bin|cue)$|(^|/)SLES_|(^|/)build/' })
           if ($bad.Count) { "::error::game data in the package: $($bad -join ', ')"; exit 1 }
           $root = [IO.Path]::GetFileNameWithoutExtension($env:PKG)
-          $lobby = @(git ls-files lobby | Where-Object { $_ -notmatch '^lobby/test/' }) + 'launcher/assets/logo.png', 'launcher/assets/background.jpg'
+          $lobby = @(git ls-files rampagelobby | Where-Object { $_ -notmatch '^rampagelobby/test/' }) + 'launcher/assets/logo.png', 'launcher/assets/background.jpg'
           $want = @('RampageRE.exe', 'RampageRE-dev.exe', 'RampageRE-Launcher.exe', 'steam_api64.dll', 'steam_appid.txt', 'README.md',
                     'LICENSE', 'docs/NATIVE.md', 'docs/TEXTURES.md') + $lobby | ForEach-Object { "$root/$_" }
           $extra = @($names | Where-Object { -not $_.EndsWith('/') -and $_ -notin $want })

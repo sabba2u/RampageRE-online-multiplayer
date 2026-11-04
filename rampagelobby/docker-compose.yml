@@ -1,0 +1,11 @@
+# RampageLobby in Docker:   docker compose up -d --build   (update: the same again; uninstall: docker compose down --rmi all)
+services:
+  rampagelobby:
+    build: .
+    image: rampagelobby
+    container_name: rampagelobby
+    ports:
+      - "19980:19980"
+    restart: unless-stopped
+    # environment:
+    #   RAMPAGE_LOBBY_PUBLIC: rampage.example.com    # this machine's address on the internet (see config.example.json)

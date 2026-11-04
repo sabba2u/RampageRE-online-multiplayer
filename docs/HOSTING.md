@@ -30,14 +30,14 @@ It also gives the launcher things the bare game can't:
 - a version check before joining (a friend with another build gets a plain message);
 - help through stricter home routers: the game announces itself to the server, which helps friends connect.
 
-There are two copies of the same room server, which speak the same protocol (`lobby/test/conformance.test.ts`
+There are two copies of the same room server, which speak the same protocol (`rampagelobby/test/conformance.test.ts`
 checks both):
 
 | Where | What | When it runs |
 |---|---|---|
 | **Inside the launcher** (`launcher/src/lobby/`, Rust) | the **Internet** tab's **Start Internet Server** starts it on your PC | while the launcher is open (closing it while hosting asks first) |
 | | `RampageRE-Launcher.exe --serve-lobby [port]`: the room server alone, no window | until you stop it |
-| **Node.js** (`lobby/`) | `lobby\start.bat` / `lobby/start.sh`: for Linux, or an always-on VPS (the public server planned for later) | as long as Node runs it |
+| **Node.js** (`rampagelobby/`) | `rampagelobby\start.bat` / `rampagelobby/start.sh`: for Linux, or an always-on VPS (the public server planned for later) | as long as Node runs it |
 
 Network: **TCP 19980** (the launcher asks your router to forward it while you host).
 
@@ -55,7 +55,7 @@ and hears back the launcher's mutes, bans and kicks. It does not contain one.
 
 - **Host Local (LAN)** is the game alone: the launcher is only a shortcut and can be closed.
 - **Start Internet Server** is the launcher's room server; **Launch Game as Host** then starts the game in it. Keep the launcher open while you host.
-- **A room server already running on this PC** (`lobby\start.bat`'s Node.js one, or another launcher's) is seen by
+- **A room server already running on this PC** (`rampagelobby\start.bat`'s Node.js one, or another launcher's) is seen by
   the Internet tab (**✔ A RampageRE server is already running on this PC**): **Use the Running Server** hosts your
   game's room in it instead. The room code comes from its room list; the Players list (Mute, Kick, Ban) only comes
   with the launcher's own server. **Stop using it** leaves that server running; if it stops, the tab says so.
@@ -86,28 +86,39 @@ address with its port there. Settings → Firewall has the same Allow through fi
 
 Online play is up to 4 players: the host and three friends (Host on Steam too). More: [NETPLAY.md](NETPLAY.md).
 
-## An always-on room server (a VPS)
+## RampageLobby: an always-on room server (a VPS, a Pi, Docker)
 
 A room server on a rented or free Linux machine stays up when your PC is off, so friends can always find rooms
-there. It is the Node copy (`lobby/`); the game host still runs in the host's RampageRE.exe as always. The server
+there. It is **RampageLobby**, the Node copy (`rampagelobby/`); the game host still runs in the host's RampageRE.exe as always. The server
 uses little: any 1 GB machine does.
 
-**Install** (Ubuntu or Debian; copy the `lobby` folder to the machine, or `git clone` this repo there):
+**Install** (Ubuntu, Debian or Raspberry Pi OS; copy the `rampagelobby` folder to the machine, or `git clone` this repo there):
 
 ```sh
-cd lobby
+cd rampagelobby
 sudo sh deploy/install.sh
 ```
 
-It installs Node.js 20 if needed, copies the server to `/opt/rampage-lobby`, runs it as its own `rampage` user, and
+It installs Node.js 20 if needed, copies the server to `/opt/rampagelobby`, runs it as its own `rampagelobby` user, and
 sets up:
 
-- `rampage-lobby.service` (systemd): started at boot, **started again 3 s after any crash or stop**, forever;
-- `rampage-lobby-health.timer`: every minute it asks `/health`, and **restarts the server if it is running but stuck**;
+- `rampagelobby.service` (systemd): started at boot, **started again 3 s after any crash or stop**, forever;
+- `rampagelobby-health.timer`: every minute it asks `/health`, and **restarts the server if it is running but stuck**;
 - TCP 19980 opened in the machine's own firewall (ufw or iptables).
 
-Check on it: `systemctl status rampage-lobby`, its log: `journalctl -u rampage-lobby -f`. Update it later: pull or copy
-the new `lobby` folder and run `install.sh` again (your `config.json` is kept).
+Check on it: `systemctl status rampagelobby`, its log: `journalctl -u rampagelobby -f`. Update it later: pull or copy
+the new `rampagelobby` folder and run `install.sh` again (your `config.json` is kept; an install from before the
+name, `rampage-lobby`, is replaced). **Uninstall**: `sudo sh deploy/uninstall.sh` takes out the service, the health
+check, `/opt/rampagelobby`, its user and the firewall rule (Node.js stays).
+
+**In Docker instead** (any machine with Docker, the Pi too):
+
+```sh
+cd rampagelobby
+docker compose up -d --build        # build and start it; it comes back after a crash or a reboot
+docker compose logs -f              # its log
+docker compose down --rmi all       # uninstall: the container and its image gone
+```
 
 Then friends use the server's address: the launcher's **Join a room → Connect** with it, or links
 `rampage://join/K7PQ2@your.server`. The room list page is `http://your.server:19980/`. A host lists their game there
@@ -128,7 +139,7 @@ are, and nothing is charged while you stay on Always Free.
    sudo apt-get update && sudo apt-get install -y git
    git clone https://github.com/sabba2u/RampageRE-online-multiplayer.git
    cd RampageRE-online-multiplayer && git checkout online-multiplayer
-   cd lobby && sudo sh deploy/install.sh
+   cd rampagelobby && sudo sh deploy/install.sh
    ```
    (Oracle's Ubuntu also blocks ports in iptables; install.sh opens 19980 there too.)
 5. Open `http://<public IP>:19980/` in a browser: the rooms page means it works.
@@ -136,5 +147,5 @@ are, and nothing is charged while you stay on Always Free.
 Other always-free or cheap choices work the same (any Ubuntu VPS: Hetzner, DigitalOcean, a Raspberry Pi at home with
 the port forwarded): run `install.sh`, open TCP 19980.
 
-On Windows or macOS without systemd: `lobby\start.bat` / `lobby/start.sh` runs it; keep it up with a scheduled task
-(Windows) or `pm2 start start.sh --name rampage-lobby && pm2 save && pm2 startup` (any system with Node).
+On Windows or macOS without systemd: `rampagelobby\start.bat` / `rampagelobby/start.sh` runs it; keep it up with a scheduled task
+(Windows) or `pm2 start start.sh --name rampagelobby && pm2 save && pm2 startup` (any system with Node).

@@ -48,7 +48,7 @@ pub fn with_port(host: &str, port: u16) -> String {
     if port == LOBBY_PORT { host.to_string() } else { format!("{host}:{port}") }
 }
 
-/// A RampageRE room server answering on this PC's `port` already (the Node.js one, lobby\start.bat, or another
+/// A RampageRE room server answering on this PC's `port` already (the Node.js one, rampagelobby\start.bat, or another
 /// launcher's): its /health says so.
 pub fn lobby_running_here(port: u16) -> bool {
     let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_millis(800)).build();
@@ -180,7 +180,7 @@ impl App {
         self.say_on(1, "Your server is running: now launch the game as host.", false);
     }
 
-    /// Step 1 when a room server already runs on this PC (lobby\start.bat's Node.js one, or another launcher's): the
+    /// Step 1 when a room server already runs on this PC (rampagelobby\start.bat's Node.js one, or another launcher's): the
     /// game will host in it; the router opened for it all the same.
     pub fn use_running_server(&mut self, port: u16) {
         if let Err(e) = &self.game {

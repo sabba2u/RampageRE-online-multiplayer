@@ -1,5 +1,5 @@
 #!/bin/sh
-# start.sh - runs the RampageRE lobby (Linux, macOS, a VPS): the games list on TCP 19980. Needs Node.js 20 or newer.
+# start.sh - runs RampageLobby, the RampageRE room server (Linux, macOS, a VPS): the games list on TCP 19980. Needs Node.js 20 or newer.
 # The first start installs the packages and makes config.json from config.example.json. As a service: docs/NETPLAY.md
 # "The lobby" (systemd or pm2).
 set -e

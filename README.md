@@ -17,7 +17,7 @@
    see "The Wii's monsters and Dallas" below).
 
 The zip holds `RampageRE.exe` (the game), `RampageRE-dev.exe` (the same game with a console, for the command line),
-`RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), the `lobby/` room
+`RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), the `rampagelobby/` room
 server, and the docs this README links to.
 
 ## Online, up to 8 players (work in progress)
@@ -74,7 +74,7 @@ changes):
 **Play Local**'s **Players** choice (1 to 4) sets how many the game's menus offer.
 
 **Which "server" is which:** the game host is inside **RampageRE.exe** (every way of hosting uses it); the room server
-(codes, links, the player list) is in the launcher, or the Node `lobby/` for a VPS, and is not in the game. Read
+(codes, links, the player list) is in the launcher, or the Node `rampagelobby/` for a VPS, and is not in the game. Read
 [docs/HOSTING.md](docs/HOSTING.md): what runs where, what each button starts, and the ports.
 
 Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-rust).
@@ -120,14 +120,14 @@ other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
 ### Finding games: the lobby
 
-Instead of passing an IP address around, run the **lobby** (the room server: `lobby/`, a small Node server, or the one
+Instead of passing an IP address around, run the **lobby** (the room server: `rampagelobby/`, a small Node server, or the one
 built into the launcher) and the guest picks the game from a list. The lobby only lists games and hands out addresses;
 the game itself still goes straight from guest to host ([docs/HOSTING.md](docs/HOSTING.md)).
 
-- **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `lobby\start.bat`.
+- **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `rampagelobby\start.bat`.
   The host's game lists itself with `http://localhost:19980` by default. Guests set the panel's **Lobby** field to
   `http://<host's address>:19980` (port 19980 must be reachable, TCP and UDP).
-- **On a VPS** (always on, for everyone): `lobby/start.sh` there (or as a service), open TCP 19980, and every player
+- **On a VPS** (always on, for everyone): `rampagelobby/start.sh` there (or as a service), open TCP 19980, and every player
   sets **Lobby** to `http://<vps>:19980` (or starts the game with `--lobby http://<vps>:19980`, or sets `RAMPAGE_LOBBY`).
 - **Host:** host as usual. With **List my game in the lobby** ticked (the default) the panel shows a short **join code**
   like `K7PQ2` with a **Copy** button: say it or paste it to your friend.

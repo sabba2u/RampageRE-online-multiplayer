@@ -1,4 +1,4 @@
-//! IP addresses as the lobby sees them (lobby/src/addr.ts). Only IPv4 is handed out: ENet in RampageRE binds IPv4.
+//! IP addresses as the lobby sees them (rampagelobby/src/addr.ts). Only IPv4 is handed out: ENet in RampageRE binds IPv4.
 
 /// IPv4 seen as IPv6 (::ffff:1.2.3.4) is that IPv4, and ::1 is 127.0.0.1.
 pub fn norm_ip(s: &str) -> String {

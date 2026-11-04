@@ -1,4 +1,4 @@
-//! The lobby's plain HTTP side (lobby/src/http.ts, route for route), for RampageRE (src/netlobby.c) and the games page:
+//! The lobby's plain HTTP side (rampagelobby/src/http.ts, route for route), for RampageRE (src/netlobby.c) and the games page:
 //!   POST   /games                register: answers "ok <code> <token> <heartbeat>" (Accept: text/plain) or JSON
 //!   PUT    /games/<code>         the heartbeat; DELETE /games/<code> unlists (token in the body, ?token= or X-Token)
 //!   GET    /games, /games.txt, /games/<code>[.txt]
@@ -16,7 +16,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server};
 
-const PAGE: &str = include_str!("../../../lobby/public/index.html");
+const PAGE: &str = include_str!("../../../rampagelobby/public/index.html");
 const LOGO: &[u8] = include_bytes!("../../assets/logo.png");
 const BACKGROUND: &[u8] = include_bytes!("../../assets/background.jpg");
 const WORKERS: usize = 4;

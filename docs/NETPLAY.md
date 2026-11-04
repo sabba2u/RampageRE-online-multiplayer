@@ -131,7 +131,7 @@ controllers, so players 5 .. 8 are online guests. The launcher passes `--menu-pl
 host's main menu has 5 Player .. 8 Player; the guests' menus show the host's rows (ShellNetView `menu_players`). On
 Monster Select each guest's presses are its seat's pad on the host (netrep_menu.c: seats 1 .. 7), each steering its own
 card of the eight (docs/NATIVE.md "Eight players"). The "in a menu" / "typing" labels over the monsters are 8 bits each
-now (a u16 in NM_SNAP). Steam lobbies and the room servers (lobby/, the launcher's) take 8. Checked on one PC with
+now (a u16 in NM_SNAP). Steam lobbies and the room servers (rampagelobby/, the launcher's) take 8. Checked on one PC with
 `tools
 et8_menu_test.ps1` (eight copies through the menus into King of the City, and five); never yet on eight PCs.
 The host's upload grows with each guest: about 35 KB/s each since the deltas (below; 200 before).
@@ -219,7 +219,7 @@ is the relay we already have.)
 address first (it takes the outside packet as an answer). So the two players each send to the other at about the same
 moment: each router sees its own outgoing packet, and lets the other's in. Neither side forwards a port.
 
-**How RampageRE does it** (src/netstun.c, its parsers in tests\net_test.c, the lobby's half in lobby/src/Games.ts):
+**How RampageRE does it** (src/netstun.c, its parsers in tests\net_test.c, the lobby's half in rampagelobby/src/Games.ts):
 
 1. Hosting, the game asks `stun.l.google.com:19302` (its name looked up on a thread of its own; `RAMPAGE_STUN=host:port`
    another server, `RAMPAGE_STUN=0` none) from ENet's socket, and again every 20 s (that keeps the router's mapping
@@ -406,40 +406,40 @@ values, and the Insert panel lists "In sync: ..." / "Out of sync: army (3 times)
 
 ## The lobby: finding games
 
-`lobby/` is a small server (Node, TypeScript, Colyseus 0.16, after the Fire Fight lobby) that lists games, so the guest
+`rampagelobby/` is a small server (Node, TypeScript, Colyseus 0.16, after the Fire Fight lobby) that lists games, so the guest
 doesn't need the host's address. It carries no game traffic and there is no relay: it hands out an address, and the
 guest's game joins the host's over ENet exactly as if the address had been typed. The same server runs on a VPS or on
 the hosting player's own PC.
 
 ```
  host's PC                                 lobby (the host's PC, or a VPS)            guest's PC
- rampage --host ── POST /games ──────────▶ lobby/  TCP 19980  ◀── GET /games.txt ─── Insert: Games online
+ rampage --host ── POST /games ──────────▶ rampagelobby/  TCP 19980  ◀── GET /games.txt ─── Insert: Games online
           (every 10 s: PUT /games/<code>)  code K7PQ2 → address                       or --join K7PQ2
           ◀════════════════════ ENet, UDP 19980, straight from the guest ══════════════════
 ```
 
 ### Running it
 
-- **On the host's PC**: install Node.js 20 or newer, then `lobby\start.bat` (the first start runs `npm install` and makes
+- **On the host's PC**: install Node.js 20 or newer, then `rampagelobby\start.bat` (the first start runs `npm install` and makes
   `config.json`). It prints this PC's addresses. The game's default lobby is `http://localhost:19980`, so the host's own
   game finds it with nothing set. Guests on the same network use `http://<the host's LAN address>:19980`; guests on the
   internet need TCP 19980 forwarded to the host's PC, besides UDP 19980 for the game itself (one router entry: 19980, TCP and UDP).
-- **On a VPS**: clone the repo there (only `lobby/` is needed), `sh lobby/start.sh`, and open TCP 19980 in its firewall
+- **On a VPS**: clone the repo there (only `rampagelobby/` is needed), `sh rampagelobby/start.sh`, and open TCP 19980 in its firewall
   (`ufw allow 19980/tcp`, or the provider's panel). To keep it running, either pm2 (`npm i -g pm2`, then
-  `cd lobby && pm2 start npm --name rampage-lobby -- start && pm2 save && pm2 startup`) or a systemd unit:
+  `cd rampagelobby && pm2 start npm --name rampagelobby -- start && pm2 save && pm2 startup`) or a systemd unit:
   ```ini
-  # /etc/systemd/system/rampage-lobby.service    (then: systemctl enable --now rampage-lobby)
+  # /etc/systemd/system/rampagelobby.service    (then: systemctl enable --now rampagelobby)
   [Service]
-  WorkingDirectory=/opt/rampage.se/lobby
+  WorkingDirectory=/opt/rampage.se/rampagelobby
   ExecStart=/usr/bin/npm start
   Restart=always
-  User=rampage
+  User=rampagelobby
   [Install]
   WantedBy=multi-user.target
   ```
   Behind nginx or Caddy (for https), set `"trustProxy": true` so the lobby takes players' addresses from
   `X-Forwarded-For`, and proxy WebSockets too (the page's live list).
-- `lobby/config.json` (from `config.example.json`): `port` (19980; `PORT` overrides it), `publicAddress` (this PC's
+- `rampagelobby/config.json` (from `config.example.json`): `port` (19980; `PORT` overrides it), `publicAddress` (this PC's
   internet address, for a lobby on the host's PC: what guests from the internet are given for games registered from
   this PC or its network that don't know their own; leave it empty on a VPS), `trustProxy`.
 - `cd lobby && npm test` runs its tests (registry, addresses, codes, rate limits, HTTP, the Colyseus listing).
@@ -478,12 +478,12 @@ The game's lobby: `--lobby <url>` on the command line, else the `RAMPAGE_LOBBY` 
 `rampage://join/<code>` and the game's address as a `rampage://join/<address>` link. For those links to start the game,
 each player sets them up once, from the page:
 
-- **Windows:** `/install.ps1` (served with the lobby's address filled in; `lobby/launcher/install.ps1` and
+- **Windows:** `/install.ps1` (served with the lobby's address filled in; `rampagelobby/launcher/install.ps1` and
   `rampage-handler.ps1`) registers `rampage://` for the current user (HKCU\Software\Classes\rampage, no admin), asks
   for RampageRE.exe, and runs `RampageRE.exe --lobby <lobby> --join <code or address>` for a link. Any web page can open
   a `rampage://` link, so the handler takes only `rampage://join/<code>` and `rampage://join/<host[:port]>`, and the
   game and lobby come from its config, never from the link. `-Uninstall` removes it.
-- **Linux:** `/install-linux.sh` (`lobby/launcher/install-linux.sh <path to rampage>`) writes
+- **Linux:** `/install-linux.sh` (`rampagelobby/launcher/install-linux.sh <path to rampage>`) writes
   `~/.local/share/applications/rampage.desktop` (`Exec=<game> --lobby <lobby> --join %u`,
   `MimeType=x-scheme-handler/rampage;`), runs `xdg-mime default rampage.desktop x-scheme-handler/rampage` and
   `update-desktop-database` when there. `--uninstall` removes it. The game checks the link itself
@@ -492,7 +492,7 @@ each player sets them up once, from the page:
   Windows' WinHTTP), and resolves codes the same way once net is in build.sh.
 - **macOS:** not done: it needs a .app bundle with `CFBundleURLTypes` for `rampage` in its Info.plist.
 
-### The lobby's HTTP (lobby/src/http.ts)
+### The lobby's HTTP (rampagelobby/src/http.ts)
 
 | | |
 |---|---|
@@ -549,9 +549,9 @@ ampage` with the launcher itself as the
   the game joining. Forms: `rampage://join/<code>`, `rampage://join/<code>@<host[:port]>` (port 19980 when left out),
   `rampage://join/<host[:port]>` (a direct address must have a dot or a port); anything else is refused. The program
   started is always the game next to the launcher.
-- **Its lobby** is lobby/src's plain HTTP side in Rust (launcher/src/lobby: the same routes, rules, codes and texts; no
+- **Its lobby** is rampagelobby/src's plain HTTP side in Rust (launcher/src/lobby: the same routes, rules, codes and texts; no
   Colyseus, so the games page reads `/games` every 3 s). `rampage-launcher --serve-lobby [port]` runs only that.
-  `lobby/test/conformance.test.ts` runs one set of HTTP cases against both lobbies, so they can't drift apart (build
+  `rampagelobby/test/conformance.test.ts` runs one set of HTTP cases against both lobbies, so they can't drift apart (build
   the launcher first: `cargo build --manifest-path launcher/Cargo.toml`).
 - Tests: `cargo test --manifest-path launcher/Cargo.toml`; with the real game and router, `-- --ignored`
   (`build_id_matches_game` with GAME_EXE and EXPECT_BUILD, `open_and_close_on_this_router`).

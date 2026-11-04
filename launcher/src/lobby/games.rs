@@ -1,4 +1,4 @@
-//! Every listed game, in memory (lobby/src/Games.ts, line for line). A lobby that restarts forgets them, and their
+//! Every listed game, in memory (rampagelobby/src/Games.ts, line for line). A lobby that restarts forgets them, and their
 //! next heartbeat (a 404) makes each host's game register again. The clock is injectable for the tests.
 use super::addr::{is_ipv4, is_local, is_loopback, is_private, norm_ip, public_endpoint, split_host_port};
 use rand::{rngs::OsRng, RngCore};

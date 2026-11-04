@@ -1,4 +1,4 @@
-//! The lobby built into the launcher: lobby/src (Node) without Colyseus, answering the game exactly as it does.
+//! The lobby built into the launcher: rampagelobby/src (Node) without Colyseus, answering the game exactly as it does.
 pub mod addr;
 pub mod games;
 pub mod http;
