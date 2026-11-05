@@ -7,8 +7,8 @@
 
 ## Getting started
 
-1. Download **all.zip** from this fork's [Releases](https://github.com/sabba2u/RampageRE-online-multiplayer/releases)
-   and unzip it anywhere.
+1. Download **RampageRE-online-1.3.0.zip** (the newest) from this fork's
+   [Releases](https://github.com/sabba2u/RampageRE-online-multiplayer/releases) and unzip it anywhere.
 2. Double-click **RampageRE-Launcher.exe**. Windows may say "Windows protected your PC" (the exes are not signed):
    *More info*, then *Run anyway*.
 3. Click **Play Local**. The first time, the game asks for your own disc image of *Rampage: Total Destruction* (the
@@ -17,8 +17,19 @@
    see "The Wii's monsters and Dallas" below).
 
 The zip holds `RampageRE.exe` (the game), `RampageRE-dev.exe` (the same game with a console, for the command line),
-`RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), the `rampagelobby/` room
-server, and the docs this README links to.
+`RampageRE-Launcher.exe`, Steam's `steam_api64.dll` and `steam_appid.txt` (for Host on Steam), **RampageLobby**
+(`rampagelobby/`, the room server for a VPS, a Raspberry Pi or Docker), and the docs this README links to.
+
+What is in the zip:
+
+| File | What it is |
+|---|---|
+| `RampageRE-Launcher.exe` | start here: Play Local, host or join on a LAN, the internet or Steam, the room list, settings |
+| `RampageRE.exe` | the game (also the game host: every way of hosting runs it) |
+| `RampageRE-dev.exe` | the same game with a console and the command line ([docs/NATIVE.md](docs/NATIVE.md)) |
+| `steam_api64.dll`, `steam_appid.txt` | for Host on Steam / Join on Steam |
+| `rampagelobby/` | **RampageLobby**, the room list server, to run on an always-on machine ([docs/HOSTING.md](docs/HOSTING.md)); the launcher has its own copy built in, so you need it only for a public server |
+| `docs/` | how everything works: NETPLAY (online), HOSTING (servers and ports), NATIVE (keys and options), TEXTURES, MODELS |
 
 ## Online, up to 8 players (work in progress)
 
@@ -66,7 +77,7 @@ changes):
 | **Unlock all moves** (on) | every monster's upgrade moves from the start; untick it and each monster has only the upgrades it earned |
 | **Shuffle the city's buildings** | every game a new street: each lot gets another of the city's buildings of its size (online, the host's) |
 | **Time of day** | As the game picks / Always day / Always night |
-| **Weather** | Clear / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes electric blue) |
+| **Weather** | As the game picks (clear) / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes electric blue) / Random (each block picks clear, rain or storm; online, the host picks and everyone gets the same) |
 | **Look** | Normal / 1950s monster movie (black and white, scratches, grain) |
 | **Smooth edges** | Game's setting / Medium / High (anti-aliasing) |
 | **Outline my monster** | a thin outline in your player's colour around your own monster, on your screen only (also in the game's Insert panel, Camera and look) |
@@ -74,7 +85,7 @@ changes):
 **Play Local**'s **Players** choice (1 to 4) sets how many the game's menus offer.
 
 **Which "server" is which:** the game host is inside **RampageRE.exe** (every way of hosting uses it); the room server
-(codes, links, the player list) is in the launcher, or the Node `rampagelobby/` for a VPS, and is not in the game. Read
+(codes, links, the player list) is in the launcher, or **RampageLobby** (`rampagelobby/`) for a VPS, and is not in the game. Read
 [docs/HOSTING.md](docs/HOSTING.md): what runs where, what each button starts, and the ports.
 
 Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-rust).
@@ -118,17 +129,31 @@ Details: [docs/NETPLAY.md "The launcher"](docs/NETPLAY.md#the-launcher-launcher-
 Command line, for testing: `RampageRE-dev.exe Chicago 1 --players 2 --host` on one PC and `RampageRE-dev.exe --join <ip>` on the
 other. `tools\net_test.ps1 -Seconds 0` starts a host and a guest on the same PC.
 
-### Finding games: the lobby
+### Finding games: RampageLobby
 
-Instead of passing an IP address around, run the **lobby** (the room server: `rampagelobby/`, a small Node server, or the one
-built into the launcher) and the guest picks the game from a list. The lobby only lists games and hands out addresses;
-the game itself still goes straight from guest to host ([docs/HOSTING.md](docs/HOSTING.md)).
+Instead of passing an IP address around, run **RampageLobby** (the room server: `rampagelobby/`, a small Node server, or
+the one built into the launcher) and the guest picks the game from a list. RampageLobby only lists games and hands out
+addresses; the game itself still goes straight from guest to host, so the host must be reachable (port 19980 open or
+forwarded; RampageLobby relays nothing) ([docs/HOSTING.md](docs/HOSTING.md)).
+
+**The room list** shows each game's name, players / seats, its status (In the menus, Playing Chicago, Boss Rumble wave 4,
+Paused ...) and its version (with **+Wii** when the host plays with the Wii disc's monsters). Hover a room for the rest:
+platform, game data, mode, whether it can be joined now, how long it has been playing, the weather and time of day, and
+how long the server has been up. **Join** is greyed out with the reason when you can't: another version, a Boss Rumble
+already under way, the room full, or **Missing the Wii data** (the host plays with the Wii's extra monsters and cities:
+set `wii_data=` in `rampage.cfg` to your extracted Wii disc, see "The Wii's monsters and Dallas" below). A game joined
+some other way (a code, an address) turns you away with the same message.
 
 - **On the host's PC** (no server needed): install [Node.js](https://nodejs.org) 20+, double-click `rampagelobby\start.bat`.
   The host's game lists itself with `http://localhost:19980` by default. Guests set the panel's **Lobby** field to
   `http://<host's address>:19980` (port 19980 must be reachable, TCP and UDP).
-- **On a VPS** (always on, for everyone): `rampagelobby/start.sh` there (or as a service), open TCP 19980, and every player
-  sets **Lobby** to `http://<vps>:19980` (or starts the game with `--lobby http://<vps>:19980`, or sets `RAMPAGE_LOBBY`).
+- **On a VPS or a Raspberry Pi** (always on, for everyone): copy `rampagelobby/` there and run
+  `sudo sh deploy/install.sh` (a service that starts at boot, restarts after a crash and is checked every minute;
+  `sudo sh deploy/uninstall.sh` takes it all out again), or with Docker `docker compose up -d --build`. Open TCP 19980,
+  and every player sets **Lobby** to `http://<vps>:19980` (or starts the game with `--lobby http://<vps>:19980`, or sets
+  `RAMPAGE_LOBBY`). A name of your own works too (a DNS record like `rampage.example.com` pointing at it).
+  `GET /info` says the server's version, uptime and games. If it goes down, games already playing go on (they don't
+  need it), and anyone can still host and join by address or from the launcher's own server.
 - **Host:** host as usual. With **List my game in the lobby** ticked (the default) the panel shows a short **join code**
   like `K7PQ2` with a **Copy** button: say it or paste it to your friend.
 - **Guest:** Insert, **Games online** lists the games (refreshing itself while open); click **Join**. Or type the code
@@ -151,7 +176,7 @@ and offline, each player sets their own, and they are kept in `lookfx.cfg` for n
 - **Zoom out**: pulls the camera back to see more of the block.
 - **Tilt camera down**: looks down on the city from higher up (up to 35 degrees).
 - Presets: **Miniature city** (zoomed out, tilted down, tilt-shift), **Soft background** (depth of field) and
-  **The game's look** (everything off).
+  **The game's look** (everything off). **Reset to default** under the camera sliders puts zoom and tilt back.
 
 The score and timer always stay sharp. The blurs switch themselves off while MSAA is on (F7); SMAA is fine. The camera
 change is only what you see: the game still spawns things for its own camera, so zoomed far out you may see people or
@@ -159,18 +184,20 @@ cars appear at the edges.
 
 ### Boss Rumble (new game type)
 
-A survival mode for 1 to 4 players on the same side, offline or online, made for this fork.
+A survival mode for 1 to 8 players on the same side, offline or online, made for this fork.
 
 - **Start it:** on the main menu, press **left or right** to the fifth icon (the ape and the lizard): **BOSS RUMBLE**.
   Pick players, bots (they fight with you) and monsters; there is no City Select, the game picks a random city and
   block. From the command line: `RampageRE-dev.exe <iso> --play rumble`.
 - **The run:** 12 waves of bosses, 1, 1, 1, then 2, 2, 2, then 3, 3, 3, then 4, 4, 4 at once. Any monster can be a
   boss; bosses have a **red glowing outline** and a health bar with their head and name under the clock. Every three
-  waves they get 25 % more health and hit 25 % harder. A "WAVE N" banner comes between waves.
+  waves they get tougher: health and hits x1, x1.5, x2, then x2.75 for the last three. Their health also grows with
+  the players in the run (+50 % for each player after the first: 4 players face bosses with 2.5x the health), and
+  their breath between attacks gets shorter wave by wave. A "WAVE N" banner comes between waves.
 - **The clock counts up:** how long you last is your score. Each player has 3 lives of their own.
 - **Power-ups:** the game's own food and items appear on the street and on rooftops (up to 4 at a time, each gone after
   20 s); walk into one to take it.
-- **The bosses' manners:** a boss catches its breath for a second or so after each attack, and a player knocked down
+- **The bosses' manners:** a boss catches its breath after each attack (1.4 s, down to 0.8 s in the last waves), and a player knocked down
   or hit three times in a row is left alone for 2 seconds, so nobody gets juggled against a wall.
 - **Lives:** each player has three of their own; a player who loses all three is out (nobody takes another's), and
   the run goes on while anyone is still in. A boss stuck out of everyone's reach for 30 seconds comes back to the street.
@@ -185,7 +212,7 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 - **Outlines:** a boss glows red; an online seat nobody is playing (disconnected) is drawn grey.
 - **8 players online**: the host and seven guests, through the menus (5 to 8 Player, Monster Select's 8 cards), King
   of the City and the other modes; the HUD puts the eight panels in one row. Up to 8 monsters on screen in Boss Rumble
-  too (players and bosses).
+  too (up to 8 players and 4 bosses at once).
 - **Results screens** list 6 and 8 players.
 - **Fixed:** the tentacles of Cal, Eyegore, Venus, Natalie and Jill were frozen straight (the face animation
   overrode them; their tips sank into the street). They now curl, stretch and plant as on the console.
@@ -197,8 +224,7 @@ A survival mode for 1 to 4 players on the same side, offline or online, made for
 This is early. Expect issues.
 
 - **Up to 8 players** (the host and seven guests). Eight players have been through the menus into a game on one PC
-  (`tools
-et8_menu_test.ps1`), never yet on eight PCs. Host on Steam takes 8 as well (not yet tried with real Steam
+  (`tools\net8_menu_test.ps1`), never yet on eight PCs. Host on Steam takes 8 as well (not yet tried with real Steam
   accounts). The host sends each guest only what changed since the last update it confirmed, compressed: three
   guests about 95 KB/s; eight players in a busy city (Las Vegas) about 300 KB/s, 2.4 Mbit/s of upload (it was about
   11). The same on a LAN or over the internet.
@@ -210,6 +236,8 @@ et8_menu_test.ps1`), never yet on eight PCs. Host on Steam takes 8 as well (not 
   been tried online at all.
 - Mostly tested in **Chicago**. Other cities, their bosses, King of the City / King of the World, the Timed Run's
   details, Change Monster, power-ups being grabbed and the end-of-city screens have not been tested online.
+- **RampageLobby** has run on Windows; its Linux install scripts and its Docker image have not yet been tried on a
+  real Pi, VPS or Docker host.
 - The guest has a small delay on their own monster (it is not predicted on the guest's PC yet).
 
 If something goes out of sync, the panel names the system (for example "Out of sync: army"). Bug reports with what you
