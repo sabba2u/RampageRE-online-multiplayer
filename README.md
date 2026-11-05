@@ -54,6 +54,7 @@ Unzip the release and double-click **RampageRE-Launcher.exe**: big buttons, noth
 - The launcher has three tabs, each working on its own: **LAN**, **Internet** and **Steam**. Each has its own
   **Players** choice (how big the room is, you counted: the game's menu offers N Player up to it, and no more friends
   get in: the game's `--seats N`).
+- **LAN tab** shows this PC's LAN address and your public IP, each with a **Copy** button, to send to friends.
 - **Internet tab**: **Start Internet Server** (step 1: the launcher's room server; it opens your router), then **Launch
   Game as Host** (step 2). The room code shows with links to send your friends, and a **Players** list with Mute, Kick
   and Ban. The game closing leaves the server running (launch it again, or **Stop server**).
@@ -77,7 +78,7 @@ changes):
 | **Unlock all moves** (on) | every monster's upgrade moves from the start; untick it and each monster has only the upgrades it earned |
 | **Shuffle the city's buildings** | every game a new street: each lot gets another of the city's buildings of its size (online, the host's) |
 | **Time of day** | As the game picks / Always day / Always night |
-| **Weather** | As the game picks (clear) / Rain / Storm (rain, lightning and thunder; a bolt can zap a monster, which flashes electric blue) / Random (each block picks clear, rain or storm; online, the host picks and everyone gets the same) |
+| **Weather** | As the game picks (clear) / Rain / Storm (rain, lightning and thunder; a bolt can strike a monster, which flashes electric blue and is knocked to the ground, wherever it is; a monster up on a building is struck half as often again) / Random (each block picks clear, rain or storm; online, the host picks and everyone gets the same) |
 | **Look** | Normal / 1950s monster movie (black and white, scratches, grain) |
 | **Smooth edges** | Game's setting / Medium / High (anti-aliasing) |
 | **Outline my monster** | a thin outline in your player's colour around your own monster, on your screen only (also in the game's Insert panel, Camera and look) |

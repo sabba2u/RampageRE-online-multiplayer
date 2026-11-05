@@ -224,7 +224,7 @@ moment: each router sees its own outgoing packet, and lets the other's in. Neith
 1. Hosting, the game asks `stun.l.google.com:19302` (its name looked up on a thread of its own; `RAMPAGE_STUN=host:port`
    another server, `RAMPAGE_STUN=0` none) from ENet's socket, and again every 20 s (that keeps the router's mapping
    open). ENet's `intercept` hands the answer to netstun.c before ENet sees it. The log: "STUN: this game is
-   203.0.113.7:27960 on the internet". The listing sends it as `stun=`, and the lobby gives that address to guests on
+   203.0.113.7:19980 on the internet". The listing sends it as `stun=`, and the lobby gives that address to guests on
    the internet (after a UPnP forward's, before the address the registration came from: STUN's has the port the router
    really uses).
 2. A guest joining by code (typed, a rampage:// link, or picked from the panel's list, which now joins by code too)
@@ -460,7 +460,7 @@ The game's lobby: `--lobby <url>` on the command line, else the `RAMPAGE_LOBBY` 
 - **Guest:** the panel's **Games online** lists them (every 5 s while the panel is open; **Refresh** now). **Join** on a
   row does what typing its address and Join does. Rows of another build are greyed out with the reason in a tooltip,
   as are full ones. Or type the code under **Join code**; or start the game with `--join K7PQ2`, `--join
-  rampage://join/K7PQ2` or `--join rampage://join/203.0.113.5:27960`: net_start_join hands a code to the lobby
+  rampage://join/K7PQ2` or `--join rampage://join/203.0.113.5:19980`: net_start_join hands a code to the lobby
   (`GET /games/<code>.txt`) and joins the address it answers.
 - **Which address:** the lobby gives each guest the one that reaches the host from where that guest is: the host's
   UPnP address when the game said one (`netlobby_set_external`), else the address its registration came from; for a
